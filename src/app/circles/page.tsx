@@ -6,11 +6,12 @@ import Link from 'next/link';
 import { useAuth } from '@/contexts/AuthContext';
 import { firestore } from '@/lib/firebase';
 import { collection, query, where, getDocs, doc, getDoc } from 'firebase/firestore';
-import type { Circle, CircleMember } from '@/types';
+import type { Circle, CircleMember, CircleMemberRole } from '@/types'; // Removed CircleInvite
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
-import { PlusCircle, Users, Eye, Loader2, AlertTriangle } from 'lucide-react';
+import { PlusCircle, Users, Eye, Loader2, AlertTriangle, Settings } from 'lucide-react';
 import { Separator } from '@/components/ui/separator';
+import { CircleInviteManagerDialog } from '@/components/circles/CircleInviteManagerDialog'; // Import the new dialog
 
 interface UserCircleMembership extends Circle {
   userRoleInCircle: CircleMemberRole;
@@ -22,9 +23,13 @@ export default function MyCirclesPage() {
   const [isLoadingCircles, setIsLoadingCircles] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
+  const [managingInvitesForCircleId, setManagingInvitesForCircleId] = useState<string | null>(null);
+  const [managingInvitesForCircleName, setManagingInvitesForCircleName] = useState<string | null>(null);
+  const [isInviteManagerOpen, setIsInviteManagerOpen] = useState(false);
+
   useEffect(() => {
     if (isLoadingAuth || !currentUser) {
-      if (!isLoadingAuth && !currentUser) setIsLoadingCircles(false); // Not logged in, stop loading
+      if (!isLoadingAuth && !currentUser) setIsLoadingCircles(false); 
       return;
     }
 
@@ -32,7 +37,6 @@ export default function MyCirclesPage() {
       setIsLoadingCircles(true);
       setError(null);
       try {
-        // Fetch memberships
         const membershipsQuery = query(collection(firestore, 'CircleMembers'), where('userId', '==', currentUser.uid));
         const membershipsSnap = await getDocs(membershipsQuery);
         
@@ -63,6 +67,12 @@ export default function MyCirclesPage() {
 
     fetchMyCircles();
   }, [currentUser, isLoadingAuth]);
+
+  const openInviteManager = (circleId: string, circleName: string) => {
+    setManagingInvitesForCircleId(circleId);
+    setManagingInvitesForCircleName(circleName);
+    setIsInviteManagerOpen(true);
+  };
 
   if (isLoadingAuth || isLoadingCircles) {
     return (
@@ -127,7 +137,11 @@ export default function MyCirclesPage() {
           <h2 className="text-2xl font-semibold mb-4">Circles I Administer</h2>
           <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
             {ownedCircles.map(circle => (
-              <CircleItem key={circle.id} circle={circle} />
+              <CircleItem 
+                key={circle.id} 
+                circle={circle} 
+                onManageInvites={() => openInviteManager(circle.id, circle.circleName)}
+              />
             ))}
           </div>
         </section>
@@ -147,32 +161,52 @@ export default function MyCirclesPage() {
        <Button variant="link" asChild className="mt-8 mx-auto block">
         <Link href="/circles/join">Join a Circle with an Invite Code</Link>
       </Button>
+
+      <CircleInviteManagerDialog
+        isOpen={isInviteManagerOpen}
+        onOpenChange={setIsInviteManagerOpen}
+        circleId={managingInvitesForCircleId}
+        circleName={managingInvitesForCircleName}
+      />
     </div>
   );
 }
 
 interface CircleItemProps {
   circle: UserCircleMembership;
+  onManageInvites?: () => void;
 }
 
-function CircleItem({ circle }: CircleItemProps) {
+function CircleItem({ circle, onManageInvites }: CircleItemProps) {
+  const isCurrentUserAdmin = circle.userRoleInCircle === 'Admin';
   return (
-    <Card className="hover:shadow-lg transition-shadow">
+    <Card className="hover:shadow-lg transition-shadow flex flex-col">
       <CardHeader>
         <CardTitle className="truncate text-primary">{circle.circleName}</CardTitle>
         <CardDescription>
           {circle.isPublic ? 'Public Circle' : 'Private Circle'} - {circle.memberCount} member(s)
         </CardDescription>
       </CardHeader>
-      <CardContent>
-        {/* Add more details here if needed, like a snippet of description */}
-        <Button asChild className="w-full mt-2">
-          <Link href={`/circles/${circle.id}`}>
-            <Eye className="mr-2 h-4 w-4" /> View Circle
-          </Link>
-        </Button>
+      <CardContent className="flex-grow">
+        {/* Future: Add more details here if needed, like a snippet of description */}
+        <p className="text-sm text-muted-foreground line-clamp-2 h-10">
+            {circle.publicDescription || "No description provided."}
+        </p>
       </CardContent>
+      <CardFooter className="flex flex-col sm:flex-row gap-2 items-stretch sm:items-center pt-4 border-t">
+          <Button asChild className="w-full sm:flex-grow">
+            <Link href={`/circles/${circle.id}`}>
+              <Eye className="mr-2 h-4 w-4" /> View
+            </Link>
+          </Button>
+          {isCurrentUserAdmin && onManageInvites && (
+            <Button variant="outline" onClick={onManageInvites} className="w-full sm:flex-grow">
+              <Settings className="mr-2 h-4 w-4" /> Manage Invites
+            </Button>
+          )}
+      </CardFooter>
     </Card>
   );
 }
 
+    

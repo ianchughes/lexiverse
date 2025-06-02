@@ -2,7 +2,7 @@
 'use server';
 
 import { firestore } from '@/lib/firebase';
-import { collection, addDoc, serverTimestamp, doc, writeBatch, query, where, getDocs, updateDoc, deleteDoc, runTransaction, increment, getDoc } from 'firebase/firestore';
+import { collection, addDoc, serverTimestamp, doc, writeBatch, query, where, getDocs, updateDoc, deleteDoc, runTransaction, increment, getDoc, Timestamp } from 'firebase/firestore';
 import type { Circle, CircleMember, CircleInvite, UserProfile, CircleInviteStatus } from '@/types';
 import { customAlphabet } from 'nanoid';
 
@@ -183,6 +183,11 @@ export async function deleteCircleAction(payload: DeleteCirclePayload): Promise<
         const membersSnap = await getDocs(membersQuery);
         membersSnap.forEach(doc => batch.delete(doc.ref));
         
+        // Also delete associated invites
+        const invitesQuery = query(collection(firestore, 'CircleInvites'), where('circleId', '==', payload.circleId));
+        const invitesSnap = await getDocs(invitesQuery);
+        invitesSnap.forEach(doc => batch.delete(doc.ref));
+
         await batch.commit();
         return { success: true };
 
@@ -224,7 +229,8 @@ export async function sendCircleInviteAction(payload: SendCircleInvitePayload): 
     }
 
     let finalInviteeUserId: string | undefined = inviteeUserId;
-    let finalInviteeEmail: string | undefined = inviteeEmail;
+    let finalInviteeEmail: string | undefined = inviteeEmail?.toLowerCase();
+
 
     if (targetUsername) {
       const usersQuery = query(collection(firestore, "Users"), where("username", "==", targetUsername));
@@ -237,7 +243,7 @@ export async function sendCircleInviteAction(payload: SendCircleInvitePayload): 
         return { success: false, error: "You cannot invite yourself." };
       }
     } else if (finalInviteeEmail) {
-      const usersQuery = query(collection(firestore, "Users"), where("email", "==", finalInviteeEmail.toLowerCase()));
+      const usersQuery = query(collection(firestore, "Users"), where("email", "==", finalInviteeEmail));
       const userSnapshot = await getDocs(usersQuery);
       if (!userSnapshot.empty) {
         finalInviteeUserId = userSnapshot.docs[0].id; 
@@ -267,7 +273,7 @@ export async function sendCircleInviteAction(payload: SendCircleInvitePayload): 
     } else if (finalInviteeEmail) {
         existingInviteQuery = query(collection(firestore, 'CircleInvites'), 
             where('circleId', '==', circleId), 
-            where('inviteeEmail', '==', finalInviteeEmail.toLowerCase()),
+            where('inviteeEmail', '==', finalInviteeEmail),
             where('status', '==', 'SentToEmail')
         );
     }
@@ -278,7 +284,7 @@ export async function sendCircleInviteAction(payload: SendCircleInvitePayload): 
         }
     }
 
-    const newInviteData: {
+    const newInviteDataPayload: {
       circleId: string;
       circleName: string;
       inviterUserId: string;
@@ -286,7 +292,7 @@ export async function sendCircleInviteAction(payload: SendCircleInvitePayload): 
       inviteeUserId?: string;
       inviteeEmail?: string;
       status: CircleInviteStatus;
-      dateSent: any; // For serverTimestamp
+      dateSent: any; 
     } = {
       circleId: circleId,
       circleName: circleName,
@@ -297,13 +303,14 @@ export async function sendCircleInviteAction(payload: SendCircleInvitePayload): 
     };
 
     if (finalInviteeUserId !== undefined) {
-      newInviteData.inviteeUserId = finalInviteeUserId;
+      newInviteDataPayload.inviteeUserId = finalInviteeUserId;
     }
     if (finalInviteeEmail !== undefined) {
-      newInviteData.inviteeEmail = finalInviteeEmail.toLowerCase();
+      newInviteDataPayload.inviteeEmail = finalInviteeEmail;
     }
 
-    await addDoc(collection(firestore, 'CircleInvites'), newInviteData);
+
+    await addDoc(collection(firestore, 'CircleInvites'), newInviteDataPayload);
 
     if (!finalInviteeUserId && finalInviteeEmail) {
       console.log(`ACTION REQUIRED: Send email invite to ${finalInviteeEmail} for circle ${circleName}. Include invite ID for linking.`);
@@ -341,7 +348,7 @@ export async function respondToCircleInviteAction(payload: RespondToCircleInvite
       transaction.update(inviteRef, { 
         status: payload.responseType,
         dateResponded: serverTimestamp(),
-        inviteeUserId: payload.inviteeUserId,
+        inviteeUserId: payload.inviteeUserId, // Ensure inviteeUserId is set even if originally by email
       });
 
       if (payload.responseType === 'Accepted') {
@@ -361,7 +368,11 @@ export async function respondToCircleInviteAction(payload: RespondToCircleInvite
         transaction.update(circleRef, { memberCount: increment(1) });
 
         const inviterProfileRef = doc(firestore, 'Users', inviteData.inviterUserId);
-        transaction.update(inviterProfileRef, { overallPersistentScore: increment(10) });
+        // Award points only if inviterProfileRef exists (it should)
+        const inviterSnap = await transaction.get(inviterProfileRef);
+        if(inviterSnap.exists()){
+            transaction.update(inviterProfileRef, { overallPersistentScore: increment(10) });
+        }
 
         return { success: true, circleId: inviteData.circleId };
       }
@@ -398,7 +409,7 @@ export async function joinCircleWithInviteCodeAction(payload: JoinCircleWithInvi
     const memberRef = doc(firestore, 'CircleMembers', `${circleId}_${payload.userId}`);
     const memberSnap = await getDoc(memberRef);
     if (memberSnap.exists()) {
-      return { success: true, circleId, error: "You are already a member of this circle." };
+      return { success: true, circleId, error: "You are already a member of this circle." }; // Return success true, but with error message
     }
     
     const newMemberData: Omit<CircleMember, 'id'> = {
@@ -457,3 +468,98 @@ export async function updateUserCircleDailyScoresAction(payload: UpdateUserDaily
     return { success: false, error: error.message || "Failed to update circle daily scores." };
   }
 }
+
+// User-initiated invite management actions
+interface UserManageInvitePayload {
+  inviteId: string;
+  requestingUserId: string;
+  circleId: string; // To verify admin rights on this specific circle
+}
+
+export async function userDeleteCircleInviteAction(payload: UserManageInvitePayload): Promise<{ success: boolean; error?: string }> {
+  try {
+    const { inviteId, requestingUserId, circleId } = payload;
+
+    const inviteRef = doc(firestore, 'CircleInvites', inviteId);
+    const inviteSnap = await getDoc(inviteRef);
+    if (!inviteSnap.exists()) {
+      return { success: false, error: "Invite not found." };
+    }
+    const inviteData = inviteSnap.data() as CircleInvite;
+    if (inviteData.circleId !== circleId) {
+      return { success: false, error: "Invite does not belong to the specified circle." };
+    }
+
+    // Verify admin permission
+    const memberQuery = query(collection(firestore, 'CircleMembers'), 
+      where('circleId', '==', circleId), 
+      where('userId', '==', requestingUserId),
+      where('role', '==', 'Admin')
+    );
+    const memberSnap = await getDocs(memberQuery);
+    if (memberSnap.empty) {
+      // Fallback: check if the requester is the creator of the circle
+      const circleDoc = await getDoc(doc(firestore, 'Circles', circleId));
+      if (!circleDoc.exists() || (circleDoc.data() as Circle).creatorUserID !== requestingUserId) {
+        return { success: false, error: "You don't have permission to manage invites for this circle." };
+      }
+    }
+
+    await deleteDoc(inviteRef);
+    return { success: true };
+  } catch (error: any) {
+    console.error("Error in userDeleteCircleInviteAction:", error);
+    return { success: false, error: error.message || "Failed to delete invite." };
+  }
+}
+
+export async function userResendCircleInviteAction(payload: UserManageInvitePayload): Promise<{ success: boolean; error?: string }> {
+  try {
+    const { inviteId, requestingUserId, circleId } = payload;
+
+    const inviteRef = doc(firestore, 'CircleInvites', inviteId);
+    const inviteSnap = await getDoc(inviteRef);
+    if (!inviteSnap.exists()) {
+      return { success: false, error: "Invite not found." };
+    }
+    const inviteData = inviteSnap.data() as CircleInvite;
+    if (inviteData.circleId !== circleId) {
+      return { success: false, error: "Invite does not belong to the specified circle." };
+    }
+    if (inviteData.status !== 'Sent' && inviteData.status !== 'SentToEmail') {
+        return { success: false, error: "Only pending invites can be resent." };
+    }
+
+    // Verify admin permission (same logic as delete)
+    const memberQuery = query(collection(firestore, 'CircleMembers'), 
+      where('circleId', '==', circleId), 
+      where('userId', '==', requestingUserId),
+      where('role', '==', 'Admin')
+    );
+    const memberSnap = await getDocs(memberQuery);
+     if (memberSnap.empty) {
+      const circleDoc = await getDoc(doc(firestore, 'Circles', circleId));
+      if (!circleDoc.exists() || (circleDoc.data() as Circle).creatorUserID !== requestingUserId) {
+        return { success: false, error: "You don't have permission to manage invites for this circle." };
+      }
+    }
+
+    await updateDoc(inviteRef, {
+      lastReminderSentTimestamp: serverTimestamp() as Timestamp
+    });
+
+    if (inviteData.status === 'SentToEmail' && inviteData.inviteeEmail) {
+      console.log(`ACTION REQUIRED (User Resend): Send email invite reminder to ${inviteData.inviteeEmail} for circle ${inviteData.circleName}. Invite ID: ${inviteId}`);
+    } else if (inviteData.status === 'Sent' && inviteData.inviteeUserId) {
+      // Optionally, create a new in-app notification or just rely on the timestamp update.
+      console.log(`User Resend: In-app invite reminder logged for user ${inviteData.inviteeUserId} for circle ${inviteData.circleName}. Invite ID: ${inviteId}`);
+    }
+
+    return { success: true };
+  } catch (error: any) {
+    console.error("Error in userResendCircleInviteAction:", error);
+    return { success: false, error: error.message || "Failed to resend invite." };
+  }
+}
+
+    
