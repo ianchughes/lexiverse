@@ -51,3 +51,18 @@ export interface AdminRoleDoc {
 export interface UserProfileWithRole extends UserProfile {
   role: UserRole;
 }
+
+export interface WordSubmission {
+  id?: string; // Firestore will auto-generate
+  wordText: string;
+  definition?: string;
+  frequency?: number; // e.g., Zipf score
+  status: 'PendingModeratorReview' | 'PendingAdminApproval' | 'Approved' | 'Rejected_NotReal' | 'Rejected_Admin' | 'DuplicateApproved';
+  submittedByUID: string;
+  submittedTimestamp: any; // Firestore serverTimestamp
+  puzzleDateGMT: string; // YYYY-MM-DD format
+  moderatorNotes?: string;
+  adminNotes?: string;
+  assignedPointsOnApproval?: number;
+  wordsAPIFrequency?: number; // Stored by moderator
+}
