@@ -50,8 +50,6 @@ export interface AdminRoleDoc {
 
 export interface UserProfileWithRole extends UserProfile {
   role: UserRole;
-  ownedWordsCount?: number;
-  ownedWords?: string[];
 }
 
 export type WordSubmissionStatus =
@@ -126,3 +124,4 @@ export type GeneratePuzzleSuggestionsOutput = {
 export type { GeneratePuzzleSuggestionsInput } from '@/ai/flows/generate-puzzle-suggestions'; 
 // Re-alias for clarity if used elsewhere, though PuzzleSuggestion from above is likely more used on client.
 export type { AIPuzzleSuggestionFromFlow as AIPuzzleSuggestionType };
+

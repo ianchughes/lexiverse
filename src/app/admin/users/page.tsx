@@ -4,7 +4,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { firestore } from '@/lib/firebase';
 import { collection, getDocs, doc, updateDoc, setDoc, deleteDoc, Timestamp } from 'firebase/firestore';
-import type { UserProfile, AdminRoleDoc, UserRole, AccountStatus, UserProfileWithRole, MasterWordType } from '@/types';
+import type { UserProfile, AdminRoleDoc, UserRole, AccountStatus, UserProfileWithRole } from '@/types';
 
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -12,13 +12,10 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter, DialogClose } from "@/components/ui/dialog";
-import { ScrollArea } from "@/components/ui/scroll-area";
 import { useToast } from '@/hooks/use-toast';
-import { MoreHorizontal, UserCog, UserCheck, UserX, ShieldCheck, ShieldOff, Star } from 'lucide-react';
+import { MoreHorizontal, UserCog, UserCheck, UserX, ShieldCheck, ShieldOff } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 
-const MASTER_WORDS_COLLECTION = "Words"; 
 
 export default function UserManagementPage() {
   const { toast } = useToast();
@@ -32,8 +29,6 @@ export default function UserManagementPage() {
   const [newStatus, setNewStatus] = useState<AccountStatus | null>(null);
   const [isAlertDialogOpen, setIsAlertDialogOpen] = useState(false);
 
-  const [showOwnedWordsDialog, setShowOwnedWordsDialog] = useState(false);
-  const [selectedUserForWords, setSelectedUserForWords] = useState<UserProfileWithRole | null>(null);
 
   const fetchUsersAndRoles = useCallback(async () => {
     setIsLoading(true);
@@ -48,32 +43,17 @@ export default function UserManagementPage() {
         adminRolesMap.set(d.id, roleData.role);
       });
 
-      const masterWordsSnapshot = await getDocs(collection(firestore, MASTER_WORDS_COLLECTION));
-      const wordsByOwner = new Map<string, string[]>();
-      masterWordsSnapshot.forEach(docSnap => {
-        const wordData = docSnap.data() as MasterWordType;
-        if (wordData.originalSubmitterUID) {
-          if (!wordsByOwner.has(wordData.originalSubmitterUID)) {
-            wordsByOwner.set(wordData.originalSubmitterUID, []);
-          }
-          wordsByOwner.get(wordData.originalSubmitterUID)!.push(wordData.wordText);
-        }
-      });
-
       const usersWithRolesData: UserProfileWithRole[] = fetchedUsers.map(user => {
-        const ownedWordsList = wordsByOwner.get(user.uid) || [];
         return {
           ...user,
           role: adminRolesMap.get(user.uid) || 'user',
-          ownedWordsCount: ownedWordsList.length,
-          ownedWords: ownedWordsList,
         };
       });
 
       setUsers(usersWithRolesData);
     } catch (error) {
-      console.error("Error fetching users, roles, and words:", error);
-      toast({ title: "Error", description: "Could not fetch user and word data.", variant: "destructive" });
+      console.error("Error fetching users and roles:", error);
+      toast({ title: "Error", description: "Could not fetch user data.", variant: "destructive" });
     } finally {
       setIsLoading(false);
     }
@@ -136,10 +116,6 @@ export default function UserManagementPage() {
     }
   };
 
-  const handleShowOwnedWords = (user: UserProfileWithRole) => {
-    setSelectedUserForWords(user);
-    setShowOwnedWordsDialog(true);
-  };
 
   const filteredUsers = users.filter(user => 
     user.username.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -152,7 +128,7 @@ export default function UserManagementPage() {
       <div>
         <h1 className="text-3xl font-bold tracking-tight">User Management</h1>
         <p className="text-muted-foreground mt-1">
-          View user details, manage account status, roles, scores, and owned words.
+          View user details, manage account status, roles, and scores.
         </p>
       </div>
 
@@ -182,7 +158,6 @@ export default function UserManagementPage() {
                   <TableHead>Username</TableHead>
                   <TableHead>Email</TableHead>
                   <TableHead>Score</TableHead>
-                  <TableHead>Owned Words</TableHead>
                   <TableHead>Status</TableHead>
                   <TableHead>Role</TableHead>
                   <TableHead>Date Created</TableHead>
@@ -196,15 +171,6 @@ export default function UserManagementPage() {
                     <TableCell>{user.username}</TableCell>
                     <TableCell>{user.email}</TableCell>
                     <TableCell>{user.overallPersistentScore}</TableCell>
-                    <TableCell>
-                      {user.ownedWordsCount !== undefined && user.ownedWordsCount > 0 ? (
-                        <Button variant="link" className="p-0 h-auto text-primary" onClick={() => handleShowOwnedWords(user)}>
-                          {user.ownedWordsCount} <Star className="h-3 w-3 ml-1 fill-amber-400 text-amber-500"/>
-                        </Button>
-                      ) : (
-                        user.ownedWordsCount !== undefined ? user.ownedWordsCount : 'N/A'
-                      )}
-                    </TableCell>
                     <TableCell>{getStatusBadge(user.accountStatus)}</TableCell>
                     <TableCell>{getRoleBadge(user.role)}</TableCell>
                     <TableCell>
@@ -277,39 +243,10 @@ export default function UserManagementPage() {
           </AlertDialogContent>
         </AlertDialog>
       )}
-
-      {selectedUserForWords && (
-        <Dialog open={showOwnedWordsDialog} onOpenChange={setShowOwnedWordsDialog}>
-          <DialogContent className="sm:max-w-md">
-            <DialogHeader>
-              <DialogTitle>Words Owned by {selectedUserForWords.username}</DialogTitle>
-              <DialogDescription>
-                This user was the original submitter for the following words:
-              </DialogDescription>
-            </DialogHeader>
-            {selectedUserForWords.ownedWords && selectedUserForWords.ownedWords.length > 0 ? (
-              <ScrollArea className="h-60 my-4 border rounded-md p-2">
-                <ul className="space-y-1">
-                  {selectedUserForWords.ownedWords.map(word => (
-                    <li key={word} className="text-sm p-1 bg-muted/50 rounded-sm">{word}</li>
-                  ))}
-                </ul>
-              </ScrollArea>
-            ) : (
-              <p className="my-4 text-muted-foreground">This user has not claimed any words yet.</p>
-            )}
-            <DialogFooter>
-              <DialogClose asChild>
-                <Button type="button" variant="outline">Close</Button>
-              </DialogClose>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
-      )}
-
        <p className="text-xs text-muted-foreground text-center">
-            User role and status changes are made directly to Firestore. Owned words data is fetched from the 'Words' collection.
+            User role and status changes are made directly to Firestore.
         </p>
     </div>
   );
 }
+
