@@ -15,7 +15,7 @@ import type { SeedingLetter, SubmittedWord, GameState, WordSubmission, SystemSet
 import { useToast } from '@/hooks/use-toast';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { PlayCircle, Check, AlertTriangle, Send, Loader2, ThumbsDown, Users, BellRing } from 'lucide-react';
+import { PlayCircle, Check, AlertTriangle, Send, Loader2, ThumbsDown, Users, BellRing, LogIn, UserPlus } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { firestore, auth } from '@/lib/firebase';
 import { collection, addDoc, serverTimestamp, doc, getDoc, updateDoc, increment, Timestamp, writeBatch, getDocs, query, where } from 'firebase/firestore';
@@ -170,9 +170,14 @@ export default function HomePage() {
 
 
   useEffect(() => {
-    const todayGMTStr = format(new Date(), 'yyyy-MM-dd'); 
-    initializeGameData(todayGMTStr);
-  }, [initializeGameData]); 
+    if (!isLoadingAuth && currentUser) { // Only init game data if user is loaded and exists
+        const todayGMTStr = format(new Date(), 'yyyy-MM-dd'); 
+        initializeGameData(todayGMTStr);
+    } else if (!isLoadingAuth && !currentUser) { // If auth loaded and no user, stop initial loading
+        setIsLoadingInitialState(false);
+        setGameState('idle'); // Or a specific state for non-logged-in users
+    }
+  }, [initializeGameData, isLoadingAuth, currentUser]); 
 
 
   useEffect(() => {
@@ -225,8 +230,8 @@ export default function HomePage() {
   }, [currentUser, isLoadingAuth]);
 
   const startGame = () => {
-    if (isLoadingAuth) { 
-        toast({title: "Loading...", description: "Please wait while we verify your session.", variant: "default"});
+    if (isLoadingAuth || !currentUser) { 
+        toast({title: "Login Required", description: "Please log in or register to play.", variant: "default"});
         return;
     }
     if (hasPlayedToday) {
@@ -272,11 +277,6 @@ export default function HomePage() {
     if (guessedWotD && actualWordOfTheDayText && approvedWords.has(actualWordOfTheDayText.toUpperCase())) { 
       finalScore = Math.round(finalScore * 2); 
     } else if (guessedWotD && actualWordOfTheDayText && !approvedWords.has(actualWordOfTheDayText.toUpperCase())) {
-      // If WotD was "claimed" (not in DB initially), the 40 points are direct, double score bonus happens if it gets approved and is in DB next time.
-      // For now, the "guessedWotD" flag enables the *potential* for future doubling, but the main score calculation is based on current state.
-      // The 40 points for the "claim" are already in sessionScore.
-      // We will apply the 2x multiplier to the final score if guessedWotD is true, to align with existing WotD bonus logic,
-      // even if it was a "claimed" word this time. This makes the immediate reward consistent.
       finalScore = Math.round(finalScore * 2);
     }
 
@@ -295,7 +295,7 @@ export default function HomePage() {
         } else {
             const todayGMTDate = new Date(currentPuzzleDate + "T00:00:00Z"); 
             
-            if (guessedWotD) { // WotD string was matched
+            if (guessedWotD) { 
                 if (userProfile.lastPlayedDate_GMT) {
                     const lastPlayedDate = new Date(userProfile.lastPlayedDate_GMT + "T00:00:00Z");
                     const expectedYesterday = new Date(todayGMTDate);
@@ -382,7 +382,6 @@ export default function HomePage() {
 
     if (isTheWotDString) {
       if (approvedWordDetails) {
-        // WotD is guessed AND it's already in the master dictionary
         const points = Math.round(wordText.length * approvedWordDetails.frequency);
         toast({ title: "Word of the Day!", description: `You found "${wordText}" for ${points} base points! (Bonus applied at end)`, className: "bg-accent text-accent-foreground" });
         setSessionScore((prev) => prev + points);
@@ -404,15 +403,12 @@ export default function HomePage() {
           }
         }
       } else {
-        // WotD is guessed BUT it's NOT in the master dictionary (User "claims" it)
-        const points = 40; // Fixed 40 points as per request
+        const points = 40; 
         toast({ title: "Word of the Day Claimed!", description: `You found the special Word of the Day "${wordText}" for ${points} points! It's now submitted for review.`, className: "bg-accent text-accent-foreground" });
         setSessionScore((prev) => prev + points);
         setSubmittedWords((prev) => [...prev, { id: crypto.randomUUID(), text: wordText, points, isWotD: true }]);
         
-        // Directly submit for review, using definition/points from the puzzle if available
         const definitionForSubmission = actualWordOfTheDayDefinition || `Definition for Word of the Day: ${wordText}`;
-        // Estimate frequency based on points, or use a default if points not set. Default to 1 if calculation is 0 or less.
         const frequencyForSubmission = actualWordOfTheDayPoints ? Math.max(1, actualWordOfTheDayPoints / wordText.length) : 3; 
         await saveSubmissionToFirestore(wordText, definitionForSubmission, frequencyForSubmission, true);
       }
@@ -420,7 +416,6 @@ export default function HomePage() {
       return;
     }
 
-    // Word is NOT the WotD string, continue with normal word checks
     if (approvedWordDetails) {
       const points = Math.round(wordText.length * approvedWordDetails.frequency);
       toast({ title: "Word Found!", description: `"${wordText}" is worth ${points} points.`, variant: "default" });
@@ -468,7 +463,6 @@ export default function HomePage() {
       return;
     }
 
-    // Word is not WotD, not approved, not rejected => show submit for review dialog
     setWordToReview(wordText);
     setShowSubmitForReviewDialog(true);
   };
@@ -500,7 +494,6 @@ export default function HomePage() {
         const mockFrequency = parseFloat((Math.random() * 6 + 1).toFixed(2));
         await saveSubmissionToFirestore(wordToSubmit, mockDefinition, mockFrequency);
       } else {
-        // Word Not Recognized (Simulated) - Deduct points
         const pointsDeducted = wordToSubmit.length;
         setSessionScore(prev => prev - pointsDeducted);
         toast({
@@ -576,7 +569,7 @@ export default function HomePage() {
         status: 'PendingModeratorReview',
         submittedByUID: currentUser.uid,
         puzzleDateGMT: currentPuzzleDate,
-        isWotDClaim: isWotDClaim, // Add the flag here
+        isWotDClaim: isWotDClaim, 
     };
     try {
         await addDoc(collection(firestore, WORD_SUBMISSIONS_QUEUE), {
@@ -610,7 +603,7 @@ export default function HomePage() {
   const currentWordText = currentWord.map(l => l.char).join('');
   const selectedLetterIndices = currentWord.map(l => l.index);
 
-  if (isLoadingInitialState && isLoadingAuth) {
+  if (isLoadingAuth || isLoadingInitialState) {
     return (
       <div className="flex flex-col items-center justify-center text-center h-full py-12">
         <Loader2 className="w-16 h-16 text-primary animate-spin mb-4" />
@@ -619,6 +612,30 @@ export default function HomePage() {
     );
   }
 
+  if (!currentUser) {
+    return (
+      <div className="flex flex-col items-center justify-center text-center h-full py-12 space-y-6">
+        <AlertTriangle className="w-16 h-16 text-primary mb-4" />
+        <h1 className="text-3xl font-headline mb-2">Welcome to Lexiverse!</h1>
+        <p className="text-xl text-muted-foreground max-w-md">
+          Please log in or register to play today's word puzzle and join the fun.
+        </p>
+        <div className="flex gap-4">
+          <Button size="lg" asChild>
+            <Link href="/auth/login">
+              <LogIn className="mr-2 h-5 w-5" /> Log In
+            </Link>
+          </Button>
+          <Button size="lg" variant="outline" asChild>
+            <Link href="/auth/register">
+              <UserPlus className="mr-2 h-5 w-5" /> Register
+            </Link>
+          </Button>
+        </div>
+      </div>
+    );
+  }
+  
   if (gameState === 'cooldown') {
     return (
       <div className="flex flex-col items-center justify-center text-center h-full py-12">
@@ -773,3 +790,4 @@ export default function HomePage() {
     </div>
   );
 }
+
