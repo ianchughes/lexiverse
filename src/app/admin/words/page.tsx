@@ -2,9 +2,10 @@
 'use client';
 
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
-import { firestore, auth } from '@/lib/firebase';
+import { firestore } from '@/lib/firebase'; // Removed auth import as currentUser comes from useAuth
 import { collection, query, where, getDocs, doc, Timestamp, orderBy, limit, startAfter } from 'firebase/firestore';
 import type { WordSubmission, MasterWordType, RejectedWordType, RejectionType } from '@/types';
+import { useAuth } from '@/contexts/AuthContext'; // Import useAuth
 
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -17,7 +18,7 @@ import { Loader2, RefreshCw, Star, CheckCircle, XCircle, ThumbsDown, ShieldAlert
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { format } from 'date-fns';
 import { Skeleton } from '@/components/ui/skeleton';
-import { adminApproveWordSubmissionAction, adminRejectWordSubmissionAction, adminBulkProcessWordSubmissionsAction } from './actions';
+import { adminBulkProcessWordSubmissionsAction } from './actions'; // Removed single actions for now
 
 const WORD_SUBMISSIONS_QUEUE = "WordSubmissionsQueue";
 const MASTER_WORDS_COLLECTION = "Words";
@@ -27,6 +28,7 @@ type WordAction = 'noAction' | 'approve' | 'rejectGibberish' | 'rejectAdminDecis
 
 export default function WordManagementPage() {
   const { toast } = useToast();
+  const { currentUser } = useAuth(); // Get currentUser from AuthContext
   const [pendingSubmissions, setPendingSubmissions] = useState<WordSubmission[]>([]);
   const [isLoadingSubmissions, setIsLoadingSubmissions] = useState(true);
   
@@ -39,13 +41,12 @@ export default function WordManagementPage() {
   const [wordsBySelectedSubmitter, setWordsBySelectedSubmitter] = useState<MasterWordType[]>([]);
   const [hasMounted, setHasMounted] = useState(false);
 
-  // State for bulk actions and pagination
   const [submissionActions, setSubmissionActions] = useState<Record<string, WordAction>>({});
   const [selectedRowIds, setSelectedRowIds] = useState<Set<string>>(new Set());
   const [itemsPerPage, setItemsPerPage] = useState(25);
   const [currentPage, setCurrentPage] = useState(1);
   const [isProcessingBulk, setIsProcessingBulk] = useState(false);
-  const [lastVisibleSubmission, setLastVisibleSubmission] = useState<any>(null); // For Firestore pagination
+  const [lastVisibleSubmission, setLastVisibleSubmission] = useState<any>(null);
 
 
   useEffect(() => {
@@ -57,13 +58,13 @@ export default function WordManagementPage() {
     if (resetPagination) {
         setLastVisibleSubmission(null);
         setCurrentPage(1);
-        setPendingSubmissions([]); // Clear existing if resetting
+        setPendingSubmissions([]); 
     }
     try {
       let q = query(
         collection(firestore, WORD_SUBMISSIONS_QUEUE), 
         where("status", "==", "PendingModeratorReview"),
-        orderBy("submittedTimestamp", "asc"), // Process oldest first
+        orderBy("submittedTimestamp", "asc"), 
         limit(itemsPerPage)
       );
 
@@ -86,7 +87,6 @@ export default function WordManagementPage() {
       setPendingSubmissions(prev => resetPagination ? submissions : [...prev, ...submissions]);
       setLastVisibleSubmission(querySnapshot.docs[querySnapshot.docs.length - 1]);
 
-      // Initialize actions for newly fetched submissions
       setSubmissionActions(prevActions => {
         const newActions = {...prevActions};
         submissions.forEach(s => {
@@ -125,8 +125,8 @@ export default function WordManagementPage() {
   }, [toast]);
 
   useEffect(() => {
-    fetchPendingSubmissions(true); // Initial fetch with pagination reset
-  }, [itemsPerPage]); // Re-fetch if itemsPerPage changes
+    fetchPendingSubmissions(true); 
+  }, [itemsPerPage, fetchPendingSubmissions]); // Added fetchPendingSubmissions to dependency array
 
    useEffect(() => {
     fetchMasterWords();
@@ -136,7 +136,7 @@ export default function WordManagementPage() {
   const handleLoadMoreSubmissions = () => {
     if (lastVisibleSubmission) {
         setCurrentPage(prev => prev + 1);
-        fetchPendingSubmissions(false); // Fetch next page
+        fetchPendingSubmissions(false); 
     } else {
         toast({ title: "No More Submissions", description: "All pending submissions have been loaded.", variant: "default"});
     }
@@ -170,13 +170,19 @@ export default function WordManagementPage() {
   };
 
   const handleBulkProcessSubmissions = async () => {
+    if (!currentUser) { // Client-side authentication check
+      toast({ title: "Authentication Error", description: "You must be logged in to moderate. Please log in again.", variant: "destructive" });
+      setIsProcessingBulk(false);
+      return;
+    }
+
     if (selectedRowIds.size === 0) {
       toast({ title: "No Submissions Selected", description: "Please select submissions to process.", variant: "default" });
       return;
     }
     setIsProcessingBulk(true);
 
-    const submissionsToProcessPayload: BulkSubmissionItem[] = [];
+    const submissionsToProcessPayload: Array<{ submissionId: string; wordText: string; definition?: string; frequency?: number; submittedByUID: string; puzzleDateGMT: string; action: WordAction; isWotDClaim?: boolean; }> = [];
     selectedRowIds.forEach(id => {
       const submission = pendingSubmissions.find(s => s.id === id);
       const action = submissionActions[id];
@@ -201,7 +207,10 @@ export default function WordManagementPage() {
     }
 
     try {
-      const result = await adminBulkProcessWordSubmissionsAction({ submissionsToProcess: submissionsToProcessPayload });
+      const result = await adminBulkProcessWordSubmissionsAction({ 
+        actingAdminId: currentUser.uid, // Pass the admin's UID
+        submissionsToProcess: submissionsToProcessPayload 
+      });
       let successCount = 0;
       let errorCount = 0;
       result.results.forEach(res => {
@@ -219,11 +228,9 @@ export default function WordManagementPage() {
          toast({ title: "Bulk Processing Error", description: `An error occurred during bulk processing. ${successCount} processed, ${errorCount} failed. Details: ${result.error || ''}`, variant: "destructive" });
       }
       
-      // Refresh and clear selections
-      await fetchPendingSubmissions(true); // Full refresh
+      await fetchPendingSubmissions(true); 
       setSelectedRowIds(new Set());
-      // submissionActions will be reset by fetchPendingSubmissions
-      fetchMasterWords(); // Refresh master list too
+      fetchMasterWords(); 
 
     } catch (error: any) {
       toast({ title: "Bulk Action Failed", description: error.message || "Could not process submissions.", variant: "destructive" });
@@ -423,7 +430,7 @@ export default function WordManagementPage() {
                       <TableCell className="text-center">{word.frequency.toFixed(2)}</TableCell>
                       <TableCell>
                         {word.originalSubmitterUID ? (
-                          <Button variant="link" className="p-0 h-auto text-primary font-mono text-xs" onClick={() => { /* Logic for showing words by submitter, if needed */ setSelectedSubmitterUID(word.originalSubmitterUID!); setShowWordsBySubmitterDialog(true); }} title={word.originalSubmitterUID}>
+                          <Button variant="link" className="p-0 h-auto text-primary font-mono text-xs" onClick={() => { setSelectedSubmitterUID(word.originalSubmitterUID!); setShowWordsBySubmitterDialog(true); }} title={word.originalSubmitterUID}>
                             {word.originalSubmitterUID.substring(0,10)}... <Star className="h-3 w-3 ml-1 fill-amber-400 text-amber-500 inline"/>
                           </Button>
                         ) : (
@@ -444,9 +451,6 @@ export default function WordManagementPage() {
             </p>
         </CardFooter>
       </Card>
-
-      {/* Dialogs for single approve/reject are removed as primary interaction is now bulk. Can be added back if needed. */}
-      {/* Dialog for showing words by submitter can remain if useful */}
        <p className="text-xs text-muted-foreground text-center">
             Word moderation actions update Firestore directly. Use the 'Action' column and 'Process Selected' button.
         </p>

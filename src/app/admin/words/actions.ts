@@ -11,10 +11,10 @@ const REJECTED_WORDS_COLLECTION = "RejectedWords";
 const USERS_COLLECTION = "Users";
 
 
-export async function adminApproveWordSubmissionAction(payload: { submissionId: string, wordText: string, definition?: string, frequency?: number, submittedByUID: string, puzzleDateGMT: string, moderatorNotes?: string, isWotDClaim?: boolean }): Promise<{ success: boolean; error?: string }> {
-    const { submissionId, wordText, definition, frequency, submittedByUID, puzzleDateGMT, moderatorNotes, isWotDClaim } = payload;
-    const currentUserUID = auth.currentUser?.uid;
-    if (!currentUserUID) {
+export async function adminApproveWordSubmissionAction(payload: { submissionId: string, wordText: string, definition?: string, frequency?: number, submittedByUID: string, puzzleDateGMT: string, moderatorNotes?: string, isWotDClaim?: boolean, actingAdminId: string }): Promise<{ success: boolean; error?: string }> {
+    const { submissionId, wordText, definition, frequency, submittedByUID, puzzleDateGMT, moderatorNotes, isWotDClaim, actingAdminId } = payload;
+    
+    if (!actingAdminId) {
         return { success: false, error: "Authentication Error: You must be logged in to moderate." };
     }
 
@@ -25,16 +25,12 @@ export async function adminApproveWordSubmissionAction(payload: { submissionId: 
         
         const masterWordSnap = await getFirestoreDoc(masterWordDocRef);
         if (masterWordSnap.exists()) {
-            // Word already exists, mark submission as duplicate and delete it (or just delete)
-            // For single action, we update. For bulk, we might just delete if it's a duplicate.
-            // Let's keep the update for now if single action dialog is still used elsewhere.
             await updateDoc(submissionDocRef, {
                 status: 'Rejected_Duplicate',
-                reviewedByUID: currentUserUID,
+                reviewedByUID: actingAdminId,
                 reviewedTimestamp: serverTimestamp(),
                 moderatorNotes: `Rejected as duplicate. Word already exists. ${moderatorNotes || ''}`.trim(),
             });
-             // It's better to delete from queue after processing in all cases.
             await deleteDoc(submissionDocRef);
             return { success: true, error: "Word already exists in master dictionary. Marked as duplicate." };
         } else {
@@ -43,7 +39,7 @@ export async function adminApproveWordSubmissionAction(payload: { submissionId: 
                 definition: definition || "No definition provided.",
                 frequency: frequency || 1, 
                 status: 'Approved',
-                addedByUID: currentUserUID,
+                addedByUID: actingAdminId,
                 dateAdded: serverTimestamp() as Timestamp,
                 originalSubmitterUID: submittedByUID,
                 puzzleDateGMTOfSubmission: puzzleDateGMT,
@@ -58,10 +54,9 @@ export async function adminApproveWordSubmissionAction(payload: { submissionId: 
     }
 }
 
-export async function adminRejectWordSubmissionAction(payload: { submissionId: string, wordText: string, submittedByUID: string, rejectionType: RejectionType }): Promise<{ success: boolean; error?: string }> {
-    const { submissionId, wordText, submittedByUID, rejectionType } = payload;
-    const currentUserUID = auth.currentUser?.uid;
-    if (!currentUserUID) {
+export async function adminRejectWordSubmissionAction(payload: { submissionId: string, wordText: string, submittedByUID: string, rejectionType: RejectionType, actingAdminId: string }): Promise<{ success: boolean; error?: string }> {
+    const { submissionId, wordText, submittedByUID, rejectionType, actingAdminId } = payload;
+    if (!actingAdminId) {
         return { success: false, error: "Authentication Error: You must be logged in to moderate." };
     }
     
@@ -73,7 +68,7 @@ export async function adminRejectWordSubmissionAction(payload: { submissionId: s
         const newRejectedWord: RejectedWordType = {
             wordText: wordKey,
             rejectionType: rejectionType,
-            rejectedByUID: currentUserUID,
+            rejectedByUID: actingAdminId,
             dateRejected: serverTimestamp() as Timestamp,
             originalSubmitterUID: submittedByUID,
         };
@@ -112,19 +107,20 @@ interface BulkSubmissionItem {
 }
 
 interface BulkProcessPayload {
+  actingAdminId: string; // Added actingAdminId
   submissionsToProcess: BulkSubmissionItem[];
 }
 
 export async function adminBulkProcessWordSubmissionsAction(payload: BulkProcessPayload): Promise<{ success: boolean; results: Array<{id: string, status: string, error?: string}>; error?: string }> {
-    const currentUserUID = auth.currentUser?.uid;
-    if (!currentUserUID) {
+    const { actingAdminId, submissionsToProcess } = payload;
+    if (!actingAdminId) {
         return { success: false, results: [], error: "Authentication Error: You must be logged in to moderate." };
     }
 
     const batch = writeBatch(firestore);
     const results: Array<{id: string, status: string, error?: string}> = [];
 
-    for (const item of payload.submissionsToProcess) {
+    for (const item of submissionsToProcess) {
         if (item.action === 'noAction') {
             results.push({ id: item.submissionId, status: 'skipped' });
             continue;
@@ -136,12 +132,9 @@ export async function adminBulkProcessWordSubmissionsAction(payload: BulkProcess
         try {
             if (item.action === 'approve') {
                 const masterWordDocRef = doc(firestore, MASTER_WORDS_COLLECTION, wordKey);
-                const masterWordSnap = await getFirestoreDoc(masterWordDocRef); // Needs to be awaited outside batch for read
+                const masterWordSnap = await getFirestoreDoc(masterWordDocRef); 
 
                 if (masterWordSnap.exists()) {
-                    // Word already exists, mark original submission as duplicate
-                    // For bulk, we might just delete and log, rather than updating the submission that will be deleted anyway.
-                    // Let's assume we delete it and report it as a duplicate.
                     batch.delete(submissionDocRef);
                     results.push({ id: item.submissionId, status: 'approved_duplicate_deleted' });
                 } else {
@@ -150,7 +143,7 @@ export async function adminBulkProcessWordSubmissionsAction(payload: BulkProcess
                         definition: item.definition || "No definition provided.",
                         frequency: item.frequency || 1,
                         status: 'Approved',
-                        addedByUID: currentUserUID,
+                        addedByUID: actingAdminId, // Use actingAdminId
                         dateAdded: serverTimestamp() as Timestamp,
                         originalSubmitterUID: item.submittedByUID,
                         puzzleDateGMTOfSubmission: item.puzzleDateGMT,
@@ -164,7 +157,7 @@ export async function adminBulkProcessWordSubmissionsAction(payload: BulkProcess
                 const newRejectedWord: RejectedWordType = {
                     wordText: wordKey,
                     rejectionType: item.action === 'rejectGibberish' ? 'Gibberish' : 'AdminDecision',
-                    rejectedByUID: currentUserUID,
+                    rejectedByUID: actingAdminId, // Use actingAdminId
                     dateRejected: serverTimestamp() as Timestamp,
                     originalSubmitterUID: item.submittedByUID,
                 };
@@ -173,15 +166,10 @@ export async function adminBulkProcessWordSubmissionsAction(payload: BulkProcess
 
                 if (item.action === 'rejectGibberish') {
                     const userDocRef = doc(firestore, USERS_COLLECTION, item.submittedByUID);
-                    // Note: Firestore batch writes cannot depend on previous reads in the same batch for increments.
-                    // This increment should ideally happen AFTER the batch commit, or rely on a separate transaction if it must be atomic with user data.
-                    // For simplicity here, we'll do it outside the batch or accept it's not perfectly atomic with the batch.
-                    // Best practice would be another transaction or a Cloud Function trigger.
-                    // For this implementation, we'll update it directly, understanding this limitation.
                     const userSnap = await getFirestoreDoc(userDocRef);
                     if (userSnap.exists()) {
                        const deductionPoints = item.wordText.length;
-                       // This update is outside the batch, not ideal for atomicity but simpler for now.
+                       // This update is outside the batch.
                        await updateDoc(userDocRef, { overallPersistentScore: increment(-deductionPoints) });
                     }
                 }
@@ -197,8 +185,7 @@ export async function adminBulkProcessWordSubmissionsAction(payload: BulkProcess
         return { success: true, results };
     } catch (error: any) {
         console.error("Error committing bulk word processing batch:", error);
-        // Add unprocessed items to results with error
-        payload.submissionsToProcess.forEach(item => {
+        submissionsToProcess.forEach(item => {
             if (!results.find(r => r.id === item.submissionId)) {
                  results.push({ id: item.submissionId, status: 'error_batch_commit', error: error.message });
             }
