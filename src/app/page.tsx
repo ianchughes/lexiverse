@@ -10,12 +10,12 @@ import { GameTimer } from '@/components/game/GameTimer';
 import { SubmittedWordsList } from '@/components/game/SubmittedWordsList';
 import { DailyDebriefDialog } from '@/components/game/DailyDebriefDialog';
 import { ShareMomentDialog } from '@/components/game/ShareMomentDialog';
-import { WelcomeInstructionsDialog } from '@/components/game/WelcomeInstructionsDialog'; // Import new dialog
+import { WelcomeInstructionsDialog } from '@/components/game/WelcomeInstructionsDialog';
 import type { SeedingLetter, SubmittedWord, GameState, WordSubmission, SystemSettings, MasterWordType, RejectedWordType, UserProfile, CircleInvite, DailyPuzzle } from '@/types';
 import { useToast } from '@/hooks/use-toast';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { PlayCircle, Check, AlertTriangle, Send, Loader2, ThumbsDown, Users, BellRing, LogIn, UserPlus } from 'lucide-react';
+import { PlayCircle, Check, AlertTriangle, Send, Loader2, ThumbsDown, Users, BellRing, LogIn, UserPlus, Clock, Key, Star, UsersRound, Gift } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { firestore, auth } from '@/lib/firebase';
 import { collection, addDoc, serverTimestamp, doc, getDoc, updateDoc, increment, Timestamp, writeBatch, getDocs, query, where } from 'firebase/firestore';
@@ -86,7 +86,7 @@ export default function HomePage() {
 
 
       if (puzzleSnap.exists()) {
-        const puzzleData = puzzleSnap.data() as DailyPuzzle; // Cast to DailyPuzzle
+        const puzzleData = puzzleSnap.data() as DailyPuzzle;
         effectiveWotDText = puzzleData.wordOfTheDayText.toUpperCase();
         currentSeedingChars = puzzleData.seedingLetters.toUpperCase().split('');
         wotdDefinition = puzzleData.wordOfTheDayDefinition || `Definition for ${effectiveWotDText}`;
@@ -170,12 +170,12 @@ export default function HomePage() {
 
 
   useEffect(() => {
-    if (!isLoadingAuth && currentUser) { // Only init game data if user is loaded and exists
+    if (!isLoadingAuth && currentUser) { 
         const todayGMTStr = format(new Date(), 'yyyy-MM-dd'); 
         initializeGameData(todayGMTStr);
-    } else if (!isLoadingAuth && !currentUser) { // If auth loaded and no user, stop initial loading
+    } else if (!isLoadingAuth && !currentUser) { 
         setIsLoadingInitialState(false);
-        setGameState('idle'); // Or a specific state for non-logged-in users
+        setGameState('idle');
     }
   }, [initializeGameData, isLoadingAuth, currentUser]); 
 
@@ -193,8 +193,7 @@ export default function HomePage() {
       });
     }, 1000);
     return () => clearInterval(timerId);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [gameState]); 
+  }, [gameState, timeLeft]); 
 
   useEffect(() => {
     if (gameState === 'debrief' && !showDebrief && !showShareModal) {
@@ -238,7 +237,7 @@ export default function HomePage() {
       toast({ title: "Already Played", description: "You've already played today. Come back tomorrow!", variant: "default" });
       return;
     }
-    if (showWelcomeInstructionsModal) { // Don't start if welcome modal is showing
+    if (showWelcomeInstructionsModal) { 
       toast({ title: "Welcome!", description: "Please read the instructions first.", variant: "default" });
       return;
     }
@@ -274,10 +273,8 @@ export default function HomePage() {
     setGameState('debrief');
     let finalScore = sessionScore;
     
-    if (guessedWotD && actualWordOfTheDayText && approvedWords.has(actualWordOfTheDayText.toUpperCase())) { 
+    if (guessedWotD && actualWordOfTheDayText && (approvedWords.has(actualWordOfTheDayText.toUpperCase()) || sessionScore > 0 )) { 
       finalScore = Math.round(finalScore * 2); 
-    } else if (guessedWotD && actualWordOfTheDayText && !approvedWords.has(actualWordOfTheDayText.toUpperCase())) {
-      finalScore = Math.round(finalScore * 2);
     }
 
     const roundedFinalScore = Math.round(finalScore);
@@ -614,24 +611,53 @@ export default function HomePage() {
 
   if (!currentUser) {
     return (
-      <div className="flex flex-col items-center justify-center text-center h-full py-12 space-y-6">
-        <AlertTriangle className="w-16 h-16 text-primary mb-4" />
-        <h1 className="text-3xl font-headline mb-2">Welcome to Lexiverse!</h1>
-        <p className="text-xl text-muted-foreground max-w-md">
-          Please log in or register to play today's word puzzle and join the fun.
+      <div className="flex flex-col items-center justify-center text-center h-full py-10 md:py-16 px-4">
+        <h1 className="text-4xl sm:text-5xl md:text-6xl font-headline text-primary mb-4 sm:mb-6">
+          ⚡ LexiCircles: Your 90-Second Word Revolution! ⚡
+        </h1>
+        <p className="text-lg sm:text-xl text-muted-foreground max-w-2xl mx-auto mb-8 sm:mb-10">
+          Dive into a thrilling daily word puzzle where speed meets strategy! Uncover words from 9 daily letters, "mint" your unique discoveries to earn ongoing points, and team up with friends in Circles. Can you conquer the lexicon in just 90 seconds?
         </p>
-        <div className="flex gap-4">
-          <Button size="lg" asChild>
-            <Link href="/auth/login">
-              <LogIn className="mr-2 h-5 w-5" /> Log In
-            </Link>
-          </Button>
-          <Button size="lg" variant="outline" asChild>
-            <Link href="/auth/register">
-              <UserPlus className="mr-2 h-5 w-5" /> Register
-            </Link>
-          </Button>
+        
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 max-w-3xl mx-auto mb-10 sm:mb-12 text-left">
+          <div className="flex items-start space-x-3 p-4 bg-card rounded-lg shadow-md">
+            <Clock className="h-8 w-8 text-accent mt-1 flex-shrink-0" />
+            <div>
+              <h3 className="font-semibold text-lg text-card-foreground">Daily 90s Blitz</h3>
+              <p className="text-sm text-muted-foreground">A fresh, fast-paced word challenge every single day!</p>
+            </div>
+          </div>
+          <div className="flex items-start space-x-3 p-4 bg-card rounded-lg shadow-md">
+            <Key className="h-8 w-8 text-accent mt-1 flex-shrink-0" />
+            <div>
+              <h3 className="font-semibold text-lg text-card-foreground">Own Your Words</h3>
+              <p className="text-sm text-muted-foreground">Be the first to find and "own" rare words. Earn points every time others guess them!</p>
+            </div>
+          </div>
+          <div className="flex items-start space-x-3 p-4 bg-card rounded-lg shadow-md">
+            <Star className="h-8 w-8 text-accent mt-1 flex-shrink-0" />
+            <div>
+              <h3 className="font-semibold text-lg text-card-foreground">Word of the Day Bonus</h3>
+              <p className="text-sm text-muted-foreground">Find the special 6-9 letter word to DOUBLE your entire daily score!</p>
+            </div>
+          </div>
+          <div className="flex items-start space-x-3 p-4 bg-card rounded-lg shadow-md">
+            <UsersRound className="h-8 w-8 text-accent mt-1 flex-shrink-0" />
+            <div>
+              <h3 className="font-semibold text-lg text-card-foreground">Circle Up & Compete</h3>
+              <p className="text-sm text-muted-foreground">Create or join Circles, combine scores with friends, and aim for weekly glory!</p>
+            </div>
+          </div>
         </div>
+
+        <Button size="xl" className="text-lg font-semibold py-3 px-8 rounded-lg shadow-lg hover:shadow-xl transition-shadow duration-200" asChild>
+          <Link href="/auth/register">
+            <Gift className="mr-2 h-6 w-6" /> Sign Up Free & Start Your Word Legacy!
+          </Link>
+        </Button>
+        <p className="mt-6 text-sm text-muted-foreground">
+          A new puzzle awaits every day at 00:00 GMT!
+        </p>
       </div>
     );
   }
@@ -791,3 +817,4 @@ export default function HomePage() {
   );
 }
 
+    
