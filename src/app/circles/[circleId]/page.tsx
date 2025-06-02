@@ -14,6 +14,7 @@ import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 import { useToast } from '@/hooks/use-toast';
 import { Loader2, Users, Settings, LogOut, Trash2, UserPlus, Link2, AlertTriangle, Copy, Check } from 'lucide-react';
 import { leaveCircleAction, deleteCircleAction, sendCircleInviteAction } from '@/app/circles/actions'; // Assuming server actions
