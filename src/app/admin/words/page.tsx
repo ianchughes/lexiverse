@@ -19,6 +19,8 @@ import { CheckCircle, XCircle, ThumbsUp, ThumbsDown, ShieldAlert, Loader2, Refre
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { format } from 'date-fns';
+import { Skeleton } from '@/components/ui/skeleton';
+
 
 const WORD_SUBMISSIONS_QUEUE = "WordSubmissionsQueue";
 const MASTER_WORDS_COLLECTION = "Words";
@@ -45,6 +47,11 @@ export default function WordManagementPage() {
   const [showWordsBySubmitterDialog, setShowWordsBySubmitterDialog] = useState(false);
   const [selectedSubmitterUID, setSelectedSubmitterUID] = useState<string | null>(null);
   const [wordsBySelectedSubmitter, setWordsBySelectedSubmitter] = useState<MasterWordType[]>([]);
+  const [hasMounted, setHasMounted] = useState(false);
+
+  useEffect(() => {
+    setHasMounted(true);
+  }, []);
 
 
   const fetchPendingSubmissions = useCallback(async () => {
@@ -331,12 +338,16 @@ export default function WordManagementPage() {
           <CardTitle>Master Game Dictionary</CardTitle>
           <CardDescription>View all approved words and their original submitters.</CardDescription>
           <div className="pt-4">
-            <Input 
-              placeholder="Search by Word or Submitter UID..."
-              value={searchTermMasterWords}
-              onChange={(e) => setSearchTermMasterWords(e.target.value)}
-              className="max-w-sm"
-            />
+            {hasMounted ? (
+                <Input 
+                placeholder="Search by Word or Submitter UID..."
+                value={searchTermMasterWords}
+                onChange={(e) => setSearchTermMasterWords(e.target.value)}
+                className="max-w-sm"
+                />
+            ) : (
+                <Skeleton className="h-10 w-full max-w-sm" />
+            )}
           </div>
         </CardHeader>
         <CardContent>
