@@ -11,18 +11,18 @@
 import {ai} from '@/ai/genkit';
 import {z} from 'genkit';
 
-export const PuzzleSuggestionSchema = z.object({
+const PuzzleSuggestionSchema = z.object({
   wordOfTheDayText: z.string().describe('A potential Word of the Day, 6-9 English letters.'),
   seedingLetters: z.string().length(9).describe('A string of 9 English letters from which the Word of the Day can be formed.'),
 });
 export type PuzzleSuggestion = z.infer<typeof PuzzleSuggestionSchema>;
 
-export const GeneratePuzzleSuggestionsInputSchema = z.object({
+const GeneratePuzzleSuggestionsInputSchema = z.object({
   quantity: z.number().int().min(1).max(10).describe('The number of puzzle suggestions to generate.'),
 });
 export type GeneratePuzzleSuggestionsInput = z.infer<typeof GeneratePuzzleSuggestionsInputSchema>;
 
-export const GeneratePuzzleSuggestionsOutputSchema = z.object({
+const GeneratePuzzleSuggestionsOutputSchema = z.object({
   suggestions: z.array(PuzzleSuggestionSchema).describe('An array of generated puzzle suggestions.'),
 });
 export type GeneratePuzzleSuggestionsOutput = z.infer<typeof GeneratePuzzleSuggestionsOutputSchema>;
@@ -90,3 +90,4 @@ const generatePuzzleSuggestionsFlow = ai.defineFlow(
     return output;
   }
 );
+
