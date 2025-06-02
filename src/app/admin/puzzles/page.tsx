@@ -13,7 +13,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Checkbox } from "@/components/ui/checkbox";
 import { useToast } from '@/hooks/use-toast';
 import { PlusCircle, Edit2, Trash2, Sparkles, Save, Loader2 } from 'lucide-react';
-import type { DailyPuzzle, AdminPuzzleFormState, PuzzleSuggestion } from '@/types';
+import type { DailyPuzzle, AdminPuzzleFormState, PuzzleSuggestion as ClientPuzzleSuggestion, GeneratePuzzleSuggestionsOutput } from '@/types'; // Renamed PuzzleSuggestion to ClientPuzzleSuggestion
 import { generatePuzzleSuggestions } from '@/ai/flows/generate-puzzle-suggestions';
 import { format } from 'date-fns';
 import { firestore } from '@/lib/firebase';
@@ -130,7 +130,7 @@ export default function DailyPuzzleManagementPage() {
   // State for AI puzzle generation
   const [generationQuantity, setGenerationQuantity] = useState<number>(3);
   const [isGeneratingSuggestions, setIsGeneratingSuggestions] = useState(false);
-  const [puzzleSuggestions, setPuzzleSuggestions] = useState<PuzzleSuggestion[]>([]);
+  const [puzzleSuggestions, setPuzzleSuggestions] = useState<ClientPuzzleSuggestion[]>([]); // Use ClientPuzzleSuggestion
   const [selectedSuggestionIds, setSelectedSuggestionIds] = useState<Set<string>>(new Set());
 
 
@@ -298,12 +298,15 @@ export default function DailyPuzzleManagementPage() {
     setSelectedSuggestionIds(new Set());
 
     try {
-      const result = await generatePuzzleSuggestions({ quantity: generationQuantity });
+      const result: GeneratePuzzleSuggestionsOutput = await generatePuzzleSuggestions({ quantity: generationQuantity });
       if (result.suggestions && result.suggestions.length > 0) {
-        setPuzzleSuggestions(result.suggestions.map(s => ({ ...s, id: crypto.randomUUID() })));
-        toast({ title: "Suggestions Generated", description: `${result.suggestions.length} puzzle suggestions have been generated.` });
+        setPuzzleSuggestions(result.suggestions.map(s => ({ 
+          ...s, 
+          id: crypto.randomUUID() // Add client-side ID for selection
+        })));
+        toast({ title: "Suggestions Generated", description: `${result.suggestions.length} puzzle suggestions have been generated with definitions.` });
       } else {
-        toast({ title: "No Suggestions", description: "The AI didn't return any suggestions.", variant: "default" });
+        toast({ title: "No Suggestions", description: "The AI didn't return any valid suggestions with definitions. Check WordsAPI key or AI flow logs.", variant: "default" });
       }
     } catch (error: any) {
       console.error("Error generating puzzle suggestions:", error);
@@ -334,6 +337,9 @@ export default function DailyPuzzleManagementPage() {
       seedingLetters: puzzleData.seedingLetters.toUpperCase(),
       status: puzzleData.status,
       puzzleDateGMT: Timestamp.fromDate(puzzleData.puzzleDateGMT),
+      // Note: The definition from AI suggestion is not directly saved to DailyPuzzle in this structure
+      // It's used for admin review, but DailyPuzzle focuses on game play elements.
+      // If you need to store the definition with the puzzle, add a field to DailyPuzzle.
     };
     await setDoc(puzzleDocRef, newPuzzleForFirestore);
     return { id: docId, ...puzzleData };
@@ -344,24 +350,27 @@ export default function DailyPuzzleManagementPage() {
       toast({ title: "No Puzzles Selected", description: "Please select at least one puzzle suggestion to save.", variant: "default" });
       return;
     }
-    setIsLoading(true);
+    setIsLoading(true); // Use general loading for this action
     const puzzlesToSave = puzzleSuggestions.filter(s => selectedSuggestionIds.has(s.id));
-    const existingPuzzleDates = new Set(puzzles.map(p => format(p.puzzleDateGMT instanceof Timestamp ? p.puzzleDateGMT.toDate() : p.puzzleDateGMT, 'yyyy-MM-dd')));
+    const existingPuzzleDates = new Set<string>();
     
     try {
         const puzzlesCollectionRef = collection(firestore, "DailyPuzzles");
         const querySnapshot = await getDocs(puzzlesCollectionRef);
-        querySnapshot.forEach((docSnap) => existingPuzzleDates.add(docSnap.id));
+        querySnapshot.forEach((docSnap) => existingPuzzleDates.add(docSnap.id)); // doc.id is 'yyyy-MM-dd'
+         // Also add dates from MOCK_PUZZLES to avoid conflict if they are not yet in Firestore
+        MOCK_PUZZLES.forEach(p => existingPuzzleDates.add(format(p.puzzleDateGMT, 'yyyy-MM-dd')));
+
     } catch (error) {
-        console.error("Error fetching existing puzzle dates from Firestore:", error);
+        console.error("Error fetching existing puzzle dates:", error);
         toast({ title: "Error", description: "Could not verify existing puzzle dates. Aborting save.", variant: "destructive"});
         setIsLoading(false);
         return;
     }
 
     let currentDate = new Date();
-    currentDate.setHours(0, 0, 0, 0); 
-    currentDate.setDate(currentDate.getDate() + 1); 
+    currentDate.setUTCHours(0, 0, 0, 0); 
+    currentDate.setUTCDate(currentDate.getUTCDate() + 1); 
 
     let savedCount = 0;
     for (const suggestion of puzzlesToSave) {
@@ -371,7 +380,7 @@ export default function DailyPuzzleManagementPage() {
         const dateStr = format(currentDate, 'yyyy-MM-dd');
         if (!existingPuzzleDates.has(dateStr)) {
           const newPuzzleData: Omit<DailyPuzzle, 'id'> = {
-            puzzleDateGMT: new Date(currentDate.getTime()), // Important: use new Date object
+            puzzleDateGMT: new Date(currentDate.getTime()), 
             wordOfTheDayText: suggestion.wordOfTheDayText,
             wordOfTheDayPoints: suggestion.wordOfTheDayText.length * 10, 
             seedingLetters: suggestion.seedingLetters,
@@ -384,10 +393,12 @@ export default function DailyPuzzleManagementPage() {
             assignedDate = true;
           } catch (error: any) {
             toast({ title: "Error Saving Puzzle", description: `Could not save ${suggestion.wordOfTheDayText} for ${dateStr}: ${error.message}`, variant: "destructive" });
+            // If saving fails for one, we still mark assignedDate as true to move to the next suggestion or date,
+            // rather than getting stuck on this suggestion with a persistently failing save.
             assignedDate = true; 
           }
         }
-        currentDate.setDate(currentDate.getDate() + 1);
+        currentDate.setUTCDate(currentDate.getUTCDate() + 1);
         attempts++;
       }
        if (!assignedDate) {
@@ -401,7 +412,7 @@ export default function DailyPuzzleManagementPage() {
       setPuzzleSuggestions([]); 
       setSelectedSuggestionIds(new Set());
     } else if (puzzlesToSave.length > 0) {
-        toast({ title: "No Puzzles Saved", description: "Could not save any selected puzzles.", variant: "default"});
+        toast({ title: "No Puzzles Saved", description: "Could not save any selected puzzles. This might be due to date conflicts or other errors.", variant: "default"});
     }
     setIsLoading(false);
   };
@@ -492,7 +503,7 @@ export default function DailyPuzzleManagementPage() {
         <CardHeader>
           <CardTitle>Generate Puzzle Suggestions (AI)</CardTitle>
           <CardDescription>
-            Let AI generate new Word of the Day and Seeding Letter combinations.
+            Let AI generate new Word of the Day (with definitions from WordsAPI) and Seeding Letter combinations.
             Selected puzzles will be scheduled for the next available future dates.
           </CardDescription>
         </CardHeader>
@@ -521,24 +532,26 @@ export default function DailyPuzzleManagementPage() {
             </Button>
           </div>
 
-          {isGeneratingSuggestions && <p className="text-muted-foreground text-center py-4"><Loader2 className="inline mr-2 h-4 w-4 animate-spin" />Generating suggestions...</p>}
+          {isGeneratingSuggestions && <p className="text-muted-foreground text-center py-4"><Loader2 className="inline mr-2 h-4 w-4 animate-spin" />Generating suggestions with definitions...</p>}
 
           {puzzleSuggestions.length > 0 && !isGeneratingSuggestions && (
             <div className="space-y-3 mt-4">
               <h3 className="text-lg font-semibold">Generated Suggestions:</h3>
-              <div className="max-h-80 overflow-y-auto space-y-2 border p-3 rounded-md bg-muted/20">
+              <div className="max-h-96 overflow-y-auto space-y-2 border p-3 rounded-md bg-muted/20">
                 {puzzleSuggestions.map((suggestion) => (
                   <Card key={suggestion.id} className={`p-3 transition-colors cursor-pointer hover:border-primary ${selectedSuggestionIds.has(suggestion.id) ? 'border-primary bg-secondary' : 'bg-background'}`} onClick={() => handleToggleSelectSuggestion(suggestion.id)}>
-                    <div className="flex items-center justify-between">
-                      <div>
+                    <div className="flex items-start justify-between">
+                      <div className="flex-grow pr-2">
                         <p className="font-semibold">WotD: <span className="font-mono text-primary">{suggestion.wordOfTheDayText}</span></p>
                         <p className="text-sm text-muted-foreground">Seeding: <span className="font-mono">{suggestion.seedingLetters}</span></p>
+                        <p className="text-xs text-muted-foreground mt-1 truncate" title={suggestion.wordOfTheDayDefinition}>Definition: {suggestion.wordOfTheDayDefinition}</p>
                       </div>
                       <Checkbox
                         checked={selectedSuggestionIds.has(suggestion.id)}
                         onCheckedChange={() => handleToggleSelectSuggestion(suggestion.id)}
                         id={`select-suggestion-${suggestion.id}`}
                         aria-label={`Select puzzle suggestion ${suggestion.wordOfTheDayText}`}
+                        className="mt-1"
                       />
                     </div>
                   </Card>
@@ -550,6 +563,11 @@ export default function DailyPuzzleManagementPage() {
               </Button>
             </div>
           )}
+          {puzzleSuggestions.length === 0 && !isGeneratingSuggestions && generationQuantity > 0 && (
+             <p className="text-sm text-muted-foreground text-center py-2">
+              No suggestions generated, or all were filtered out. Try again, check AI flow logs, or ensure WordsAPI key is correctly configured if definitions are required.
+            </p>
+          )}
         </CardContent>
       </Card>
 
@@ -559,7 +577,7 @@ export default function DailyPuzzleManagementPage() {
           <CardDescription>View and manage all upcoming, active, and past puzzles. (List includes newly created puzzles from Firebase and mock data)</CardDescription>
         </CardHeader>
         <CardContent>
-          {isLoading && !isGeneratingSuggestions && puzzles.length === 0 ? ( // Show loading only if not generating suggestions and no puzzles yet
+          {isLoading && !isGeneratingSuggestions && puzzles.length === 0 ? ( 
             <p>Loading puzzles...</p>
           ) : puzzles.length === 0 && !isGeneratingSuggestions ? (
             <p className="text-muted-foreground">No puzzles found. Click "Add New Puzzle" or "Generate Suggestions".</p>

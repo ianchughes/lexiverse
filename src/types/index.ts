@@ -1,5 +1,4 @@
 
-
 export interface SeedingLetter {
   id: string; // Unique ID for each letter instance, e.g., `letter-${index}`
   char: string;
@@ -73,12 +72,25 @@ export interface SystemSettings {
   // Add other global settings here
 }
 
-// For AI-generated puzzle suggestions (client-side)
+// For AI-generated puzzle suggestions (client-side & flow output)
 export interface PuzzleSuggestion {
   wordOfTheDayText: string;
   seedingLetters: string;
+  wordOfTheDayDefinition: string; // Added field
   id: string; // Client-side unique ID for selection tracking, e.g., crypto.randomUUID()
 }
 
 // Corresponds to the Zod schemas in the AI flow generate-puzzle-suggestions.ts
-export type { GeneratePuzzleSuggestionsInput, GeneratePuzzleSuggestionsOutput, PuzzleSuggestion as AIPuzzleSuggestionType } from '@/ai/flows/generate-puzzle-suggestions';
+// Exporting the flow's direct output type which now includes the definition.
+type AIPuzzleSuggestionFromFlow = {
+  wordOfTheDayText: string;
+  seedingLetters: string;
+  wordOfTheDayDefinition: string;
+};
+export type GeneratePuzzleSuggestionsOutput = {
+  suggestions: AIPuzzleSuggestionFromFlow[];
+};
+export type { GeneratePuzzleSuggestionsInput } from '@/ai/flows/generate-puzzle-suggestions'; // Input type remains the same
+// Re-alias for clarity if used elsewhere, though PuzzleSuggestion from above is likely more used on client.
+export type { AIPuzzleSuggestionFromFlow as AIPuzzleSuggestionType };
+
