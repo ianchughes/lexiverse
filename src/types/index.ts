@@ -27,3 +27,27 @@ export type AdminPuzzleFormState = Omit<DailyPuzzle, 'id' | 'status' | 'puzzleDa
   puzzleDateGMT: Date | undefined;
   status: 'Upcoming' | 'Active';
 };
+
+// User Profile and Roles
+export type AccountStatus = 'Active' | 'Blocked' | 'PendingVerification';
+export type UserRole = 'admin' | 'moderator' | 'user';
+
+export interface UserProfile {
+  uid: string;
+  username: string;
+  email: string;
+  registrationCountry: string;
+  overallPersistentScore: number;
+  dateCreated: any; // Firestore Timestamp, consider a more specific type if using date-fns for conversion
+  accountStatus: AccountStatus;
+  lastPlayedDate_GMT: any | null; // Firestore Timestamp
+  wotdStreakCount: number;
+}
+
+export interface AdminRoleDoc {
+  role: Exclude<UserRole, 'user'>; // 'admin' or 'moderator'
+}
+
+export interface UserProfileWithRole extends UserProfile {
+  role: UserRole;
+}
