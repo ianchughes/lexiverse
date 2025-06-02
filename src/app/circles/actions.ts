@@ -3,7 +3,7 @@
 
 import { firestore } from '@/lib/firebase';
 import { collection, addDoc, serverTimestamp, doc, writeBatch, query, where, getDocs, updateDoc, deleteDoc, runTransaction, increment } from 'firebase/firestore';
-import type { Circle, CircleMember, CircleInvite } from '@/types';
+import type { Circle, CircleMember, CircleInvite, UserProfile } from '@/types';
 import { customAlphabet } from 'nanoid';
 
 const nanoid = customAlphabet('0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz', 10);
@@ -19,11 +19,9 @@ interface CreateCirclePayload {
 
 export async function createCircleAction(payload: CreateCirclePayload): Promise<{ success: boolean; circleId?: string; error?: string }> {
   try {
-    // Server-side validation (e.g., profanity, more robust uniqueness if needed)
     if (!payload.circleName.trim()) {
       return { success: false, error: "Circle name cannot be empty." };
     }
-    // Basic check for existing name (case-insensitive for this example, could be stricter)
     const nameQuery = query(collection(firestore, 'Circles'), where('circleNameLower', '==', payload.circleName.toLowerCase()));
     const nameSnap = await getDocs(nameQuery);
     if (!nameSnap.empty) {
@@ -31,19 +29,18 @@ export async function createCircleAction(payload: CreateCirclePayload): Promise<
     }
 
     const newCircleRef = doc(collection(firestore, 'Circles'));
-    const inviteLinkCode = nanoid(8); // Generate a unique 8-char invite code
+    const inviteLinkCode = nanoid(8);
 
     const newCircleData: Omit<Circle, 'id'> = {
       circleName: payload.circleName,
-      circleNameLower: payload.circleName.toLowerCase(), // For case-insensitive queries
+      circleNameLower: payload.circleName.toLowerCase(),
       creatorUserID: payload.creatorUserID,
-      dateCreated: serverTimestamp() as any, // Cast for TS
+      dateCreated: serverTimestamp() as any,
       status: 'Active',
       isPublic: payload.isPublic,
       publicDescription: payload.publicDescription,
-      // publicTags: payload.tags,
       inviteLinkCode: inviteLinkCode,
-      memberCount: 1, // Creator is the first member
+      memberCount: 1,
     };
 
     const newMemberData: Omit<CircleMember, 'id'> = {
@@ -88,9 +85,7 @@ export async function amendCircleDetailsAction(payload: AmendCircleDetailsPayloa
         if (!circleSnap.exists()) return { success: false, error: "Circle not found." };
         const circleData = circleSnap.data() as Circle;
 
-        // Auth check: only creator or admin can amend
         if (circleData.creatorUserID !== payload.requestingUserId) {
-             // More robust: Check CircleMembers for Admin role
             const memberQuery = query(collection(firestore, 'CircleMembers'), 
                 where('circleId', '==', payload.circleId), 
                 where('userId', '==', payload.requestingUserId),
@@ -101,7 +96,6 @@ export async function amendCircleDetailsAction(payload: AmendCircleDetailsPayloa
             }
         }
         
-        // If name changed, check uniqueness (excluding current circle)
         if (payload.newData.circleName !== circleData.circleName) {
             const nameQuery = query(collection(firestore, 'Circles'), 
                 where('circleNameLower', '==', payload.newData.circleName.toLowerCase()));
@@ -116,7 +110,6 @@ export async function amendCircleDetailsAction(payload: AmendCircleDetailsPayloa
             circleNameLower: payload.newData.circleName.toLowerCase(),
             isPublic: payload.newData.isPublic,
             publicDescription: payload.newData.publicDescription,
-            // Potentially update a 'lastModified' timestamp
         });
 
         return { success: true };
@@ -129,7 +122,7 @@ export async function amendCircleDetailsAction(payload: AmendCircleDetailsPayloa
 
 interface CircleActionPayload {
     circleId: string;
-    userId: string; // User performing the action
+    userId: string;
 }
 
 export async function leaveCircleAction(payload: CircleActionPayload): Promise<{ success: boolean; error?: string }> {
@@ -145,7 +138,6 @@ export async function leaveCircleAction(payload: CircleActionPayload): Promise<{
             const memberSnap = await transaction.get(memberRef);
             if (!memberSnap.exists()) throw new Error("You are not a member of this circle.");
             
-            // Prevent creator/sole admin from leaving without deleting or appointing new admin (simplified here)
             if (circleData.creatorUserID === payload.userId && circleData.memberCount <= 1) {
                 throw new Error("As the sole admin/creator, you must delete the circle or appoint another admin before leaving.");
             }
@@ -154,8 +146,6 @@ export async function leaveCircleAction(payload: CircleActionPayload): Promise<{
             transaction.update(circleRef, { memberCount: increment(-1) });
         });
         
-        // TODO: If user was admin and last admin, potentially reassign admin role or handle orphaned circle.
-
         return { success: true };
     } catch (error: any) {
         console.error("Error in leaveCircleAction:", error);
@@ -175,7 +165,6 @@ export async function deleteCircleAction(payload: DeleteCirclePayload): Promise<
         if (!circleSnap.exists()) return { success: false, error: "Circle not found." };
         
         const circleData = circleSnap.data() as Circle;
-        // Auth check: only creator or circle admin
         if (circleData.creatorUserID !== payload.requestingUserId) {
             const memberQuery = query(collection(firestore, 'CircleMembers'), 
                 where('circleId', '==', payload.circleId), 
@@ -187,8 +176,6 @@ export async function deleteCircleAction(payload: DeleteCirclePayload): Promise<
             }
         }
 
-        // In a real app, might set status to 'Deleted_ByUser' and have cleanup functions
-        // For now, direct delete of circle and its members (batched)
         const batch = writeBatch(firestore);
         batch.delete(circleRef);
 
@@ -196,8 +183,6 @@ export async function deleteCircleAction(payload: DeleteCirclePayload): Promise<
         const membersSnap = await getDocs(membersQuery);
         membersSnap.forEach(doc => batch.delete(doc.ref));
         
-        // Also delete invites, scores etc. (omitted for brevity here, but important for production)
-
         await batch.commit();
         return { success: true };
 
@@ -213,56 +198,114 @@ interface SendCircleInvitePayload {
   circleName: string;
   inviterUserId: string;
   inviterUsername: string;
-  inviteeUserId: string;
+  inviteeUserId?: string; // If inviting existing user by ID (derived from username search)
+  inviteeEmail?: string;  // If inviting by email
+  inviteeUsername?: string; // If inviting existing user by username (to find their ID)
 }
 
 export async function sendCircleInviteAction(payload: SendCircleInvitePayload): Promise<{ success: boolean; error?: string }> {
   try {
-    // Verify inviter is admin (simplified check here, more robust would check CircleMembers)
-    const circleDoc = await getDoc(doc(firestore, 'Circles', payload.circleId));
-    if (!circleDoc.exists() || (circleDoc.data() as Circle).creatorUserID !== payload.inviterUserId) {
-      // Add check for CircleMember role 'Admin' for non-creators
+    const { circleId, circleName, inviterUserId, inviterUsername, inviteeUserId, inviteeEmail, inviteeUsername: targetUsername } = payload;
+
+    // Verify inviter is admin
+    const circleDoc = await getDoc(doc(firestore, 'Circles', circleId));
+    if (!circleDoc.exists()){
+        return { success: false, error: "Circle not found." };
+    }
+    const circleData = circleDoc.data() as Circle;
+    if (circleData.creatorUserID !== inviterUserId) {
       const memberQuery = query(collection(firestore, 'CircleMembers'), 
-        where('circleId', '==', payload.circleId), 
-        where('userId', '==', payload.inviterUserId),
+        where('circleId', '==', circleId), 
+        where('userId', '==', inviterUserId),
         where('role', '==', 'Admin'));
       const memberSnap = await getDocs(memberQuery);
-      if (memberSnap.empty && (circleDoc.data() as Circle).creatorUserID !== payload.inviterUserId) {
+      if (memberSnap.empty) {
         return { success: false, error: "You don't have permission to invite members to this circle." };
       }
     }
 
-    // Check if invitee is already a member
-    const memberCheckRef = doc(firestore, 'CircleMembers', `${payload.circleId}_${payload.inviteeUserId}`);
-    const memberCheckSnap = await getDoc(memberCheckRef);
-    if(memberCheckSnap.exists()) {
-        return { success: false, error: "This user is already a member of the circle." };
+    let finalInviteeUserId: string | undefined = inviteeUserId;
+    let finalInviteeEmail: string | undefined = inviteeEmail;
+
+    // Scenario 1: Inviting by username
+    if (targetUsername) {
+      const usersQuery = query(collection(firestore, "Users"), where("username", "==", targetUsername));
+      const userSnapshot = await getDocs(usersQuery);
+      if (userSnapshot.empty) {
+        return { success: false, error: `User "${targetUsername}" not found.` };
+      }
+      finalInviteeUserId = userSnapshot.docs[0].id;
+      if (finalInviteeUserId === inviterUserId) {
+        return { success: false, error: "You cannot invite yourself." };
+      }
+    }
+    // Scenario 2: Inviting by email
+    else if (finalInviteeEmail) {
+      const usersQuery = query(collection(firestore, "Users"), where("email", "==", finalInviteeEmail));
+      const userSnapshot = await getDocs(usersQuery);
+      if (!userSnapshot.empty) {
+        finalInviteeUserId = userSnapshot.docs[0].id; // User exists, link invite to their UID
+         if (finalInviteeUserId === inviterUserId) {
+          return { success: false, error: "You cannot invite yourself." };
+        }
+      }
+      // If userSnapshot is empty, it's an invite to a non-existing user by email.
+      // finalInviteeUserId will remain undefined, inviteeEmail will be used.
+    } else {
+        return { success: false, error: "Invitee username or email must be provided."};
+    }
+
+
+    // Check if already a member (if we have a userId)
+    if (finalInviteeUserId) {
+      const memberCheckRef = doc(firestore, 'CircleMembers', `${circleId}_${finalInviteeUserId}`);
+      const memberCheckSnap = await getDoc(memberCheckRef);
+      if(memberCheckSnap.exists()) {
+          return { success: false, error: "This user is already a member of the circle." };
+      }
     }
 
     // Check for existing pending invite
-    const existingInviteQuery = query(collection(firestore, 'CircleInvites'), 
-        where('circleId', '==', payload.circleId), 
-        where('inviteeUserId', '==', payload.inviteeUserId),
-        where('status', '==', 'Sent')
-    );
-    const existingInviteSnap = await getDocs(existingInviteQuery);
-    if (!existingInviteSnap.empty) {
-        return { success: false, error: "An invite has already been sent to this user for this circle." };
+    let existingInviteQuery;
+    if (finalInviteeUserId) {
+        existingInviteQuery = query(collection(firestore, 'CircleInvites'), 
+            where('circleId', '==', circleId), 
+            where('inviteeUserId', '==', finalInviteeUserId),
+            where('status', 'in', ['Sent', 'SentToEmail'])
+        );
+    } else if (finalInviteeEmail) { // User doesn't exist, check by email for SentToEmail status
+        existingInviteQuery = query(collection(firestore, 'CircleInvites'), 
+            where('circleId', '==', circleId), 
+            where('inviteeEmail', '==', finalInviteeEmail),
+            where('status', '==', 'SentToEmail')
+        );
+    }
+    if (existingInviteQuery) {
+        const existingInviteSnap = await getDocs(existingInviteQuery);
+        if (!existingInviteSnap.empty) {
+            return { success: false, error: "An invite has already been sent to this user/email for this circle." };
+        }
     }
 
 
     const newInviteData: Omit<CircleInvite, 'id' | 'dateResponded'> = {
-      circleId: payload.circleId,
-      circleName: payload.circleName,
-      inviterUserId: payload.inviterUserId,
-      inviterUsername: payload.inviterUsername,
-      inviteeUserId: payload.inviteeUserId,
-      status: 'Sent',
+      circleId: circleId,
+      circleName: circleName,
+      inviterUserId: inviterUserId,
+      inviterUsername: inviterUsername,
+      inviteeUserId: finalInviteeUserId, // Could be undefined if email-only invite to new user
+      inviteeEmail: finalInviteeEmail,   // Will be defined for email invites
+      status: finalInviteeUserId ? 'Sent' : 'SentToEmail', // 'SentToEmail' if user doesn't exist yet
       dateSent: serverTimestamp() as any,
     };
     await addDoc(collection(firestore, 'CircleInvites'), newInviteData);
 
-    // TODO: Send in-app notification to inviteeUserId
+    if (!finalInviteeUserId && finalInviteeEmail) {
+      // TODO: IMPORTANT - Implement actual email sending here.
+      // Example: sendEmail(inviteeEmail, `You've been invited to ${circleName}`, `Join here: /auth/register?inviteId=${newInviteDoc.id}`);
+      console.log(`ACTION REQUIRED: Send email invite to ${finalInviteeEmail} for circle ${circleName}. Include invite ID for linking.`);
+    }
+    // TODO: Send in-app notification to inviteeUserId if they exist
 
     return { success: true };
   } catch (error: any) {
@@ -273,7 +316,7 @@ export async function sendCircleInviteAction(payload: SendCircleInvitePayload): 
 
 interface RespondToCircleInvitePayload {
   inviteId: string;
-  inviteeUserId: string; // Current user
+  inviteeUserId: string;
   inviteeUsername: string;
   responseType: 'Accepted' | 'Declined';
 }
@@ -286,12 +329,19 @@ export async function respondToCircleInviteAction(payload: RespondToCircleInvite
       if (!inviteSnap.exists()) throw new Error("Invite not found or has expired.");
       
       const inviteData = inviteSnap.data() as CircleInvite;
-      if (inviteData.inviteeUserId !== payload.inviteeUserId) throw new Error("This invite is not for you.");
-      if (inviteData.status !== 'Sent') throw new Error("This invite has already been responded to or is no longer valid.");
+      // For invites that were initially email-only, inviteeUserId might now be populated.
+      if (inviteData.inviteeUserId && inviteData.inviteeUserId !== payload.inviteeUserId) {
+        throw new Error("This invite is not for you.");
+      }
+      if (inviteData.status !== 'Sent' && inviteData.status !== 'SentToEmail') { // Allow accepting 'SentToEmail' if user ID matches now
+          throw new Error("This invite has already been responded to or is no longer valid.");
+      }
+
 
       transaction.update(inviteRef, { 
         status: payload.responseType,
         dateResponded: serverTimestamp(),
+        inviteeUserId: payload.inviteeUserId, // Ensure userId is set on acceptance
       });
 
       if (payload.responseType === 'Accepted') {
@@ -310,18 +360,12 @@ export async function respondToCircleInviteAction(payload: RespondToCircleInvite
         transaction.set(memberDocRef, newMemberData);
         transaction.update(circleRef, { memberCount: increment(1) });
 
-        // TODO: Trigger "Circle Growth Bonus"
-        // 1. Award bonus to InviterUserID's OverallPersistentScore
         const inviterProfileRef = doc(firestore, 'Users', inviteData.inviterUserId);
-        transaction.update(inviterProfileRef, { overallPersistentScore: increment(10) }); // Example: 10 points bonus
+        transaction.update(inviterProfileRef, { overallPersistentScore: increment(10) });
 
-        // 2. Award bonus to Circle's score (e.g., weekly or a temp buffer) - complex, might need separate handling
-
-        // TODO: Send notification to Circle Admin/Creator
-        // TODO: Send "Welcome & Introduce" nudge to new member
         return { success: true, circleId: inviteData.circleId };
       }
-      return { success: true }; // For 'Declined'
+      return { success: true };
     });
   } catch (error: any) {
     console.error("Error in respondToCircleInviteAction:", error);
@@ -343,7 +387,7 @@ export async function joinCircleWithInviteCodeAction(payload: JoinCircleWithInvi
     if (circlesSnap.empty) {
       return { success: false, error: "Invalid or expired invite code." };
     }
-    const circleDoc = circlesSnap.docs[0]; // Assuming invite codes are unique
+    const circleDoc = circlesSnap.docs[0];
     const circleData = circleDoc.data() as Circle;
     const circleId = circleDoc.id;
 
@@ -351,14 +395,12 @@ export async function joinCircleWithInviteCodeAction(payload: JoinCircleWithInvi
       return { success: false, error: "This circle is currently not active or accepting new members." };
     }
 
-    // Check if user is already a member
     const memberRef = doc(firestore, 'CircleMembers', `${circleId}_${payload.userId}`);
     const memberSnap = await getDoc(memberRef);
     if (memberSnap.exists()) {
-      return { success: true, circleId, error: "You are already a member of this circle." }; // Still success, redirect
+      return { success: true, circleId, error: "You are already a member of this circle." };
     }
     
-    // Add member
     const newMemberData: Omit<CircleMember, 'id'> = {
       circleId: circleId,
       userId: payload.userId,
@@ -372,9 +414,6 @@ export async function joinCircleWithInviteCodeAction(payload: JoinCircleWithInvi
     batch.update(doc(firestore, 'Circles', circleId), { memberCount: increment(1) });
     await batch.commit();
 
-    // TODO: "Circle Growth Bonus" (if applicable for code joins)
-    // TODO: Send "Welcome & Introduce" nudge
-
     return { success: true, circleId: circleId };
 
   } catch (error: any) {
@@ -385,17 +424,16 @@ export async function joinCircleWithInviteCodeAction(payload: JoinCircleWithInvi
 
 interface UpdateUserDailyCircleScorePayload {
   userId: string;
-  puzzleDateGMT: string; // YYYY-MM-DD
+  puzzleDateGMT: string; 
   finalDailyScore: number;
 }
 
 export async function updateUserCircleDailyScoresAction(payload: UpdateUserDailyCircleScorePayload): Promise<{ success: boolean; error?: string }> {
   try {
-    // Find all circles the user is a member of
     const memberQuery = query(collection(firestore, 'CircleMembers'), where('userId', '==', payload.userId));
     const memberSnap = await getDocs(memberQuery);
 
-    if (memberSnap.empty) return { success: true }; // User is not in any circles
+    if (memberSnap.empty) return { success: true }; 
 
     const batch = writeBatch(firestore);
 
@@ -404,21 +442,11 @@ export async function updateUserCircleDailyScoresAction(payload: UpdateUserDaily
       const dailyScoreDocId = `${payload.puzzleDateGMT}_${circleId}`;
       const dailyScoreRef = doc(firestore, 'CircleDailyScores', dailyScoreDocId);
       
-      // Using set with merge:true to create if not exists, or update if exists
-      // However, increment requires the doc to exist, so this needs careful handling or a transaction per circle.
-      // For simplicity, we'll assume a transaction for each or that docs are pre-created.
-      // A more robust way: runTransaction for each circle score update.
-      // Here, we'll try to update, if it fails (doc doesn't exist for increment), it's an issue.
-      // This is a simplification. Production might use onWrite triggers or dedicated aggregation.
       batch.set(dailyScoreRef, { 
         dailyTotalScore: increment(payload.finalDailyScore),
-        puzzleDateGMT: payload.puzzleDateGMT, // Ensure these fields are set on creation
+        puzzleDateGMT: payload.puzzleDateGMT, 
         circleId: circleId,
-      }, { merge: true }); // Creates if not exist, then increments (if field exists)
-                           // Firestore increment creates the field if it doesn't exist on an existing doc.
-                           // If doc doesn't exist, set with merge:true then update might be needed.
-                           // A transaction is safer for read-modify-write.
-                           // The current batch.set with increment and merge should effectively create or update.
+      }, { merge: true });
     });
 
     await batch.commit();
@@ -429,6 +457,3 @@ export async function updateUserCircleDailyScoresAction(payload: UpdateUserDaily
     return { success: false, error: error.message || "Failed to update circle daily scores." };
   }
 }
-// Placeholder for admin actions for circles - to be expanded in src/app/admin/circles/actions.ts
-// e.g., adminAmendCircleAction, adminBarCircleAction etc.
-

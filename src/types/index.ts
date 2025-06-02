@@ -150,7 +150,7 @@ export interface CircleMember {
   dateJoined: Timestamp;
 }
 
-export type CircleInviteStatus = 'Sent' | 'Accepted' | 'Declined' | 'Expired';
+export type CircleInviteStatus = 'Sent' | 'SentToEmail' | 'Accepted' | 'Declined' | 'Expired';
 
 export interface CircleInvite {
   id?: string; // Firestore Document ID
@@ -158,7 +158,8 @@ export interface CircleInvite {
   circleName: string; // Denormalized
   inviterUserId: string;
   inviterUsername: string; // Denormalized
-  inviteeUserId: string;
+  inviteeUserId?: string; // Optional: Populated when user exists or registers
+  inviteeEmail?: string; // Optional: Used if inviting a non-user
   status: CircleInviteStatus;
   dateSent: Timestamp;
   dateResponded?: Timestamp;
@@ -215,4 +216,3 @@ export interface AppNotification { // Basic notification structure
   dateCreated: Timestamp;
   link?: string; // Optional link for the notification
 }
-

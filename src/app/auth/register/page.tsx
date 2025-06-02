@@ -1,14 +1,14 @@
 
 'use client';
 
-import { useState } from 'react';
-import { useRouter } from 'next/navigation';
+import { useState, useEffect } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
 import { createUserWithEmailAndPassword, sendEmailVerification } from 'firebase/auth';
-import { doc, setDoc, serverTimestamp } from 'firebase/firestore';
-import { auth, firestore } from '@/lib/firebase'; // Ensure this path is correct
+import { doc, setDoc, serverTimestamp, collection, query, where, getDocs, writeBatch } from 'firebase/firestore';
+import { auth, firestore } from '@/lib/firebase';
 
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -18,6 +18,7 @@ import { Form, FormControl, FormDescription, FormField, FormItem, FormLabel, For
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { useToast } from '@/hooks/use-toast';
 import { Eye, EyeOff, UserPlus } from 'lucide-react';
+import type { CircleInvite } from '@/types';
 
 const COUNTRIES = [
   { code: 'US', name: 'United States' },
@@ -26,7 +27,6 @@ const COUNTRIES = [
   { code: 'AU', name: 'Australia' },
   { code: 'DE', name: 'Germany' },
   { code: 'FR', name: 'France' },
-  // Add more countries as needed
 ];
 
 const passwordValidation = z.string()
@@ -45,17 +45,26 @@ const formSchema = z.object({
   registrationCountry: z.string().min(1, { message: "Please select your country." }),
 }).refine((data) => data.password === data.confirmPassword, {
   message: "Passwords do not match.",
-  path: ["confirmPassword"], // path to error
+  path: ["confirmPassword"],
 });
 
 type RegistrationFormValues = z.infer<typeof formSchema>;
 
 export default function RegisterPage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const { toast } = useToast();
   const [isLoading, setIsLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+  const [inviteIdFromUrl, setInviteIdFromUrl] = useState<string | null>(null);
+
+  useEffect(() => {
+    const inviteId = searchParams.get('inviteId');
+    if (inviteId) {
+      setInviteIdFromUrl(inviteId);
+    }
+  }, [searchParams]);
 
   const form = useForm<RegistrationFormValues>({
     resolver: zodResolver(formSchema),
@@ -75,8 +84,7 @@ export default function RegisterPage() {
       const user = userCredential.user;
 
       if (user) {
-        // Create user profile in Firestore
-        await setDoc(doc(firestore, "Users", user.uid), {
+        const userProfileData = {
           username: values.username,
           email: values.email,
           registrationCountry: values.registrationCountry,
@@ -85,16 +93,44 @@ export default function RegisterPage() {
           accountStatus: 'Active',
           lastPlayedDate_GMT: null,
           wotdStreakCount: 0,
-          uid: user.uid, // Storing UID for easier querying if needed
-        });
+          uid: user.uid,
+        };
+        await setDoc(doc(firestore, "Users", user.uid), userProfileData);
 
-        // Send email verification
+        // Check for pending email invites
+        const invitesQuery = query(
+          collection(firestore, "CircleInvites"),
+          where("inviteeEmail", "==", values.email.toLowerCase()), // Store and query emails consistently (e.g., lowercase)
+          where("status", "==", "SentToEmail")
+        );
+        const invitesSnapshot = await getDocs(invitesQuery);
+        
+        if (!invitesSnapshot.empty) {
+          const batch = writeBatch(firestore);
+          invitesSnapshot.forEach(inviteDoc => {
+            const inviteData = inviteDoc.data() as CircleInvite;
+            // Link invite to the new user if inviteIdFromUrl matches, or if it's any pending email invite for this user.
+            if (inviteIdFromUrl === inviteDoc.id || !inviteIdFromUrl) { // Prioritize URL inviteId if present
+                 batch.update(doc(firestore, "CircleInvites", inviteDoc.id), {
+                    inviteeUserId: user.uid,
+                    status: "Sent" // Change status so it appears as a normal in-app notification
+                });
+                 toast({
+                    title: "Circle Invite Updated",
+                    description: `An existing circle invitation from "${inviteData.inviterUsername}" for "${inviteData.circleName}" has been linked to your new account. Check your notifications!`,
+                    duration: 7000,
+                });
+            }
+          });
+          await batch.commit();
+        }
+
         await sendEmailVerification(user);
         toast({
           title: "Account Created!",
-          description: "Your Lexiverse account has been successfully created. A verification email has been sent to your address.",
+          description: "Your Lexiverse account has been successfully created. A verification email has been sent.",
         });
-        router.push('/'); // Navigate to homepage or dashboard
+        router.push('/');
       } else {
         throw new Error("User creation failed unexpectedly.");
       }

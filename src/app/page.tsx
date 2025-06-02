@@ -10,20 +10,21 @@ import { GameTimer } from '@/components/game/GameTimer';
 import { SubmittedWordsList } from '@/components/game/SubmittedWordsList';
 import { DailyDebriefDialog } from '@/components/game/DailyDebriefDialog';
 import { ShareMomentDialog } from '@/components/game/ShareMomentDialog';
-import type { SeedingLetter, SubmittedWord, GameState, WordSubmission, SystemSettings, MasterWordType, RejectedWordType, UserProfile } from '@/types';
+import type { SeedingLetter, SubmittedWord, GameState, WordSubmission, SystemSettings, MasterWordType, RejectedWordType, UserProfile, CircleInvite } from '@/types';
 import { useToast } from '@/hooks/use-toast';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
-import { PlayCircle, Check, AlertTriangle, Send, Loader2, ThumbsDown, Users } from 'lucide-react';
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { PlayCircle, Check, AlertTriangle, Send, Loader2, ThumbsDown, Users, BellRing } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { firestore, auth } from '@/lib/firebase';
-import { collection, addDoc, serverTimestamp, doc, getDoc, updateDoc, increment, Timestamp, writeBatch, getDocs } from 'firebase/firestore';
+import { collection, addDoc, serverTimestamp, doc, getDoc, updateDoc, increment, Timestamp, writeBatch, getDocs, query, where } from 'firebase/firestore';
 import { format } from 'date-fns';
-import { useAuth } from '@/contexts/AuthContext'; // Import useAuth
+import { useAuth } from '@/contexts/AuthContext';
 import { updateUserCircleDailyScoresAction } from '@/app/circles/actions';
 import Link from 'next/link';
 
 
-const DAILY_GAME_DURATION = 90; // 90 seconds
+const DAILY_GAME_DURATION = 90;
 const MIN_WORD_LENGTH = 4;
 
 const MOCK_WORD_OF_THE_DAY_TEXT = "LEXIVERSE";
@@ -37,10 +38,11 @@ const LOCALSTORAGE_LAST_RESET_ACK_KEY = 'lexiverse_last_reset_acknowledged_times
 const WORD_SUBMISSIONS_QUEUE = "WordSubmissionsQueue";
 const MASTER_WORDS_COLLECTION = "Words";
 const REJECTED_WORDS_COLLECTION = "RejectedWords";
+const CIRCLE_INVITES_COLLECTION = "CircleInvites";
 
 
 export default function HomePage() {
-  const { currentUser, userProfile, isLoadingAuth } = useAuth(); // Use auth context
+  const { currentUser, userProfile, isLoadingAuth } = useAuth();
   const [seedingLetters, setSeedingLetters] = useState<SeedingLetter[]>([]);
   const [currentWord, setCurrentWord] = useState<SeedingLetter[]>([]);
   const [submittedWords, setSubmittedWords] = useState<SubmittedWord[]>([]);
@@ -63,6 +65,7 @@ export default function HomePage() {
   const [approvedWords, setApprovedWords] = useState<Map<string, MasterWordType>>(new Map());
   const [rejectedWords, setRejectedWords] = useState<Map<string, RejectedWordType>>(new Map());
   const [actualWordOfTheDayText, setActualWordOfTheDayText] = useState<string | null>(null);
+  const [pendingInvitesCount, setPendingInvitesCount] = useState(0);
 
 
   const { toast } = useToast();
@@ -181,6 +184,27 @@ export default function HomePage() {
     }
   }, [gameState, showDebrief, showShareModal]);
 
+  useEffect(() => {
+    if (currentUser && !isLoadingAuth) {
+      const fetchInvites = async () => {
+        try {
+          const q = query(
+            collection(firestore, CIRCLE_INVITES_COLLECTION),
+            where('inviteeUserId', '==', currentUser.uid),
+            where('status', '==', 'Sent')
+          );
+          const invitesSnap = await getDocs(q);
+          setPendingInvitesCount(invitesSnap.size);
+        } catch (error) {
+          console.error("Error fetching pending invites:", error);
+        }
+      };
+      fetchInvites();
+    } else if (!currentUser && !isLoadingAuth) {
+      setPendingInvitesCount(0);
+    }
+  }, [currentUser, isLoadingAuth]);
+
   const startGame = () => {
     if (isLoadingAuth) { 
         toast({title: "Loading...", description: "Please wait while we verify your session.", variant: "default"});
@@ -198,7 +222,7 @@ export default function HomePage() {
     setGameState('playing');
     const todayGMTStr = format(new Date(), 'yyyy-MM-dd');
     setCurrentPuzzleDate(todayGMTStr); 
-    if(currentPuzzleDate !== todayGMTStr || actualWordOfTheDayText === null) { // Also re-init if WotD text isn't set
+    if(currentPuzzleDate !== todayGMTStr || actualWordOfTheDayText === null) {
         initializeGameData(todayGMTStr);
     }
   };
@@ -474,12 +498,37 @@ export default function HomePage() {
           You've already played today's Lexiverse puzzle.
         </p>
         <p className="text-lg">A new challenge awaits tomorrow or when an admin resets the day.</p>
+         {pendingInvitesCount > 0 && (
+          <Alert className="mt-8 max-w-md mx-auto text-left">
+            <BellRing className="h-5 w-5" />
+            <AlertTitle>You have Circle Invitations!</AlertTitle>
+            <AlertDescription>
+              You have {pendingInvitesCount} pending circle invitation(s).
+              <Button asChild variant="link" className="p-0 ml-1 h-auto">
+                <Link href="/notifications">View Invites</Link>
+              </Button>
+            </AlertDescription>
+          </Alert>
+        )}
       </div>
     );
   }
 
   return (
     <div className="flex flex-col items-center justify-center p-2 md:p-4">
+      {pendingInvitesCount > 0 && gameState === 'idle' && (
+        <Alert className="mb-6 max-w-xl mx-auto text-left">
+            <BellRing className="h-5 w-5" />
+            <AlertTitle>You have Circle Invitations!</AlertTitle>
+            <AlertDescription>
+              You have {pendingInvitesCount} pending circle invitation(s). Don't keep them waiting!
+              <Button asChild variant="link" className="p-0 ml-1 h-auto font-semibold">
+                <Link href="/notifications">View Your Invites</Link>
+              </Button>
+            </AlertDescription>
+        </Alert>
+      )}
+
       {gameState === 'idle' && (
         <div className="text-center space-y-6">
           <h1 className="text-4xl md:text-5xl font-headline text-primary">Welcome to Lexiverse!</h1>
@@ -535,7 +584,7 @@ export default function HomePage() {
         onOpenChange={setShowDebrief}
         score={finalDailyScore}
         wordsFoundCount={submittedWords.length}
-        guessedWotD={guessedWotD && !!(actualWordOfTheDayText && approvedWords.get(actualWordOfTheDayText))} // Pass true only if WotD was guessed AND approved
+        guessedWotD={guessedWotD && !!(actualWordOfTheDayText && approvedWords.get(actualWordOfTheDayText))}
         onShare={() => {
           setShowDebrief(false);
           setShareableGameDate(currentPuzzleDate);
@@ -551,7 +600,7 @@ export default function HomePage() {
         onOpenChange={setShowShareModal}
         gameData={{
           score: finalDailyScore,
-          guessedWotD: guessedWotD && !!(actualWordOfTheDayText && approvedWords.get(actualWordOfTheDayText)), // Consistent WotD status
+          guessedWotD: guessedWotD && !!(actualWordOfTheDayText && approvedWords.get(actualWordOfTheDayText)),
           wordsFoundCount: submittedWords.length,
           date: shareableGameDate,
         }}
@@ -588,4 +637,3 @@ export default function HomePage() {
     </div>
   );
 }
-

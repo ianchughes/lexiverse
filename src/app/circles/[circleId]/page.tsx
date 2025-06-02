@@ -7,7 +7,7 @@ import Link from 'next/link';
 import { useAuth } from '@/contexts/AuthContext';
 import { firestore } from '@/lib/firebase';
 import { doc, getDoc, collection, query, where, getDocs, deleteDoc, updateDoc, arrayRemove, arrayUnion, serverTimestamp, increment } from 'firebase/firestore';
-import type { CircleWithDetails, Circle, CircleMember, CircleMemberRole, UserProfile, CircleDailyScore, CircleInvite } from '@/types'; // Added CircleInvite
+import type { CircleWithDetails, Circle, CircleMember, CircleMemberRole, UserProfile, CircleDailyScore, CircleInvite } from '@/types';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter } from '@/components/ui/card';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
@@ -15,9 +15,10 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { useToast } from '@/hooks/use-toast';
-import { Loader2, Users, Settings, LogOut, Trash2, UserPlus, Link2, AlertTriangle, Copy, Check } from 'lucide-react';
-import { leaveCircleAction, deleteCircleAction, sendCircleInviteAction } from '@/app/circles/actions'; // Assuming server actions
+import { Loader2, Users, Settings, LogOut, Trash2, UserPlus, Link2, AlertTriangle, Copy, Check, Mail, UserSearch } from 'lucide-react';
+import { leaveCircleAction, deleteCircleAction, sendCircleInviteAction } from '@/app/circles/actions';
 import { format } from 'date-fns';
 
 // Helper function to get initials
@@ -38,7 +39,8 @@ export default function CircleDetailsPage() {
   const [error, setError] = useState<string | null>(null);
   
   const [showInviteDialog, setShowInviteDialog] = useState(false);
-  const [inviteeUsername, setInviteeUsername] = useState('');
+  const [inviteType, setInviteType] = useState<'username' | 'email'>('username');
+  const [inviteeIdentifier, setInviteeIdentifier] = useState(''); // For username or email
   const [isInviting, setIsInviting] = useState(false);
   const [inviteLinkCopied, setInviteLinkCopied] = useState(false);
 
@@ -60,19 +62,16 @@ export default function CircleDetailsPage() {
       }
       const circleData = { ...circleSnap.data(), id: circleSnap.id } as Circle;
 
-      // Fetch members
       const membersQuery = query(collection(firestore, 'CircleMembers'), where('circleId', '==', circleId));
       const membersSnap = await getDocs(membersQuery);
       const members = membersSnap.docs.map(d => ({ ...d.data(), id: d.id } as CircleMember));
 
-      // Determine current user's role
       let currentUserRoleInCircle: CircleMemberRole | undefined = undefined;
       if (currentUser) {
         const member = members.find(m => m.userId === currentUser.uid);
         if (member) currentUserRoleInCircle = member.role;
       }
       
-      // Fetch today's score (example)
       const todayGMT = format(new Date(), 'yyyy-MM-dd');
       const dailyScoreId = `${todayGMT}_${circleId}`;
       const dailyScoreDocRef = doc(firestore, 'CircleDailyScores', dailyScoreId);
@@ -82,14 +81,12 @@ export default function CircleDetailsPage() {
         dailyScoreData = dailyScoreSnap.data() as CircleDailyScore;
       }
 
-
       setCircleDetails({
         ...circleData,
         members,
         currentUserRole: currentUserRoleInCircle,
         scores: {
           daily: dailyScoreData,
-          // Weekly/Monthly/Overall scores would be fetched or calculated similarly
         }
       });
 
@@ -140,59 +137,33 @@ export default function CircleDetailsPage() {
   };
 
   const handleSendInvite = async () => {
-    if (!currentUser || !userProfile || !circleDetails || !inviteeUsername.trim()) return;
+    if (!currentUser || !userProfile || !circleDetails || !inviteeIdentifier.trim()) return;
     setIsInviting(true);
-    try {
-      // First, find the user by username to get their UID
-      const usersQuery = query(collection(firestore, "Users"), where("username", "==", inviteeUsername.trim()));
-      const querySnapshot = await getDocs(usersQuery);
-
-      if (querySnapshot.empty) {
-        toast({ title: "User Not Found", description: `User "${inviteeUsername.trim()}" not found.`, variant: "destructive" });
-        setIsInviting(false);
-        return;
-      }
-      
-      const inviteeProfile = querySnapshot.docs[0].data() as UserProfile;
-      const inviteeUserId = querySnapshot.docs[0].id;
-
-      if (inviteeUserId === currentUser.uid) {
-        toast({ title: "Cannot Invite Self", description: "You cannot invite yourself to the circle.", variant: "default" });
-        setIsInviting(false);
-        return;
-      }
-
-      if (circleDetails.members.some(member => member.userId === inviteeUserId)) {
-        toast({ title: "Already Member", description: `"${inviteeUsername.trim()}" is already a member of this circle.`, variant: "default" });
-        setIsInviting(false);
-        return;
-      }
-
-      // Check for existing pending invite
-      const existingInviteQuery = query(collection(firestore, 'CircleInvites'), 
-        where('circleId', '==', circleDetails.id), 
-        where('inviteeUserId', '==', inviteeUserId),
-        where('status', '==', 'Sent')
-      );
-      const existingInviteSnap = await getDocs(existingInviteQuery);
-      if (!existingInviteSnap.empty) {
-         toast({ title: "Invite Already Sent", description: `An invite has already been sent to "${inviteeUsername.trim()}" for this circle.`, variant: "default" });
-         setIsInviting(false);
-         return;
-      }
-
-
-      const result = await sendCircleInviteAction({
+    
+    let payload: Parameters<typeof sendCircleInviteAction>[0] = {
         circleId: circleDetails.id,
         circleName: circleDetails.circleName,
         inviterUserId: currentUser.uid,
         inviterUsername: userProfile.username,
-        inviteeUserId: inviteeUserId, // Need to get this from username
-      });
+    };
+
+    if (inviteType === 'username') {
+      payload.inviteeUsername = inviteeIdentifier.trim();
+    } else { // email
+      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(inviteeIdentifier.trim())) {
+        toast({ title: "Invalid Email", description: "Please enter a valid email address.", variant: "destructive" });
+        setIsInviting(false);
+        return;
+      }
+      payload.inviteeEmail = inviteeIdentifier.trim();
+    }
+
+    try {
+      const result = await sendCircleInviteAction(payload);
 
       if (result.success) {
-        toast({ title: "Invite Sent!", description: `Invitation sent to ${inviteeUsername.trim()}.` });
-        setInviteeUsername('');
+        toast({ title: "Invite Sent!", description: `Invitation sent to ${inviteeIdentifier.trim()}.` });
+        setInviteeIdentifier('');
         setShowInviteDialog(false);
       } else {
         throw new Error(result.error || "Failed to send invite.");
@@ -285,7 +256,6 @@ export default function CircleDetailsPage() {
                         <p className="text-2xl font-bold">{circleDetails.scores?.daily?.dailyTotalScore || 0}</p>
                         <p className="text-sm text-muted-foreground">Today's Score</p>
                     </div>
-                     {/* Placeholders for weekly/monthly scores */}
                     <div>
                         <p className="text-2xl font-bold text-muted-foreground">N/A</p>
                         <p className="text-sm text-muted-foreground">Weekly Score</p>
@@ -297,12 +267,11 @@ export default function CircleDetailsPage() {
                 </div>
             </div>
 
-
           <Tabs defaultValue="members" className="w-full">
             <TabsList className="grid w-full grid-cols-2 md:grid-cols-3 mb-4">
               <TabsTrigger value="members">Members ({circleDetails.members.length})</TabsTrigger>
               <TabsTrigger value="scores">Scores</TabsTrigger>
-              <TabsTrigger value="activity">Activity</TabsTrigger> {/* Placeholder */}
+              <TabsTrigger value="activity">Activity</TabsTrigger>
             </TabsList>
             <TabsContent value="members">
               <Card>
@@ -314,7 +283,7 @@ export default function CircleDetailsPage() {
                     <div key={member.userId} className="flex items-center justify-between p-3 bg-muted/20 rounded-md">
                       <div className="flex items-center space-x-3">
                         <Avatar className="h-10 w-10">
-                           <AvatarImage src={undefined /* Fetch avatar if available */} />
+                           <AvatarImage src={undefined} />
                            <AvatarFallback>{getInitials(member.username)}</AvatarFallback>
                         </Avatar>
                         <div>
@@ -335,7 +304,6 @@ export default function CircleDetailsPage() {
                 <CardHeader><CardTitle>Score Details</CardTitle></CardHeader>
                 <CardContent>
                   <p className="text-muted-foreground">Detailed score breakdowns and leaderboards will be shown here.</p>
-                  {/* Display daily, weekly, monthly scores when available */}
                 </CardContent>
               </Card>
             </TabsContent>
@@ -352,7 +320,7 @@ export default function CircleDetailsPage() {
         <CardFooter className="p-6 flex flex-col sm:flex-row justify-between items-center gap-3 border-t">
             <div className="flex gap-2">
                 {canManage && (
-                    <Dialog open={showInviteDialog} onOpenChange={setShowInviteDialog}>
+                    <Dialog open={showInviteDialog} onOpenChange={(open) => { setShowInviteDialog(open); if (!open) setInviteeIdentifier(''); }}>
                         <DialogTrigger asChild>
                         <Button variant="default"><UserPlus className="mr-2 h-4 w-4" /> Invite Members</Button>
                         </DialogTrigger>
@@ -360,21 +328,32 @@ export default function CircleDetailsPage() {
                         <DialogHeader>
                             <DialogTitle>Invite to "{circleDetails.circleName}"</DialogTitle>
                             <DialogDescription>
-                            Invite users by username or share an invite link.
+                            Invite users by their username or email address, or share an invite link.
                             </DialogDescription>
                         </DialogHeader>
                         <div className="space-y-4 py-3">
+                            <RadioGroup defaultValue="username" value={inviteType} onValueChange={(value: 'username' | 'email') => { setInviteType(value); setInviteeIdentifier(''); }}>
+                                <div className="flex items-center space-x-2">
+                                    <RadioGroupItem value="username" id="r-username" />
+                                    <Label htmlFor="r-username" className="flex items-center gap-2"><UserSearch /> Invite by Username</Label>
+                                </div>
+                                <div className="flex items-center space-x-2">
+                                    <RadioGroupItem value="email" id="r-email" />
+                                    <Label htmlFor="r-email" className="flex items-center gap-2"><Mail /> Invite by Email</Label>
+                                </div>
+                            </RadioGroup>
                             <div>
-                                <Label htmlFor="inviteeUsername">Invite by Username</Label>
+                                <Label htmlFor="inviteeIdentifier" className="sr-only">{inviteType === 'username' ? 'Username' : 'Email Address'}</Label>
                                 <div className="flex gap-2 mt-1">
                                     <Input 
-                                    id="inviteeUsername" 
-                                    value={inviteeUsername} 
-                                    onChange={(e) => setInviteeUsername(e.target.value)}
-                                    placeholder="Enter username"
+                                    id="inviteeIdentifier" 
+                                    value={inviteeIdentifier} 
+                                    onChange={(e) => setInviteeIdentifier(e.target.value)}
+                                    placeholder={inviteType === 'username' ? 'Enter username' : 'Enter email address'}
+                                    type={inviteType === 'email' ? 'email' : 'text'}
                                     disabled={isInviting}
                                     />
-                                    <Button onClick={handleSendInvite} disabled={!inviteeUsername.trim() || isInviting}>
+                                    <Button onClick={handleSendInvite} disabled={!inviteeIdentifier.trim() || isInviting}>
                                     {isInviting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />} Send Invite
                                     </Button>
                                 </div>
@@ -410,7 +389,7 @@ export default function CircleDetailsPage() {
                     <LogOut className="mr-2 h-4 w-4" /> Leave Circle
                     </Button>
                 )}
-                {canManage && ( // Admin can also leave, but delete is more prominent for them
+                {canManage && (
                      <Button variant="destructive" onClick={handleDeleteCircle}>
                         <Trash2 className="mr-2 h-4 w-4" /> Delete Circle
                     </Button>
@@ -431,8 +410,6 @@ export default function CircleDetailsPage() {
           </CardContent>
         </Card>
       )}
-
     </div>
   );
 }
-
