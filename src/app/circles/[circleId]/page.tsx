@@ -425,11 +425,9 @@ export default function CircleDetailsPage() {
             <p className="text-sm text-accent-foreground/80 mt-1 mb-3">
               Our Circle "{circleDetails.circleName}" has {circleDetails.members.length} member(s)! Invite friends to boost our score and climb the leaderboards!
             </p>
-            <DialogTrigger asChild>
-                <Button variant="default" onClick={() => setShowInviteDialog(true)}>
-                    <UserPlus className="mr-2 h-4 w-4" /> Invite Friends
-                </Button>
-            </DialogTrigger>
+            <Button variant="default" onClick={() => setShowInviteDialog(true)}>
+                <UserPlus className="mr-2 h-4 w-4" /> Invite Friends
+            </Button>
           </CardContent>
         </Card>
       )}
