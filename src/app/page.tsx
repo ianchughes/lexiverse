@@ -10,13 +10,13 @@ import { GameTimer } from '@/components/game/GameTimer';
 import { SubmittedWordsList } from '@/components/game/SubmittedWordsList';
 import { DailyDebriefDialog } from '@/components/game/DailyDebriefDialog';
 import { ShareMomentDialog } from '@/components/game/ShareMomentDialog';
-import type { SeedingLetter, SubmittedWord, GameState, WordSubmission } from '@/types';
+import type { SeedingLetter, SubmittedWord, GameState, WordSubmission, SystemSettings } from '@/types';
 import { useToast } from '@/hooks/use-toast';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
-import { PlayCircle, Check, AlertTriangle, Send } from 'lucide-react';
+import { PlayCircle, Check, AlertTriangle, Send, Loader2 } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { firestore, auth } from '@/lib/firebase';
-import { collection, addDoc, serverTimestamp } from 'firebase/firestore';
+import { collection, addDoc, serverTimestamp, doc, getDoc, Timestamp } from 'firebase/firestore';
 import { format } from 'date-fns';
 
 
@@ -27,6 +27,12 @@ const MIN_WORD_LENGTH = 4;
 const MOCK_SEEDING_LETTERS_CHARS: string[] = ['L', 'E', 'X', 'I', 'V', 'R', 'S', 'E', 'O']; // Example for LEXIVERSE
 const MOCK_WORD_OF_THE_DAY = "LEXIVERSE";
 const MOCK_APPROVED_WORDS = new Set(["LEXI", "VERSE", "ROVE", "LIVE", "SIRE", "EROS", "RISE", MOCK_WORD_OF_THE_DAY]);
+
+const SYSTEM_SETTINGS_COLLECTION = "SystemConfiguration";
+const GAME_SETTINGS_DOC_ID = "gameSettings";
+const LOCALSTORAGE_LAST_PLAYED_KEY = 'lexiverse_last_played_date';
+const LOCALSTORAGE_LAST_RESET_ACK_KEY = 'lexiverse_last_reset_acknowledged_timestamp';
+
 
 export default function HomePage() {
   const [seedingLetters, setSeedingLetters] = useState<SeedingLetter[]>([]);
@@ -46,6 +52,7 @@ export default function HomePage() {
   const [shareableGameDate, setShareableGameDate] = useState('');
   const [isSubmittingForReview, setIsSubmittingForReview] = useState(false);
   const [currentPuzzleDate, setCurrentPuzzleDate] = useState<string>(format(new Date(), 'yyyy-MM-dd'));
+  const [isLoadingInitialState, setIsLoadingInitialState] = useState(true);
 
 
   const { toast } = useToast();
@@ -58,14 +65,48 @@ export default function HomePage() {
     }));
     setSeedingLetters(initialLetters);
 
-    const lastPlayed = localStorage.getItem('lexiverse_last_played_date');
-    const today = new Date().toDateString();
-    if (lastPlayed === today) {
-      setHasPlayedToday(true);
-      setGameState('cooldown');
-    }
-    setCurrentPuzzleDate(format(new Date(), 'yyyy-MM-dd')); // Set puzzle date for today
-  }, []);
+    const checkAdminResetAndPlayStatus = async () => {
+      setIsLoadingInitialState(true);
+      try {
+        const settingsDocRef = doc(firestore, SYSTEM_SETTINGS_COLLECTION, GAME_SETTINGS_DOC_ID);
+        const settingsSnap = await getDoc(settingsDocRef);
+        
+        if (settingsSnap.exists()) {
+          const settingsData = settingsSnap.data() as SystemSettings;
+          const serverResetTimestamp = settingsData.lastForcedResetTimestamp as Timestamp | undefined;
+          
+          if (serverResetTimestamp) {
+            const localResetAckTimestampStr = localStorage.getItem(LOCALSTORAGE_LAST_RESET_ACK_KEY);
+            const localResetAckTime = localResetAckTimestampStr ? parseInt(localResetAckTimestampStr, 10) : 0;
+            
+            if (serverResetTimestamp.toMillis() > localResetAckTime) {
+              localStorage.removeItem(LOCALSTORAGE_LAST_PLAYED_KEY);
+              localStorage.setItem(LOCALSTORAGE_LAST_RESET_ACK_KEY, serverResetTimestamp.toMillis().toString());
+              toast({ title: "Game Reset", description: "Admin has reset the daily game. You can play again!" });
+            }
+          }
+        }
+      } catch (error) {
+        console.error("Error checking for admin reset:", error);
+        // Non-critical, proceed with normal play status check
+      }
+
+      const lastPlayedStorage = localStorage.getItem(LOCALSTORAGE_LAST_PLAYED_KEY);
+      const today = new Date().toDateString();
+      if (lastPlayedStorage === today) {
+        setHasPlayedToday(true);
+        setGameState('cooldown');
+      } else {
+        setHasPlayedToday(false);
+        setGameState('idle'); // Set to idle if not played today
+      }
+      setCurrentPuzzleDate(format(new Date(), 'yyyy-MM-dd'));
+      setIsLoadingInitialState(false);
+    };
+
+    checkAdminResetAndPlayStatus();
+
+  }, [toast]);
 
   useEffect(() => {
     if (gameState !== 'playing' || timeLeft === 0) return;
@@ -96,19 +137,19 @@ export default function HomePage() {
     setGuessedWotD(false);
     setTimeLeft(DAILY_GAME_DURATION);
     setGameState('playing');
-    setCurrentPuzzleDate(format(new Date(), 'yyyy-MM-dd')); // Ensure puzzle date is current
+    setCurrentPuzzleDate(format(new Date(), 'yyyy-MM-dd')); 
   };
 
   const handleGameEnd = () => {
     setGameState('debrief');
     let finalScore = sessionScore;
     if (guessedWotD) {
-      finalScore *= 2;
+      finalScore *= 2; 
     }
     setFinalDailyScore(finalScore);
     setShowDebrief(true);
     setHasPlayedToday(true);
-    localStorage.setItem('lexiverse_last_played_date', new Date().toDateString());
+    localStorage.setItem(LOCALSTORAGE_LAST_PLAYED_KEY, new Date().toDateString());
   };
 
   const handleLetterClick = useCallback((letter: SeedingLetter) => {
@@ -172,89 +213,85 @@ export default function HomePage() {
     }
   };
 
-  // Simulates fetching word data from WordsAPI and submitting to Firestore
   const fetchWordDataAndSubmit = async (wordToSubmit: string) => {
     setIsSubmittingForReview(true);
     toast({ title: "Checking Word...", description: `Verifying "${wordToSubmit}"...` });
 
-    // ** SIMULATED WordsAPI CALL **
-    // In a real app, this would be a call to a Cloud Function which then calls WordsAPI.
-    // const apiKey = process.env.NEXT_PUBLIC_WORDSAPI_KEY;
-    // if (!apiKey || apiKey === "YOUR_WORDSAPI_KEY") {
-    //   toast({ title: "API Key Error", description: "WordsAPI key is not configured. Cannot submit word.", variant: "destructive" });
-    //   setIsSubmittingForReview(false);
-    //   return;
-    // }
-    // try {
-    //   const response = await fetch(`https://wordsapiv1.p.rapidapi.com/words/${wordToSubmit.toLowerCase()}`, {
-    //     method: 'GET',
-    //     headers: {
-    //       'X-RapidAPI-Key': apiKey,
-    //       'X-RapidAPI-Host': 'wordsapiv1.p.rapidapi.com'
-    //     }
-    //   });
-    //   if (!response.ok) {
-    //     if (response.status === 404) throw new Error("Word not found in WordsAPI.");
-    //     throw new Error(`WordsAPI request failed with status ${response.status}`);
-    //   }
-    //   const data = await response.json();
-    //   const definition = data.results?.[0]?.definition || "No definition found.";
-    //   const frequency = data.frequencyDetails?.[0]?.zipf || (data.frequency ? parseFloat(data.frequency) : 0); // Attempt to get frequency
-    //   
-    //   // Proceed to submitToFirestore(wordToSubmit, definition, frequency);
-    // } catch (error: any) {
-    //    toast({ title: "Word Verification Failed", description: error.message || `Could not verify "${wordToSubmit}".`, variant: "destructive" });
-    //    setIsSubmittingForReview(false);
-    //    return;
-    // }
-
-    // ** MOCK IMPLEMENTATION **
-    await new Promise(resolve => setTimeout(resolve, 1500)); // Simulate network delay
-    const mockApiSuccess = Math.random() > 0.2; // Simulate 80% success rate for API
-    
-    if (mockApiSuccess) {
-      const mockDefinition = `A simulated definition for ${wordToSubmit}.`;
-      const mockFrequency = parseFloat((Math.random() * 7).toFixed(2)); // Zipf scores are roughly 1-7
-
-      if (!auth.currentUser) {
-        toast({ title: "Authentication Error", description: "You must be logged in to submit words.", variant: "destructive" });
-        setIsSubmittingForReview(false);
-        return;
+    const apiKey = process.env.NEXT_PUBLIC_WORDSAPI_KEY;
+    if (!apiKey || apiKey === "YOUR_WORDSAPI_KEY_PLACEHOLDER" || apiKey.length < 10) {
+      // Simulating if API key isn't properly set, or using mock
+      console.warn("WordsAPI key not configured or is placeholder. Simulating API call.");
+      await new Promise(resolve => setTimeout(resolve, 1500)); 
+      const mockApiSuccess = Math.random() > 0.2; 
+      
+      if (mockApiSuccess) {
+        const mockDefinition = `A simulated definition for ${wordToSubmit}.`;
+        const mockFrequency = parseFloat((Math.random() * 7).toFixed(2));
+        await saveSubmissionToFirestore(wordToSubmit, mockDefinition, mockFrequency);
+      } else {
+        toast({
+          title: "Word Not Recognized (Simulated)",
+          description: `"${wordToSubmit}" could not be verified by our dictionary service.`,
+          variant: "destructive"
+        });
       }
+      setIsSubmittingForReview(false);
+      handleClearWord();
+      return;
+    }
 
-      const newSubmission: WordSubmission = {
-        wordText: wordToSubmit.toUpperCase(),
-        definition: mockDefinition,
-        frequency: mockFrequency,
+    try {
+      const response = await fetch(`https://wordsapiv1.p.rapidapi.com/words/${wordToSubmit.toLowerCase()}`, {
+        method: 'GET',
+        headers: {
+          'X-RapidAPI-Key': apiKey,
+          'X-RapidAPI-Host': 'wordsapiv1.p.rapidapi.com'
+        }
+      });
+      if (!response.ok) {
+        if (response.status === 404) throw new Error("Word not found in WordsAPI.");
+        throw new Error(`WordsAPI request failed with status ${response.status}`);
+      }
+      const data = await response.json();
+      const definition = data.results?.[0]?.definition || "No definition found.";
+      const frequency = data.frequencyDetails?.[0]?.zipf || (data.frequency ? parseFloat(data.frequency) : 0);
+      
+      await saveSubmissionToFirestore(wordToSubmit, definition, frequency);
+
+    } catch (error: any) {
+       toast({ title: "Word Verification Failed", description: error.message || `Could not verify "${wordToSubmit}".`, variant: "destructive" });
+    } finally {
+       setIsSubmittingForReview(false);
+       handleClearWord();
+    }
+  };
+
+  const saveSubmissionToFirestore = async (wordText: string, definition: string, frequency: number) => {
+    if (!auth.currentUser) {
+        toast({ title: "Authentication Error", description: "You must be logged in to submit words.", variant: "destructive" });
+        return;
+    }
+    const newSubmission: WordSubmission = {
+        wordText: wordText.toUpperCase(),
+        definition: definition,
+        frequency: frequency,
         status: 'PendingModeratorReview',
         submittedByUID: auth.currentUser.uid,
         submittedTimestamp: serverTimestamp(),
         puzzleDateGMT: currentPuzzleDate,
-      };
-
-      try {
+    };
+    try {
         await addDoc(collection(firestore, "WordSubmissionsQueue"), newSubmission);
         toast({
-          title: "Word Submitted!",
-          description: `"${wordToSubmit}" (Definition: ${mockDefinition.substring(0,50)}...) has been sent for review.`,
-          variant: "default"
+        title: "Word Submitted!",
+        description: `"${wordText}" (Def: ${definition.substring(0,50)}...) has been sent for review.`,
+        variant: "default"
         });
-      } catch (error) {
+    } catch (error) {
         console.error("Error submitting word to Firestore:", error);
         toast({ title: "Submission Failed", description: "Could not save your word submission. Please try again.", variant: "destructive" });
-      }
-    } else {
-      toast({
-        title: "Word Not Recognized",
-        description: `"${wordToSubmit}" could not be verified by our dictionary service or is not a recognized word.`,
-        variant: "destructive"
-      });
     }
-    // ** END MOCK IMPLEMENTATION **
-    
-    setIsSubmittingForReview(false);
-    handleClearWord();
-  };
+  }
 
 
   const handleSubmitForReviewConfirm = async (submit: boolean) => {
@@ -263,7 +300,7 @@ export default function HomePage() {
       await fetchWordDataAndSubmit(wordToReview);
     } else {
       toast({ title: "Not Submitted", description: `"${wordToReview}" was not submitted.`, variant: "default" });
-      handleClearWord(); // Clear the word even if not submitted
+      handleClearWord(); 
     }
     setWordToReview("");
   };
@@ -271,6 +308,15 @@ export default function HomePage() {
 
   const currentWordText = currentWord.map(l => l.char).join('');
   const selectedLetterIndices = currentWord.map(l => l.index);
+
+  if (isLoadingInitialState) {
+    return (
+      <div className="flex flex-col items-center justify-center text-center h-full py-12">
+        <Loader2 className="w-16 h-16 text-primary animate-spin mb-4" />
+        <h1 className="text-2xl font-headline">Loading Lexiverse...</h1>
+      </div>
+    );
+  }
 
   if (gameState === 'cooldown') {
     return (
@@ -280,7 +326,7 @@ export default function HomePage() {
         <p className="text-xl text-muted-foreground mb-8">
           You've already played today's Lexiverse puzzle.
         </p>
-        <p className="text-lg">A new challenge awaits tomorrow at 00:00 GMT.</p>
+        <p className="text-lg">A new challenge awaits tomorrow or when an admin resets the day.</p>
       </div>
     );
   }
@@ -380,7 +426,7 @@ export default function HomePage() {
               disabled={isSubmittingForReview}
               className="bg-primary text-primary-foreground hover:bg-primary/90"
             >
-              {isSubmittingForReview ? 'Submitting...' : (
+              {isSubmittingForReview ? (<><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Submitting...</>) : (
                 <>
                   <Send className="mr-2 h-4 w-4" /> Yes, Check & Submit
                 </>
@@ -390,10 +436,10 @@ export default function HomePage() {
         </AlertDialogContent>
       </AlertDialog>
        <p className="text-xs text-muted-foreground text-center mt-8">
-            Note: Word verification (WordsAPI) is currently SIMULATED.
-            A backend function is recommended for real API calls.
-            Please configure NEXT_PUBLIC_WORDSAPI_KEY in your .env file if you plan to implement the direct client-side call (not recommended for production).
+            Note: Word verification (WordsAPI) can be configured with NEXT_PUBLIC_WORDSAPI_KEY.
+            If not configured, it will use a SIMULATED call. For production, use a backend function for API calls.
         </p>
     </div>
   );
 }
+

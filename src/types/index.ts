@@ -66,3 +66,8 @@ export interface WordSubmission {
   assignedPointsOnApproval?: number;
   wordsAPIFrequency?: number; // Stored by moderator
 }
+
+export interface SystemSettings {
+  lastForcedResetTimestamp?: any; // Firestore Timestamp
+  // Add other global settings here
+}
