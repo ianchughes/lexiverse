@@ -16,7 +16,7 @@ import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, 
 import { PlayCircle, Check, AlertTriangle, Send, Loader2, ThumbsDown, Users } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { firestore, auth } from '@/lib/firebase';
-import { collection, addDoc, serverTimestamp, doc, getDoc, updateDoc, increment, Timestamp, writeBatch } from 'firebase/firestore';
+import { collection, addDoc, serverTimestamp, doc, getDoc, getDocs, updateDoc, increment, Timestamp, writeBatch } from 'firebase/firestore';
 import { format } from 'date-fns';
 import { useAuth } from '@/contexts/AuthContext'; // Import useAuth
 import { updateUserCircleDailyScoresAction } from '@/app/circles/actions';
@@ -205,7 +205,7 @@ export default function HomePage() {
   const handleGameEnd = async () => {
     setGameState('debrief');
     let finalScore = sessionScore;
-    if (guessedWotD) {
+    if (guessedWotD && wordOfTheDay) { // Check if wordOfTheDay is not null
       finalScore = Math.round(finalScore * 2); 
     }
     const roundedFinalScore = Math.round(finalScore);
