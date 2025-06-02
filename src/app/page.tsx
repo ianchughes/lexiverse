@@ -272,11 +272,37 @@ export default function HomePage() {
 
     if (currentUser && userProfile) {
         const userDocRef = doc(firestore, "Users", currentUser.uid);
+        let newStreakCount = userProfile.wotdStreakCount || 0;
+
+        if (roundedFinalScore < 0) {
+            newStreakCount = 0; 
+        } else {
+            const todayGMTDate = new Date(currentPuzzleDate + "T00:00:00Z"); // Use UTC for date logic
+            
+            if (guessedWotD && wotdDetailsIfApproved) {
+                if (userProfile.lastPlayedDate_GMT) {
+                    const lastPlayedDate = new Date(userProfile.lastPlayedDate_GMT + "T00:00:00Z");
+                    const expectedYesterday = new Date(todayGMTDate);
+                    expectedYesterday.setUTCDate(todayGMTDate.getUTCDate() - 1);
+
+                    if (lastPlayedDate.getTime() === expectedYesterday.getTime()) {
+                        newStreakCount++;
+                    } else {
+                        newStreakCount = 1; 
+                    }
+                } else {
+                    newStreakCount = 1;
+                }
+            } else {
+                newStreakCount = 0;
+            }
+        }
+        
         const batch = writeBatch(firestore);
         batch.update(userDocRef, {
             overallPersistentScore: increment(roundedFinalScore),
             lastPlayedDate_GMT: currentPuzzleDate, 
-            wotdStreakCount: (guessedWotD && wotdDetailsIfApproved) ? increment(1) : 0, 
+            wotdStreakCount: newStreakCount, 
         });
         await batch.commit();
         
@@ -372,7 +398,7 @@ export default function HomePage() {
     if (rejectedWordDetails) {
       if (rejectedWordDetails.rejectionType === 'Gibberish') {
         const pointsDeducted = wordText.length; 
-        setSessionScore(prev => Math.max(0, prev - pointsDeducted)); 
+        setSessionScore(prev => prev - pointsDeducted); 
         toast({
           title: "Word Rejected",
           description: `"${wordText}" is not a valid word. ${pointsDeducted} points deducted from session score.`,
@@ -421,9 +447,12 @@ export default function HomePage() {
         const mockFrequency = parseFloat((Math.random() * 6 + 1).toFixed(2));
         await saveSubmissionToFirestore(wordToSubmit, mockDefinition, mockFrequency);
       } else {
+        // Word Not Recognized (Simulated) - Deduct points
+        const pointsDeducted = wordToSubmit.length;
+        setSessionScore(prev => prev - pointsDeducted);
         toast({
           title: "Word Not Recognized (Simulated)",
-          description: `"${wordToSubmit}" could not be verified by our dictionary service.`,
+          description: `"${wordToSubmit}" could not be verified. ${pointsDeducted} points deducted.`,
           variant: "destructive"
         });
       }
@@ -441,8 +470,20 @@ export default function HomePage() {
         }
       });
       if (!response.ok) {
-        if (response.status === 404) throw new Error("Word not found in WordsAPI.");
-        throw new Error(`WordsAPI request failed with status ${response.status}`);
+        const pointsDeducted = wordToSubmit.length;
+        setSessionScore(prev => prev - pointsDeducted);
+        let errorDescription = `Error verifying "${wordToSubmit}": ${response.statusText}. ${pointsDeducted} points deducted.`;
+        if (response.status === 404){
+           errorDescription = `"${wordToSubmit}" was not found by our dictionary service. ${pointsDeducted} points deducted.`;
+        }
+        toast({
+            title: "Word Verification Failed",
+            description: errorDescription,
+            variant: "destructive"
+        });
+        setIsSubmittingForReview(false);
+        handleClearWord();
+        return; 
       }
       const data = await response.json();
       const definition = data.results?.[0]?.definition || "No definition found.";
@@ -457,7 +498,13 @@ export default function HomePage() {
       await saveSubmissionToFirestore(wordToSubmit, definition, frequency);
 
     } catch (error: any) {
-       toast({ title: "Word Verification Failed", description: error.message || `Could not verify "${wordToSubmit}".`, variant: "destructive" });
+       const pointsDeducted = wordToSubmit.length;
+       setSessionScore(prev => prev - pointsDeducted);
+       toast({ 
+          title: "Word Verification Failed", 
+          description: `${error.message || `Could not verify "${wordToSubmit}"`}. ${pointsDeducted} points deducted.`, 
+          variant: "destructive" 
+        });
     } finally {
        setIsSubmittingForReview(false);
        handleClearWord();
@@ -662,7 +709,7 @@ export default function HomePage() {
             >
               {isSubmittingForReview ? (<><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Submitting...</>) : (
                 <>
-                  <Send className="mr-2 h-4 w-4" /> Yes, Check & Submit
+                  <Send className="mr-2 h-4 w-4" /> Yes, Check &amp; Submit
                 </>
               )}
             </AlertDialogAction>
