@@ -12,6 +12,7 @@ import {
   BarChart3,
   Settings,
   History,
+  MailCheck, // Added for Invites
 } from 'lucide-react';
 import {
   SidebarMenu,
@@ -26,6 +27,7 @@ const navItems = [
   { href: '/admin/words', label: 'Words', icon: SpellCheck },
   { href: '/admin/users', label: 'Users', icon: Users },
   { href: '/admin/circles', label: 'Circles', icon: UsersRound },
+  { href: '/admin/invites', label: 'Invites', icon: MailCheck }, // New Invite Link
   { href: '/admin/stats', label: 'Statistics', icon: BarChart3 },
   { href: '/admin/config', label: 'Configuration', icon: Settings },
   { href: '/admin/audit', label: 'Audit Logs', icon: History },

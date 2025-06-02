@@ -160,11 +160,13 @@ export interface CircleInvite {
   circleName: string; // Denormalized
   inviterUserId: string;
   inviterUsername: string; // Denormalized
-  inviteeUserId?: string; // Optional: Populated when user exists or registers
-  inviteeEmail?: string; // Optional: Used if inviting a non-user
+  inviteeUserId?: string; 
+  inviteeEmail?: string; 
   status: CircleInviteStatus;
   dateSent: Timestamp;
   dateResponded?: Timestamp;
+  lastReminderSentTimestamp?: Timestamp; // New field
+  adminNotes?: string; // New field for admin actions
 }
 
 export interface CircleDailyScore {
