@@ -179,6 +179,13 @@ export default function HomePage() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [gameState]); // timeLeft removed from deps to avoid re-triggering interval on each tick
 
+  // Effect to return to idle state after debrief/share dialogs are closed
+  useEffect(() => {
+    if (gameState === 'debrief' && !showDebrief && !showShareModal) {
+      setGameState('idle');
+    }
+  }, [gameState, showDebrief, showShareModal]);
+
   const startGame = () => {
     if (isLoadingAuth) { // Prevent starting if auth state is not yet clear
         toast({title: "Loading...", description: "Please wait while we verify your session.", variant: "default"});
@@ -225,11 +232,13 @@ export default function HomePage() {
         await batch.commit();
         
         // Update Circle Daily Scores
-        await updateUserCircleDailyScoresAction({
-            userId: currentUser.uid,
-            puzzleDateGMT: currentPuzzleDate,
-            finalDailyScore: roundedFinalScore,
-        });
+        if (userProfile.activeCircleId) {
+            await updateUserCircleDailyScoresAction({
+                userId: currentUser.uid,
+                puzzleDateGMT: currentPuzzleDate,
+                finalDailyScore: roundedFinalScore,
+            });
+        }
     }
   };
 
@@ -579,10 +588,6 @@ export default function HomePage() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
-       <p className="text-xs text-muted-foreground text-center mt-8 max-w-lg mx-auto">
-            Game data (words, puzzles) is now fetched from Firestore. WordsAPI for submissions uses NEXT_PUBLIC_WORDSAPI_KEY or simulates if not set. Scores update user profiles. Circle scores are updated via a server action.
-        </p>
     </div>
   );
 }
-
