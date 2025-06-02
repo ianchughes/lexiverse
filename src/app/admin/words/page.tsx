@@ -3,7 +3,7 @@
 
 import React, { useState, useEffect, useCallback } from 'react';
 import { firestore, auth } from '@/lib/firebase';
-import { collection, query, where, getDocs, doc, updateDoc, setDoc, serverTimestamp, Timestamp, increment } from 'firebase/firestore';
+import { collection, query, where, getDocs, doc, updateDoc, setDoc, serverTimestamp, Timestamp, increment, getDoc } from 'firebase/firestore';
 import type { WordSubmission, WordSubmissionStatus, MasterWord, UserProfile } from '@/types';
 
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from "@/components/ui/card";
