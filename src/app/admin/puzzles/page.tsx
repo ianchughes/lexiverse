@@ -6,6 +6,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter }
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { Textarea } from '@/components/ui/textarea'; // Import Textarea
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { DatePicker } from '@/components/ui/date-picker';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
@@ -36,6 +37,7 @@ async function fetchPuzzlesFromFirestore(): Promise<DailyPuzzle[]> {
       wordOfTheDayPoints: data.wordOfTheDayPoints,
       seedingLetters: data.seedingLetters,
       status: data.status,
+      wordOfTheDayDefinition: data.wordOfTheDayDefinition || '', // Add definition
     });
   });
   // Already sorted by ID by Firestore query
@@ -62,6 +64,7 @@ async function createDailyPuzzleInFirestore(puzzleData: AdminPuzzleFormState): P
     seedingLetters: puzzleData.seedingLetters.toUpperCase(),
     status: puzzleData.status,
     puzzleDateGMT: Timestamp.fromDate(puzzleData.puzzleDateGMT), 
+    wordOfTheDayDefinition: puzzleData.wordOfTheDayDefinition || "No definition provided by admin.", // Add definition
   };
 
   await setDoc(puzzleDocRef, newPuzzleForFirestore);
@@ -72,6 +75,7 @@ async function createDailyPuzzleInFirestore(puzzleData: AdminPuzzleFormState): P
     puzzleDateGMT: puzzleData.puzzleDateGMT, 
     wordOfTheDayText: puzzleData.wordOfTheDayText.toUpperCase(),
     seedingLetters: puzzleData.seedingLetters.toUpperCase(),
+    wordOfTheDayDefinition: newPuzzleForFirestore.wordOfTheDayDefinition,
   };
 }
 
@@ -80,12 +84,12 @@ async function updateDailyPuzzleInFirestore(puzzleId: string, puzzleData: AdminP
     throw new Error("Puzzle date is required for update.");
   }
   const puzzleDocRef = doc(firestore, DAILY_PUZZLES_COLLECTION, puzzleId);
-  const dataToUpdate = {
+  const dataToUpdate: Partial<DailyPuzzle> & { wordOfTheDayDefinition?: string } = { // Ensure type compatibility
     wordOfTheDayText: puzzleData.wordOfTheDayText.toUpperCase(),
     wordOfTheDayPoints: puzzleData.wordOfTheDayPoints,
     seedingLetters: puzzleData.seedingLetters.toUpperCase(),
     status: puzzleData.status,
-    // puzzleDateGMT: Timestamp.fromDate(puzzleData.puzzleDateGMT), // Date (ID) does not change for update
+    wordOfTheDayDefinition: puzzleData.wordOfTheDayDefinition || "No definition provided by admin.", // Add definition
   };
   await updateDoc(puzzleDocRef, dataToUpdate);
   return { 
@@ -94,6 +98,7 @@ async function updateDailyPuzzleInFirestore(puzzleId: string, puzzleData: AdminP
     puzzleDateGMT: puzzleData.puzzleDateGMT, // Keep as Date object client-side
     wordOfTheDayText: puzzleData.wordOfTheDayText.toUpperCase(),
     seedingLetters: puzzleData.seedingLetters.toUpperCase(),
+    wordOfTheDayDefinition: dataToUpdate.wordOfTheDayDefinition,
   };
 }
 
@@ -109,6 +114,7 @@ const initialFormState: AdminPuzzleFormState = {
   wordOfTheDayPoints: 0,
   seedingLetters: '',
   status: 'Upcoming',
+  wordOfTheDayDefinition: '', // Add definition
 };
 
 
@@ -151,7 +157,7 @@ export default function DailyPuzzleManagementPage() {
     fetchPuzzles();
   }, [fetchPuzzles]);
 
-  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => { // Updated to include HTMLTextAreaElement
     const { name, value } = e.target;
     setFormData(prev => ({ ...prev, [name]: name === 'wordOfTheDayPoints' ? parseInt(value,10) || 0 : value }));
     if (formErrors[name as keyof AdminPuzzleFormState]) {
@@ -209,11 +215,6 @@ export default function DailyPuzzleManagementPage() {
   const validateForm = () => {
     const errors: Partial<Record<keyof AdminPuzzleFormState, string>> = {};
     if (!formData.puzzleDateGMT) errors.puzzleDateGMT = "Puzzle date is required.";
-    // Past date check is tricky with timezones, rely on Firestore rules or more robust server validation if critical.
-    // Client-side check can be a UX enhancement.
-    // else if (formData.puzzleDateGMT.getTime() < new Date(new Date().setHours(0,0,0,0)).getTime() && !editingPuzzleId) {
-    //   errors.puzzleDateGMT = "Puzzle date cannot be in the past for new puzzles.";
-    // }
     if (!formData.wordOfTheDayText.trim()) errors.wordOfTheDayText = "Word of the Day is required.";
     else if (formData.wordOfTheDayText.length < 6 || formData.wordOfTheDayText.length > 9) {
       errors.wordOfTheDayText = "Word of the Day must be 6-9 characters.";
@@ -225,6 +226,11 @@ export default function DailyPuzzleManagementPage() {
     else if (formData.seedingLetters.length !== 9) errors.seedingLetters = "Exactly 9 seeding letters are required.";
      else if (!/^[A-Z]+$/i.test(formData.seedingLetters)) {
        errors.seedingLetters = "Seeding letters must contain only English letters.";
+    }
+    if (!formData.wordOfTheDayDefinition || formData.wordOfTheDayDefinition.trim().length === 0) {
+        errors.wordOfTheDayDefinition = "Word of the Day definition is required.";
+    } else if (formData.wordOfTheDayDefinition.trim().length > 250) {
+        errors.wordOfTheDayDefinition = "Definition cannot exceed 250 characters.";
     }
     
     setFormErrors(errors);
@@ -271,6 +277,7 @@ export default function DailyPuzzleManagementPage() {
       wordOfTheDayPoints: puzzle.wordOfTheDayPoints,
       seedingLetters: puzzle.seedingLetters,
       status: puzzle.status === 'Expired' ? 'Upcoming' : puzzle.status, // Don't allow editing to 'Expired'
+      wordOfTheDayDefinition: puzzle.wordOfTheDayDefinition || '', // Add definition
     });
     setFormErrors({});
     setFormabilityError('');
@@ -342,9 +349,10 @@ export default function DailyPuzzleManagementPage() {
       seedingLetters: puzzleData.seedingLetters.toUpperCase(),
       status: puzzleData.status,
       puzzleDateGMT: Timestamp.fromDate(puzzleData.puzzleDateGMT),
+      wordOfTheDayDefinition: puzzleData.wordOfTheDayDefinition || "Definition from AI suggestion.", // Add definition
     };
     await setDoc(puzzleDocRef, newPuzzleForFirestore);
-    return { id: docId, ...puzzleData };
+    return { id: docId, ...puzzleData, wordOfTheDayDefinition: newPuzzleForFirestore.wordOfTheDayDefinition };
   }
 
   const handleSaveSelectedPuzzles = async () => {
@@ -385,6 +393,7 @@ export default function DailyPuzzleManagementPage() {
             wordOfTheDayPoints: suggestion.wordOfTheDayText.length * 10, 
             seedingLetters: suggestion.seedingLetters,
             status: 'Upcoming',
+            wordOfTheDayDefinition: suggestion.wordOfTheDayDefinition, // Use definition from suggestion
           };
           try {
             await saveSingleGeneratedPuzzleToFirestore(newPuzzleData);
@@ -455,8 +464,6 @@ export default function DailyPuzzleManagementPage() {
         let targetDateForThisPuzzle = new Date(currentDateToFill.getTime());
         let targetDateStr = format(targetDateForThisPuzzle, 'yyyy-MM-dd');
 
-        // Ensure targetDateForThisPuzzle is not occupied by a fixed puzzle (Active/Expired)
-        // Puzzles in currentPuzzlesById that are 'Upcoming' are candidates for moving themselves, so they don't block the slot.
         while (currentPuzzlesById.has(targetDateStr) && currentPuzzlesById.get(targetDateStr)!.status !== 'Upcoming') {
             targetDateForThisPuzzle = addDays(targetDateForThisPuzzle, 1);
             targetDateStr = format(targetDateForThisPuzzle, 'yyyy-MM-dd');
@@ -473,19 +480,20 @@ export default function DailyPuzzleManagementPage() {
             seedingLetters: puzzleToMove.seedingLetters.toUpperCase(),
             status: 'Upcoming' as const,
             puzzleDateGMT: Timestamp.fromDate(targetDateForThisPuzzle),
+            wordOfTheDayDefinition: puzzleToMove.wordOfTheDayDefinition || "No definition provided.", // Carry over definition
           };
 
           batchCommiter.delete(oldDocRef);
           batchCommiter.set(newDocRef, newPuzzleDataForFirestore);
           movedCount++;
 
-          // Update our temporary map to reflect the move for subsequent checks
           currentPuzzlesById.delete(originalPuzzleDateStr);
           currentPuzzlesById.set(targetDateStr, {
             ...puzzleToMove,
             id: targetDateStr,
-            puzzleDateGMT: targetDateForThisPuzzle, // this is a Date object
-            status: 'Upcoming'
+            puzzleDateGMT: targetDateForThisPuzzle, 
+            status: 'Upcoming',
+            wordOfTheDayDefinition: newPuzzleDataForFirestore.wordOfTheDayDefinition,
           });
         }
         currentDateToFill = addDays(targetDateForThisPuzzle, 1);
@@ -563,6 +571,11 @@ export default function DailyPuzzleManagementPage() {
                 <Label htmlFor="wordOfTheDayText">Word of the Day (6-9 letters)</Label>
                 <Input id="wordOfTheDayText" name="wordOfTheDayText" value={formData.wordOfTheDayText} onChange={handleInputChange} maxLength={9} />
                 {formErrors.wordOfTheDayText && <p className="text-sm text-destructive mt-1">{formErrors.wordOfTheDayText}</p>}
+              </div>
+               <div>
+                <Label htmlFor="wordOfTheDayDefinition">Word of the Day Definition</Label>
+                <Textarea id="wordOfTheDayDefinition" name="wordOfTheDayDefinition" value={formData.wordOfTheDayDefinition || ''} onChange={handleInputChange} placeholder="Enter the definition..." />
+                {formErrors.wordOfTheDayDefinition && <p className="text-sm text-destructive mt-1">{formErrors.wordOfTheDayDefinition}</p>}
               </div>
               <div>
                 <Label htmlFor="wordOfTheDayPoints">Word of the Day Points</Label>

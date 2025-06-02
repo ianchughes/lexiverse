@@ -23,11 +23,16 @@ export interface DailyPuzzle {
   wordOfTheDayPoints: number;
   seedingLetters: string; // Stored as a 9-char string
   status: 'Upcoming' | 'Active' | 'Expired';
+  wordOfTheDayDefinition?: string; // Definition for the Word of the Day
 }
 
 export type AdminPuzzleFormState = Omit<DailyPuzzle, 'id' | 'status' | 'puzzleDateGMT'> & {
   puzzleDateGMT: Date | undefined;
   status: 'Upcoming' | 'Active';
+  wordOfTheDayText: string; 
+  wordOfTheDayPoints: number;
+  seedingLetters: string;
+  wordOfTheDayDefinition?: string;
 };
 
 // User Profile and Roles
@@ -76,6 +81,7 @@ export interface WordSubmission {
   moderatorNotes?: string;
   reviewedByUID?: string;
   reviewedTimestamp?: Timestamp;
+  isWotDClaim?: boolean; // Flag if this submission is for a WotD not in the dictionary
 }
 
 export interface MasterWordType {

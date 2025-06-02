@@ -11,7 +11,7 @@ import { SubmittedWordsList } from '@/components/game/SubmittedWordsList';
 import { DailyDebriefDialog } from '@/components/game/DailyDebriefDialog';
 import { ShareMomentDialog } from '@/components/game/ShareMomentDialog';
 import { WelcomeInstructionsDialog } from '@/components/game/WelcomeInstructionsDialog'; // Import new dialog
-import type { SeedingLetter, SubmittedWord, GameState, WordSubmission, SystemSettings, MasterWordType, RejectedWordType, UserProfile, CircleInvite } from '@/types';
+import type { SeedingLetter, SubmittedWord, GameState, WordSubmission, SystemSettings, MasterWordType, RejectedWordType, UserProfile, CircleInvite, DailyPuzzle } from '@/types';
 import { useToast } from '@/hooks/use-toast';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
@@ -66,6 +66,8 @@ export default function HomePage() {
   const [approvedWords, setApprovedWords] = useState<Map<string, MasterWordType>>(new Map());
   const [rejectedWords, setRejectedWords] = useState<Map<string, RejectedWordType>>(new Map());
   const [actualWordOfTheDayText, setActualWordOfTheDayText] = useState<string | null>(null);
+  const [actualWordOfTheDayDefinition, setActualWordOfTheDayDefinition] = useState<string | null>(null);
+  const [actualWordOfTheDayPoints, setActualWordOfTheDayPoints] = useState<number | null>(null);
   const [pendingInvitesCount, setPendingInvitesCount] = useState(0);
   const [showWelcomeInstructionsModal, setShowWelcomeInstructionsModal] = useState(false);
 
@@ -79,15 +81,22 @@ export default function HomePage() {
       const puzzleSnap = await getDoc(puzzleDocRef);
       let effectiveWotDText = MOCK_WORD_OF_THE_DAY_TEXT;
       let currentSeedingChars = MOCK_SEEDING_LETTERS_CHARS;
+      let wotdDefinition: string | null = "A fun word puzzle game.";
+      let wotdPoints: number | null = MOCK_WORD_OF_THE_DAY_TEXT.length * 10;
+
 
       if (puzzleSnap.exists()) {
-        const puzzleData = puzzleSnap.data();
+        const puzzleData = puzzleSnap.data() as DailyPuzzle; // Cast to DailyPuzzle
         effectiveWotDText = puzzleData.wordOfTheDayText.toUpperCase();
         currentSeedingChars = puzzleData.seedingLetters.toUpperCase().split('');
+        wotdDefinition = puzzleData.wordOfTheDayDefinition || `Definition for ${effectiveWotDText}`;
+        wotdPoints = puzzleData.wordOfTheDayPoints;
       } else {
         toast({ title: "Puzzle Data Missing", description: "Using default puzzle for today.", variant: "default"});
       }
       setActualWordOfTheDayText(effectiveWotDText);
+      setActualWordOfTheDayDefinition(wotdDefinition);
+      setActualWordOfTheDayPoints(wotdPoints);
       
       const initialLetters = currentSeedingChars.map((char, index) => ({
         id: `letter-${index}-${char}-${Date.now()}`, 
@@ -118,6 +127,8 @@ export default function HomePage() {
         }));
         setSeedingLetters(initialLetters);
         setActualWordOfTheDayText(MOCK_WORD_OF_THE_DAY_TEXT);
+        setActualWordOfTheDayDefinition("A fun word puzzle game.");
+        setActualWordOfTheDayPoints(MOCK_WORD_OF_THE_DAY_TEXT.length * 10);
     }
 
     try {
@@ -247,8 +258,6 @@ export default function HomePage() {
         await updateDoc(userDocRef, {
           hasSeenWelcomeInstructions: true,
         });
-        // Optionally, update local userProfile state if AuthContext provides a setter
-        // For now, rely on next auth state refresh or login to update local profile
       } catch (error) {
         console.error("Error updating welcome instructions status:", error);
         toast({title: "Error", description: "Could not save your preference. Instructions might show again.", variant: "destructive"});
@@ -259,11 +268,18 @@ export default function HomePage() {
   const handleGameEnd = async () => {
     setGameState('debrief');
     let finalScore = sessionScore;
-    const wotdDetailsIfApproved = actualWordOfTheDayText ? approvedWords.get(actualWordOfTheDayText) : null;
-
-    if (guessedWotD && wotdDetailsIfApproved) { 
+    
+    if (guessedWotD && actualWordOfTheDayText && approvedWords.has(actualWordOfTheDayText.toUpperCase())) { 
       finalScore = Math.round(finalScore * 2); 
+    } else if (guessedWotD && actualWordOfTheDayText && !approvedWords.has(actualWordOfTheDayText.toUpperCase())) {
+      // If WotD was "claimed" (not in DB initially), the 40 points are direct, double score bonus happens if it gets approved and is in DB next time.
+      // For now, the "guessedWotD" flag enables the *potential* for future doubling, but the main score calculation is based on current state.
+      // The 40 points for the "claim" are already in sessionScore.
+      // We will apply the 2x multiplier to the final score if guessedWotD is true, to align with existing WotD bonus logic,
+      // even if it was a "claimed" word this time. This makes the immediate reward consistent.
+      finalScore = Math.round(finalScore * 2);
     }
+
     const roundedFinalScore = Math.round(finalScore);
     setFinalDailyScore(roundedFinalScore);
     setShowDebrief(true);
@@ -277,9 +293,9 @@ export default function HomePage() {
         if (roundedFinalScore < 0) {
             newStreakCount = 0; 
         } else {
-            const todayGMTDate = new Date(currentPuzzleDate + "T00:00:00Z"); // Use UTC for date logic
+            const todayGMTDate = new Date(currentPuzzleDate + "T00:00:00Z"); 
             
-            if (guessedWotD && wotdDetailsIfApproved) {
+            if (guessedWotD) { // WotD string was matched
                 if (userProfile.lastPlayedDate_GMT) {
                     const lastPlayedDate = new Date(userProfile.lastPlayedDate_GMT + "T00:00:00Z");
                     const expectedYesterday = new Date(todayGMTDate);
@@ -357,26 +373,62 @@ export default function HomePage() {
     }
     
     let isTheWotDString = false;
-    if (actualWordOfTheDayText && wordText === actualWordOfTheDayText) {
+    if (actualWordOfTheDayText && wordText === actualWordOfTheDayText.toUpperCase()) {
       isTheWotDString = true;
       setGuessedWotD(true); 
     }
 
     const approvedWordDetails = approvedWords.get(wordText);
+
+    if (isTheWotDString) {
+      if (approvedWordDetails) {
+        // WotD is guessed AND it's already in the master dictionary
+        const points = Math.round(wordText.length * approvedWordDetails.frequency);
+        toast({ title: "Word of the Day!", description: `You found "${wordText}" for ${points} base points! (Bonus applied at end)`, className: "bg-accent text-accent-foreground" });
+        setSessionScore((prev) => prev + points);
+        setSubmittedWords((prev) => [...prev, { id: crypto.randomUUID(), text: wordText, points, isWotD: true }]);
+        
+        if (approvedWordDetails.originalSubmitterUID && approvedWordDetails.originalSubmitterUID !== currentUser.uid) {
+          try {
+            const claimerProfileRef = doc(firestore, "Users", approvedWordDetails.originalSubmitterUID);
+            await updateDoc(claimerProfileRef, {
+              overallPersistentScore: increment(Math.round(approvedWordDetails.frequency)) 
+            });
+            toast({
+              title: "Claimer Bonus!",
+              description: `Original submitter of "${wordText}" got a ${Math.round(approvedWordDetails.frequency)} point bonus!`,
+              variant: "default"
+            });
+          } catch (error) {
+            console.error("Error awarding bonus to claimer:", error);
+          }
+        }
+      } else {
+        // WotD is guessed BUT it's NOT in the master dictionary (User "claims" it)
+        const points = 40; // Fixed 40 points as per request
+        toast({ title: "Word of the Day Claimed!", description: `You found the special Word of the Day "${wordText}" for ${points} points! It's now submitted for review.`, className: "bg-accent text-accent-foreground" });
+        setSessionScore((prev) => prev + points);
+        setSubmittedWords((prev) => [...prev, { id: crypto.randomUUID(), text: wordText, points, isWotD: true }]);
+        
+        // Directly submit for review, using definition/points from the puzzle if available
+        const definitionForSubmission = actualWordOfTheDayDefinition || `Definition for Word of the Day: ${wordText}`;
+        // Estimate frequency based on points, or use a default if points not set. Default to 1 if calculation is 0 or less.
+        const frequencyForSubmission = actualWordOfTheDayPoints ? Math.max(1, actualWordOfTheDayPoints / wordText.length) : 3; 
+        await saveSubmissionToFirestore(wordText, definitionForSubmission, frequencyForSubmission, true);
+      }
+      handleClearWord();
+      return;
+    }
+
+    // Word is NOT the WotD string, continue with normal word checks
     if (approvedWordDetails) {
       const points = Math.round(wordText.length * approvedWordDetails.frequency);
-      
-      if (isTheWotDString) {
-        toast({ title: "Word of the Day!", description: `You found "${wordText}" for ${points} base points!`, className: "bg-accent text-accent-foreground" });
-      } else {
-         toast({ title: "Word Found!", description: `"${wordText}" is worth ${points} points.`, variant: "default" });
-      }
-
+      toast({ title: "Word Found!", description: `"${wordText}" is worth ${points} points.`, variant: "default" });
       setSessionScore((prev) => prev + points);
-      setSubmittedWords((prev) => [...prev, { id: crypto.randomUUID(), text: wordText, points, isWotD: isTheWotDString }]);
+      setSubmittedWords((prev) => [...prev, { id: crypto.randomUUID(), text: wordText, points, isWotD: false }]);
       
       if (approvedWordDetails.originalSubmitterUID && approvedWordDetails.originalSubmitterUID !== currentUser.uid) {
-        try {
+         try {
           const claimerProfileRef = doc(firestore, "Users", approvedWordDetails.originalSubmitterUID);
           await updateDoc(claimerProfileRef, {
             overallPersistentScore: increment(Math.round(approvedWordDetails.frequency)) 
@@ -416,6 +468,7 @@ export default function HomePage() {
       return;
     }
 
+    // Word is not WotD, not approved, not rejected => show submit for review dialog
     setWordToReview(wordText);
     setShowSubmitForReviewDialog(true);
   };
@@ -511,7 +564,7 @@ export default function HomePage() {
     }
   };
 
-  const saveSubmissionToFirestore = async (wordText: string, definition: string, frequency: number) => {
+  const saveSubmissionToFirestore = async (wordText: string, definition: string, frequency: number, isWotDClaim: boolean = false) => {
     if (!currentUser) {
         toast({ title: "Authentication Error", description: "You must be logged in to submit words.", variant: "destructive" });
         return;
@@ -523,6 +576,7 @@ export default function HomePage() {
         status: 'PendingModeratorReview',
         submittedByUID: currentUser.uid,
         puzzleDateGMT: currentPuzzleDate,
+        isWotDClaim: isWotDClaim, // Add the flag here
     };
     try {
         await addDoc(collection(firestore, WORD_SUBMISSIONS_QUEUE), {
@@ -666,7 +720,7 @@ export default function HomePage() {
         onOpenChange={setShowDebrief}
         score={finalDailyScore}
         wordsFoundCount={submittedWords.length}
-        guessedWotD={guessedWotD && !!(actualWordOfTheDayText && approvedWords.get(actualWordOfTheDayText))}
+        guessedWotD={guessedWotD}
         onShare={() => {
           setShowDebrief(false);
           setShareableGameDate(currentPuzzleDate);
@@ -682,7 +736,7 @@ export default function HomePage() {
         onOpenChange={setShowShareModal}
         gameData={{
           score: finalDailyScore,
-          guessedWotD: guessedWotD && !!(actualWordOfTheDayText && approvedWords.get(actualWordOfTheDayText)),
+          guessedWotD: guessedWotD,
           wordsFoundCount: submittedWords.length,
           date: shareableGameDate,
         }}
