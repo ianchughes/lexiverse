@@ -52,20 +52,42 @@ export interface UserProfileWithRole extends UserProfile {
   role: UserRole;
 }
 
+export type WordSubmissionStatus =
+  | 'PendingModeratorReview'
+  | 'Approved'
+  | 'Rejected_NotReal'
+  | 'Rejected_AdminDecision'
+  | 'Rejected_Duplicate'; // If found to be a duplicate of an already approved word
+
 export interface WordSubmission {
-  id?: string; // Firestore will auto-generate
-  wordText: string;
+  id?: string; // Firestore will auto-generate this for WordSubmissionsQueue
+  wordText: string; // Should be normalized (e.g., uppercase)
   definition?: string;
-  frequency?: number; // e.g., Zipf score
-  status: 'PendingModeratorReview' | 'PendingAdminApproval' | 'Approved' | 'Rejected_NotReal' | 'Rejected_Admin' | 'DuplicateApproved';
+  frequency?: number; // e.g., Zipf score from WordsAPI
+  status: WordSubmissionStatus;
   submittedByUID: string;
   submittedTimestamp: any; // Firestore serverTimestamp
-  puzzleDateGMT: string; // YYYY-MM-DD format
+  puzzleDateGMT: string; // YYYY-MM-DD format of the puzzle being played
   moderatorNotes?: string;
-  adminNotes?: string;
+  adminNotes?: string; // If there's a multi-step review
+  reviewedByUID?: string;
+  reviewedTimestamp?: any; // Firestore serverTimestamp
   assignedPointsOnApproval?: number;
-  wordsAPIFrequency?: number; // Stored by moderator
 }
+
+export interface MasterWord {
+  // Document ID for this collection will be the wordText in UPPERCASE
+  wordText: string; // UPPERCASE
+  points: number;
+  definition: string;
+  frequency?: number; // Optional, from initial submission
+  status: 'Approved' | 'SystemInitial'; // SystemInitial for pre-loaded words
+  addedByUID: string; // UID of admin/moderator who approved/added it
+  dateAdded: any; // Firestore serverTimestamp
+  originalSubmitterUID?: string; // UID of the player who first submitted it (if applicable)
+  puzzleDateGMTOfSubmission?: string; // Date of puzzle when it was submitted (if applicable)
+}
+
 
 export interface SystemSettings {
   lastForcedResetTimestamp?: any; // Firestore Timestamp
@@ -93,4 +115,3 @@ export type GeneratePuzzleSuggestionsOutput = {
 export type { GeneratePuzzleSuggestionsInput } from '@/ai/flows/generate-puzzle-suggestions'; // Input type remains the same
 // Re-alias for clarity if used elsewhere, though PuzzleSuggestion from above is likely more used on client.
 export type { AIPuzzleSuggestionFromFlow as AIPuzzleSuggestionType };
-
