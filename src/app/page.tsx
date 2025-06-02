@@ -1,3 +1,4 @@
+
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
@@ -13,6 +14,8 @@ import type { SeedingLetter, SubmittedWord, GameState } from '@/types';
 import { useToast } from '@/hooks/use-toast';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
 import { PlayCircle, Check, AlertTriangle } from 'lucide-react';
+import { Badge } from '@/components/ui/badge';
+
 
 const DAILY_GAME_DURATION = 90; // 90 seconds
 const MIN_WORD_LENGTH = 4;
@@ -37,6 +40,7 @@ export default function HomePage() {
   const [wordToReview, setWordToReview] = useState("");
   const [hasPlayedToday, setHasPlayedToday] = useState(false); // Mocked: In real app, check User.LastPlayedDate_GMT
   const [wordInvalidFlash, setWordInvalidFlash] = useState(false);
+  const [shareableGameDate, setShareableGameDate] = useState('');
 
 
   const { toast } = useToast();
@@ -257,6 +261,7 @@ export default function HomePage() {
         guessedWotD={guessedWotD}
         onShare={() => {
           setShowDebrief(false);
+          setShareableGameDate(new Date().toLocaleDateString('en-CA'));
           setShowShareModal(true);
         }}
       />
@@ -268,7 +273,7 @@ export default function HomePage() {
           score: finalDailyScore,
           guessedWotD,
           wordsFoundCount: submittedWords.length,
-          date: new Date().toLocaleDateString('en-CA'), // YYYY-MM-DD
+          date: shareableGameDate, // YYYY-MM-DD
           // circleName: "My Awesome Circle" // Optional
         }}
       />
