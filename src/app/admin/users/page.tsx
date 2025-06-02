@@ -13,8 +13,11 @@ import { Badge } from "@/components/ui/badge";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { useToast } from '@/hooks/use-toast';
-import { MoreHorizontal, UserCog, UserCheck, UserX, ShieldCheck, ShieldOff } from 'lucide-react';
+import { MoreHorizontal, UserCog, UserCheck, UserX, ShieldCheck, ShieldOff, Star, Eye } from 'lucide-react';
 import { Input } from '@/components/ui/input';
+import { Skeleton } from '@/components/ui/skeleton';
+import { Dialog, DialogClose, DialogContent as DialogContentComponent, DialogDescription as DialogDescriptionComponent, DialogFooter as DialogFooterComponent, DialogHeader as DialogHeaderComponent, DialogTitle as DialogTitleComponent } from "@/components/ui/dialog"; // Renamed to avoid conflicts
+import { ScrollArea } from '@/components/ui/scroll-area';
 
 
 export default function UserManagementPage() {
@@ -29,6 +32,12 @@ export default function UserManagementPage() {
   const [newStatus, setNewStatus] = useState<AccountStatus | null>(null);
   const [isAlertDialogOpen, setIsAlertDialogOpen] = useState(false);
 
+  const [hasMounted, setHasMounted] = useState(false);
+
+  useEffect(() => {
+    setHasMounted(true);
+  }, []);
+
 
   const fetchUsersAndRoles = useCallback(async () => {
     setIsLoading(true);
@@ -42,7 +51,7 @@ export default function UserManagementPage() {
         const roleData = d.data() as AdminRoleDoc;
         adminRolesMap.set(d.id, roleData.role);
       });
-
+      
       const usersWithRolesData: UserProfileWithRole[] = fetchedUsers.map(user => {
         return {
           ...user,
@@ -79,7 +88,7 @@ export default function UserManagementPage() {
         const userDocRef = doc(firestore, "admin_users", selectedUser.uid);
         if (newRole === 'admin' || newRole === 'moderator') {
           await setDoc(userDocRef, { role: newRole });
-        } else { // Demoting to 'user'
+        } else { 
           await deleteDoc(userDocRef);
         }
         toast({ title: "Success", description: `${selectedUser.username}'s role updated to ${newRole}.` });
@@ -137,12 +146,16 @@ export default function UserManagementPage() {
           <CardTitle>User List</CardTitle>
           <CardDescription>Search, filter, and manage all registered players.</CardDescription>
            <div className="pt-4">
-            <Input 
-              placeholder="Search by UID, Username, or Email..."
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              className="max-w-sm"
-            />
+            {hasMounted ? (
+                <Input 
+                  placeholder="Search by UID, Username, or Email..."
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  className="max-w-sm"
+                />
+              ) : (
+                <Skeleton className="h-10 w-full max-w-sm" />
+              )}
           </div>
         </CardHeader>
         <CardContent>
@@ -249,4 +262,3 @@ export default function UserManagementPage() {
     </div>
   );
 }
-
