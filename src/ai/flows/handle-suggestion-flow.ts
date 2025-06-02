@@ -39,8 +39,7 @@ Your goal is to encourage users to provide feedback and make them feel heard.
 Conversation History (if any):
 {{#if conversationHistory}}
 {{#each conversationHistory}}
-{{#if (eq this.role "user")}}User: {{this.content}}{{/if}}
-{{#if (eq this.role "model")}}Bot: {{this.content}}{{/if}}
+{{this.role}}: {{this.content}}
 {{/each}}
 {{/if}}
 
@@ -81,3 +80,4 @@ const handleSuggestionFlow = ai.defineFlow(
     return output;
   }
 );
+
