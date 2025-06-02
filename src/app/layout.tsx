@@ -5,6 +5,7 @@ import { SiteHeader } from '@/components/layout/SiteHeader';
 import { SiteFooter } from '@/components/layout/SiteFooter';
 import { Toaster } from "@/components/ui/toaster";
 import { AuthProvider } from '@/contexts/AuthContext'; // Import AuthProvider
+import { SuggestionsBot } from '@/components/suggestions-bot/SuggestionsBot'; // Import SuggestionsBot
 
 export const metadata: Metadata = {
   title: 'Lexiverse - Daily Word Puzzle',
@@ -31,6 +32,7 @@ export default function RootLayout({
           </main>
           <SiteFooter />
           <Toaster />
+          <SuggestionsBot /> {/* Add SuggestionsBot here */}
         </AuthProvider>
       </body>
     </html>
