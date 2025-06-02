@@ -90,10 +90,11 @@ function RegisterFormContent() {
           registrationCountry: values.registrationCountry,
           overallPersistentScore: 0,
           dateCreated: serverTimestamp(),
-          accountStatus: 'Active',
+          accountStatus: 'Active' as 'Active', // Explicitly type
           lastPlayedDate_GMT: null,
           wotdStreakCount: 0,
           uid: user.uid,
+          hasSeenWelcomeInstructions: false, // Initialize new field
         };
         await setDoc(doc(firestore, "Users", user.uid), userProfileData);
 
@@ -109,6 +110,7 @@ function RegisterFormContent() {
           const batch = writeBatch(firestore);
           invitesSnapshot.forEach(inviteDoc => {
             const inviteData = inviteDoc.data() as CircleInvite;
+            // Prioritize invite from URL, otherwise process any matching email invite
             if (inviteIdFromUrl === inviteDoc.id || !inviteIdFromUrl) { 
                  batch.update(doc(firestore, "CircleInvites", inviteDoc.id), {
                     inviteeUserId: user.uid,
@@ -299,7 +301,7 @@ function RegisterFormContent() {
 export default function RegisterPage() {
   return (
     <Suspense fallback={
-      <div className="flex items-center justify-center min-h-screen py-12">
+      <div className="flex items-center justify-center min-h-screen py-12 bg-gradient-to-br from-background to-secondary/30">
         <Loader2 className="h-12 w-12 animate-spin text-primary" /> 
         <p className="ml-4 text-lg text-muted-foreground">Loading registration form...</p>
       </div>

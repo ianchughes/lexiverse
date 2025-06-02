@@ -10,6 +10,7 @@ import { GameTimer } from '@/components/game/GameTimer';
 import { SubmittedWordsList } from '@/components/game/SubmittedWordsList';
 import { DailyDebriefDialog } from '@/components/game/DailyDebriefDialog';
 import { ShareMomentDialog } from '@/components/game/ShareMomentDialog';
+import { WelcomeInstructionsDialog } from '@/components/game/WelcomeInstructionsDialog'; // Import new dialog
 import type { SeedingLetter, SubmittedWord, GameState, WordSubmission, SystemSettings, MasterWordType, RejectedWordType, UserProfile, CircleInvite } from '@/types';
 import { useToast } from '@/hooks/use-toast';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
@@ -66,6 +67,7 @@ export default function HomePage() {
   const [rejectedWords, setRejectedWords] = useState<Map<string, RejectedWordType>>(new Map());
   const [actualWordOfTheDayText, setActualWordOfTheDayText] = useState<string | null>(null);
   const [pendingInvitesCount, setPendingInvitesCount] = useState(0);
+  const [showWelcomeInstructionsModal, setShowWelcomeInstructionsModal] = useState(false);
 
 
   const { toast } = useToast();
@@ -185,6 +187,12 @@ export default function HomePage() {
   }, [gameState, showDebrief, showShareModal]);
 
   useEffect(() => {
+    if (currentUser && userProfile && !isLoadingAuth && (userProfile.hasSeenWelcomeInstructions === false || userProfile.hasSeenWelcomeInstructions === undefined)) {
+      setShowWelcomeInstructionsModal(true);
+    }
+  }, [currentUser, userProfile, isLoadingAuth]);
+
+  useEffect(() => {
     if (currentUser && !isLoadingAuth) {
       const fetchInvites = async () => {
         try {
@@ -214,6 +222,10 @@ export default function HomePage() {
       toast({ title: "Already Played", description: "You've already played today. Come back tomorrow!", variant: "default" });
       return;
     }
+    if (showWelcomeInstructionsModal) { // Don't start if welcome modal is showing
+      toast({ title: "Welcome!", description: "Please read the instructions first.", variant: "default" });
+      return;
+    }
     setCurrentWord([]);
     setSubmittedWords([]);
     setSessionScore(0);
@@ -224,6 +236,23 @@ export default function HomePage() {
     setCurrentPuzzleDate(todayGMTStr); 
     if(currentPuzzleDate !== todayGMTStr || actualWordOfTheDayText === null) {
         initializeGameData(todayGMTStr);
+    }
+  };
+
+  const handleCloseWelcomeInstructions = async () => {
+    setShowWelcomeInstructionsModal(false);
+    if (currentUser && userProfile) {
+      try {
+        const userDocRef = doc(firestore, "Users", currentUser.uid);
+        await updateDoc(userDocRef, {
+          hasSeenWelcomeInstructions: true,
+        });
+        // Optionally, update local userProfile state if AuthContext provides a setter
+        // For now, rely on next auth state refresh or login to update local profile
+      } catch (error) {
+        console.error("Error updating welcome instructions status:", error);
+        toast({title: "Error", description: "Could not save your preference. Instructions might show again.", variant: "destructive"});
+      }
     }
   };
 
@@ -516,7 +545,13 @@ export default function HomePage() {
 
   return (
     <div className="flex flex-col items-center justify-center p-2 md:p-4">
-      {pendingInvitesCount > 0 && gameState === 'idle' && (
+      <WelcomeInstructionsDialog
+        isOpen={showWelcomeInstructionsModal}
+        onOpenChange={setShowWelcomeInstructionsModal}
+        onConfirm={handleCloseWelcomeInstructions}
+      />
+
+      {pendingInvitesCount > 0 && gameState === 'idle' && !showWelcomeInstructionsModal && (
         <Alert className="mb-6 max-w-xl mx-auto text-left">
             <BellRing className="h-5 w-5" />
             <AlertTitle>You have Circle Invitations!</AlertTitle>
@@ -529,7 +564,7 @@ export default function HomePage() {
         </Alert>
       )}
 
-      {gameState === 'idle' && (
+      {gameState === 'idle' && !showWelcomeInstructionsModal && (
         <div className="text-center space-y-6">
           <h1 className="text-4xl md:text-5xl font-headline text-primary">Welcome to Lexiverse!</h1>
           <p className="text-lg md:text-xl text-muted-foreground max-w-xl mx-auto">

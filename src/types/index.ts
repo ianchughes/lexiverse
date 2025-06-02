@@ -45,6 +45,7 @@ export interface UserProfile {
   lastPlayedDate_GMT: string | null; // Stored as 'YYYY-MM-DD' string
   wotdStreakCount: number;
   activeCircleId?: string; // ID of the primary circle the user is contributing to (optional)
+  hasSeenWelcomeInstructions?: boolean; // New field
 }
 
 export interface AdminRoleDoc {
@@ -131,6 +132,7 @@ export type CircleMemberRole = 'Admin' | 'Member';
 export interface Circle {
   id: string; // Firestore Document ID
   circleName: string;
+  circleNameLower: string; // For case-insensitive unique checks
   creatorUserID: string;
   dateCreated: Timestamp;
   status: CircleStatus;
