@@ -2,10 +2,10 @@
 'use client';
 
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
-import { firestore } from '@/lib/firebase'; // Removed auth import as currentUser comes from useAuth
+import { firestore } from '@/lib/firebase'; 
 import { collection, query, where, getDocs, doc, Timestamp, orderBy, limit, startAfter } from 'firebase/firestore';
 import type { WordSubmission, MasterWordType, RejectedWordType, RejectionType } from '@/types';
-import { useAuth } from '@/contexts/AuthContext'; // Import useAuth
+import { useAuth } from '@/contexts/AuthContext'; 
 
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -18,7 +18,7 @@ import { Loader2, RefreshCw, Star, CheckCircle, XCircle, ThumbsDown, ShieldAlert
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { format } from 'date-fns';
 import { Skeleton } from '@/components/ui/skeleton';
-import { adminBulkProcessWordSubmissionsAction } from './actions'; // Removed single actions for now
+import { adminBulkProcessWordSubmissionsAction } from './actions'; 
 
 const WORD_SUBMISSIONS_QUEUE = "WordSubmissionsQueue";
 const MASTER_WORDS_COLLECTION = "Words";
@@ -28,7 +28,7 @@ type WordAction = 'noAction' | 'approve' | 'rejectGibberish' | 'rejectAdminDecis
 
 export default function WordManagementPage() {
   const { toast } = useToast();
-  const { currentUser } = useAuth(); // Get currentUser from AuthContext
+  const { currentUser } = useAuth(); 
   const [pendingSubmissions, setPendingSubmissions] = useState<WordSubmission[]>([]);
   const [isLoadingSubmissions, setIsLoadingSubmissions] = useState(true);
   
@@ -44,7 +44,7 @@ export default function WordManagementPage() {
   const [submissionActions, setSubmissionActions] = useState<Record<string, WordAction>>({});
   const [selectedRowIds, setSelectedRowIds] = useState<Set<string>>(new Set());
   const [itemsPerPage, setItemsPerPage] = useState(25);
-  const [currentPage, setCurrentPage] = useState(1);
+  const [currentPage, setCurrentPage] = useState(1); // For UI indication, actual query uses lastVisible
   const [isProcessingBulk, setIsProcessingBulk] = useState(false);
   const [lastVisibleSubmission, setLastVisibleSubmission] = useState<any>(null);
 
@@ -55,11 +55,15 @@ export default function WordManagementPage() {
 
   const fetchPendingSubmissions = useCallback(async (resetPagination = false) => {
     setIsLoadingSubmissions(true);
+    
+    const localLastVisible = resetPagination ? null : lastVisibleSubmission;
+
     if (resetPagination) {
-        setLastVisibleSubmission(null);
-        setCurrentPage(1);
-        setPendingSubmissions([]); 
+        setPendingSubmissions([]); // Clear existing submissions immediately for a reset
+        setCurrentPage(1); // Reset page number for UI
+        // lastVisibleSubmission is effectively reset by localLastVisible being null for the query
     }
+
     try {
       let q = query(
         collection(firestore, WORD_SUBMISSIONS_QUEUE), 
@@ -68,12 +72,12 @@ export default function WordManagementPage() {
         limit(itemsPerPage)
       );
 
-      if (lastVisibleSubmission && !resetPagination && currentPage > 1) {
+      if (localLastVisible) { // This implies !resetPagination
         q = query(
             collection(firestore, WORD_SUBMISSIONS_QUEUE), 
             where("status", "==", "PendingModeratorReview"),
             orderBy("submittedTimestamp", "asc"),
-            startAfter(lastVisibleSubmission),
+            startAfter(localLastVisible),
             limit(itemsPerPage)
         );
       }
@@ -84,8 +88,14 @@ export default function WordManagementPage() {
         submissions.push({ id: docSnap.id, ...docSnap.data() } as WordSubmission);
       });
       
-      setPendingSubmissions(prev => resetPagination ? submissions : [...prev, ...submissions]);
-      setLastVisibleSubmission(querySnapshot.docs[querySnapshot.docs.length - 1]);
+      if (resetPagination) {
+        setPendingSubmissions(submissions);
+      } else {
+        setPendingSubmissions(prev => [...prev, ...submissions]);
+      }
+      
+      setLastVisibleSubmission(querySnapshot.docs[querySnapshot.docs.length - 1] || null);
+
 
       setSubmissionActions(prevActions => {
         const newActions = {...prevActions};
@@ -103,7 +113,8 @@ export default function WordManagementPage() {
     } finally {
       setIsLoadingSubmissions(false);
     }
-  }, [toast, itemsPerPage, lastVisibleSubmission, currentPage]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [toast, itemsPerPage, lastVisibleSubmission]); // lastVisibleSubmission is needed here for the "load more" logic to correctly use it.
 
 
   const fetchMasterWords = useCallback(async () => {
@@ -125,8 +136,11 @@ export default function WordManagementPage() {
   }, [toast]);
 
   useEffect(() => {
+    // This effect handles initial load and changes to itemsPerPage
     fetchPendingSubmissions(true); 
-  }, [itemsPerPage, fetchPendingSubmissions]); // Added fetchPendingSubmissions to dependency array
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [itemsPerPage]); // fetchPendingSubmissions is omitted here to prevent loops.
+                      // The function called will use the latest itemsPerPage from its closure.
 
    useEffect(() => {
     fetchMasterWords();
@@ -170,7 +184,7 @@ export default function WordManagementPage() {
   };
 
   const handleBulkProcessSubmissions = async () => {
-    if (!currentUser) { // Client-side authentication check
+    if (!currentUser) { 
       toast({ title: "Authentication Error", description: "You must be logged in to moderate. Please log in again.", variant: "destructive" });
       setIsProcessingBulk(false);
       return;
@@ -208,7 +222,7 @@ export default function WordManagementPage() {
 
     try {
       const result = await adminBulkProcessWordSubmissionsAction({ 
-        actingAdminId: currentUser.uid, // Pass the admin's UID
+        actingAdminId: currentUser.uid, 
         submissionsToProcess: submissionsToProcessPayload 
       });
       let successCount = 0;
@@ -228,7 +242,7 @@ export default function WordManagementPage() {
          toast({ title: "Bulk Processing Error", description: `An error occurred during bulk processing. ${successCount} processed, ${errorCount} failed. Details: ${result.error || ''}`, variant: "destructive" });
       }
       
-      await fetchPendingSubmissions(true); 
+      fetchPendingSubmissions(true); 
       setSelectedRowIds(new Set());
       fetchMasterWords(); 
 
@@ -272,7 +286,7 @@ export default function WordManagementPage() {
             <CardDescription>Review and approve/reject words submitted by players.</CardDescription>
           </div>
           <div className="flex items-center gap-2">
-             <Select value={String(itemsPerPage)} onValueChange={(val) => {setItemsPerPage(Number(val)); fetchPendingSubmissions(true);}}>
+             <Select value={String(itemsPerPage)} onValueChange={(val) => {setItemsPerPage(Number(val));}}>
               <SelectTrigger className="w-[120px]">
                 <SelectValue placeholder="Items per page" />
               </SelectTrigger>
@@ -362,7 +376,7 @@ export default function WordManagementPage() {
         </CardContent>
          <CardFooter className="flex flex-col sm:flex-row justify-between items-center gap-4 pt-4 border-t">
             <p className="text-xs text-muted-foreground">
-              Showing {pendingSubmissions.length} submissions. Selected: {selectedRowIds.size}
+              Showing {pendingSubmissions.length} submissions on page {currentPage}. Selected: {selectedRowIds.size}
             </p>
             <div className="flex gap-2">
                  <Button 
@@ -457,3 +471,4 @@ export default function WordManagementPage() {
     </div>
   );
 }
+
