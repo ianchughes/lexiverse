@@ -1,4 +1,5 @@
 
+
 export interface SeedingLetter {
   id: string; // Unique ID for each letter instance, e.g., `letter-${index}`
   char: string;
@@ -16,10 +17,10 @@ export type GameState = 'idle' | 'playing' | 'cooldown' | 'debrief';
 
 export interface DailyPuzzle {
   id: string; // Typically PuzzleDate_GMT e.g., "2025-06-01"
-  puzzleDateGMT: Date;
+  puzzleDateGMT: Date; // Store as Date object client-side, convert to Timestamp for Firestore
   wordOfTheDayText: string;
   wordOfTheDayPoints: number;
-  seedingLetters: string; // Stored as a 9-char string for simplicity in this form
+  seedingLetters: string; // Stored as a 9-char string
   status: 'Upcoming' | 'Active' | 'Expired';
 }
 
@@ -71,3 +72,13 @@ export interface SystemSettings {
   lastForcedResetTimestamp?: any; // Firestore Timestamp
   // Add other global settings here
 }
+
+// For AI-generated puzzle suggestions (client-side)
+export interface PuzzleSuggestion {
+  wordOfTheDayText: string;
+  seedingLetters: string;
+  id: string; // Client-side unique ID for selection tracking, e.g., crypto.randomUUID()
+}
+
+// Corresponds to the Zod schemas in the AI flow generate-puzzle-suggestions.ts
+export type { GeneratePuzzleSuggestionsInput, GeneratePuzzleSuggestionsOutput, PuzzleSuggestion as AIPuzzleSuggestionType } from '@/ai/flows/generate-puzzle-suggestions';

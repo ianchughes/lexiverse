@@ -10,12 +10,14 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { DatePicker } from '@/components/ui/date-picker';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { Checkbox } from "@/components/ui/checkbox";
 import { useToast } from '@/hooks/use-toast';
-import { PlusCircle, Edit2, Trash2 } from 'lucide-react';
-import type { DailyPuzzle, AdminPuzzleFormState } from '@/types';
+import { PlusCircle, Edit2, Trash2, Sparkles, Save, Loader2 } from 'lucide-react';
+import type { DailyPuzzle, AdminPuzzleFormState, PuzzleSuggestion } from '@/types';
+import { generatePuzzleSuggestions } from '@/ai/flows/generate-puzzle-suggestions';
 import { format } from 'date-fns';
 import { firestore } from '@/lib/firebase';
-import { doc, setDoc, getDoc, Timestamp } from 'firebase/firestore';
+import { doc, setDoc, getDoc, Timestamp, collection, getDocs } from 'firebase/firestore';
 
 // Mock data for listing, updating, deleting - Replace with actual API calls for these too eventually
 let MOCK_PUZZLES: DailyPuzzle[] = [
@@ -26,7 +28,6 @@ let MOCK_PUZZLES: DailyPuzzle[] = [
 async function mockFetchPuzzles(): Promise<DailyPuzzle[]> {
   // In a real app, you'd fetch from Firestore and convert Timestamps to Dates
   // For now, we add any newly created (real) puzzles to the mock list if they aren't there
-  // This is a temporary hack for demonstration
   const puzzlesCollection = collection(firestore, "DailyPuzzles");
   const querySnapshot = await getDocs(puzzlesCollection);
   const firestorePuzzles: DailyPuzzle[] = [];
@@ -42,7 +43,6 @@ async function mockFetchPuzzles(): Promise<DailyPuzzle[]> {
     });
   });
 
-  // Merge and deduplicate, preferring Firestore data
   const allPuzzlesMap = new Map<string, DailyPuzzle>();
   [...MOCK_PUZZLES, ...firestorePuzzles].forEach(p => allPuzzlesMap.set(p.id, p));
   const mergedPuzzles = Array.from(allPuzzlesMap.values());
@@ -69,15 +69,15 @@ async function createDailyPuzzleInFirestore(puzzleData: AdminPuzzleFormState): P
     wordOfTheDayPoints: puzzleData.wordOfTheDayPoints,
     seedingLetters: puzzleData.seedingLetters.toUpperCase(),
     status: puzzleData.status,
-    puzzleDateGMT: Timestamp.fromDate(puzzleData.puzzleDateGMT), // Convert Date to Firestore Timestamp
+    puzzleDateGMT: Timestamp.fromDate(puzzleData.puzzleDateGMT), 
   };
 
   await setDoc(puzzleDocRef, newPuzzleForFirestore);
 
   return {
     id: docId,
-    ...puzzleData, // Includes original puzzleDateGMT as Date object for client-side consistency
-    puzzleDateGMT: puzzleData.puzzleDateGMT, // Ensure it's the Date object for client state
+    ...puzzleData, 
+    puzzleDateGMT: puzzleData.puzzleDateGMT, 
     wordOfTheDayText: puzzleData.wordOfTheDayText.toUpperCase(),
     seedingLetters: puzzleData.seedingLetters.toUpperCase(),
   };
@@ -106,7 +106,6 @@ async function mockDeleteDailyPuzzle(id: string): Promise<void> {
   MOCK_PUZZLES = MOCK_PUZZLES.filter(p => p.id !== id);
   return new Promise(resolve => setTimeout(() => resolve(), 300));
 }
-// End Mock data and functions
 
 
 const initialFormState: AdminPuzzleFormState = {
@@ -117,9 +116,6 @@ const initialFormState: AdminPuzzleFormState = {
   status: 'Upcoming',
 };
 
-// Helper to import Firestore collection and getDocs for mockFetchPuzzles hack
-import { collection, getDocs } from 'firebase/firestore';
-
 
 export default function DailyPuzzleManagementPage() {
   const { toast } = useToast();
@@ -129,13 +125,18 @@ export default function DailyPuzzleManagementPage() {
   const [editingPuzzleId, setEditingPuzzleId] = useState<string | null>(null);
   const [formData, setFormData] = useState<AdminPuzzleFormState>(initialFormState);
   const [formErrors, setFormErrors] = useState<Partial<Record<keyof AdminPuzzleFormState, string>>>({});
-   const [formabilityError, setFormabilityError] = useState<string>('');
+  const [formabilityError, setFormabilityError] = useState<string>('');
+
+  // State for AI puzzle generation
+  const [generationQuantity, setGenerationQuantity] = useState<number>(3);
+  const [isGeneratingSuggestions, setIsGeneratingSuggestions] = useState(false);
+  const [puzzleSuggestions, setPuzzleSuggestions] = useState<PuzzleSuggestion[]>([]);
+  const [selectedSuggestionIds, setSelectedSuggestionIds] = useState<Set<string>>(new Set());
+
 
   const fetchPuzzles = useCallback(async () => {
     setIsLoading(true);
     try {
-      // For now, mockFetchPuzzles also tries to include newly created Firestore puzzles
-      // for better UX during this hybrid state.
       const data = await mockFetchPuzzles(); 
       setPuzzles(data);
     } catch (error) {
@@ -184,7 +185,7 @@ export default function DailyPuzzleManagementPage() {
     const { wordOfTheDayText, seedingLetters } = formData;
     if (!wordOfTheDayText || !seedingLetters || seedingLetters.length !== 9) {
       setFormabilityError('');
-      return true; // Validation will catch empty/wrong length fields
+      return true; 
     }
 
     const wotdCounts = countLetters(wordOfTheDayText);
@@ -209,8 +210,6 @@ export default function DailyPuzzleManagementPage() {
     const errors: Partial<Record<keyof AdminPuzzleFormState, string>> = {};
     if (!formData.puzzleDateGMT) errors.puzzleDateGMT = "Puzzle date is required.";
     else if (formData.puzzleDateGMT.getTime() < new Date(new Date().setHours(0,0,0,0)).getTime() && !editingPuzzleId) {
-      // Allow past dates for editing, but not for new puzzles.
-      // This check could be more nuanced based on exact requirements for editing past puzzles.
       // errors.puzzleDateGMT = "Puzzle date cannot be in the past for new puzzles.";
     }
     if (!formData.wordOfTheDayText.trim()) errors.wordOfTheDayText = "Word of the Day is required.";
@@ -235,23 +234,18 @@ export default function DailyPuzzleManagementPage() {
     if (!validateForm()) return;
     if (!checkFormability()) return;
 
-    // TODO: Implement server-side check if WotD exists in Words table (via Cloud Function)
-    // For now, we'll assume it does or admin is responsible.
-
     try {
       if (editingPuzzleId) {
-        // For now, updating still uses the mock function.
         await mockUpdateDailyPuzzle(editingPuzzleId, formData);
         toast({ title: "Puzzle Updated (Mock)", description: `Puzzle for ${format(formData.puzzleDateGMT!, 'PPP')} has been updated.` });
       } else {
-        // Creating new puzzle now uses Firestore.
         await createDailyPuzzleInFirestore(formData);
         toast({ title: "Puzzle Created in Firebase!", description: `New puzzle for ${format(formData.puzzleDateGMT!, 'PPP')} has been saved to Firestore.` });
       }
       setShowForm(false);
       setEditingPuzzleId(null);
       setFormData(initialFormState);
-      fetchPuzzles(); // Refresh list
+      fetchPuzzles(); 
     } catch (error: any) {
       toast({ title: "Error Saving Puzzle", description: error.message || "Could not save puzzle.", variant: "destructive" });
     }
@@ -266,7 +260,6 @@ export default function DailyPuzzleManagementPage() {
   };
 
   const openEditForm = (puzzle: DailyPuzzle) => {
-    // When editing, ensure puzzleDateGMT is a Date object if it came from Firestore as a Timestamp
     const puzzleDate = puzzle.puzzleDateGMT instanceof Timestamp 
                        ? puzzle.puzzleDateGMT.toDate() 
                        : puzzle.puzzleDateGMT;
@@ -276,7 +269,7 @@ export default function DailyPuzzleManagementPage() {
       wordOfTheDayText: puzzle.wordOfTheDayText,
       wordOfTheDayPoints: puzzle.wordOfTheDayPoints,
       seedingLetters: puzzle.seedingLetters,
-      status: puzzle.status === 'Expired' ? 'Upcoming' : puzzle.status, // Cannot edit to 'Expired'
+      status: puzzle.status === 'Expired' ? 'Upcoming' : puzzle.status,
     });
     setFormErrors({});
     setFormabilityError('');
@@ -285,15 +278,134 @@ export default function DailyPuzzleManagementPage() {
   };
 
   const handleDelete = async (id: string) => {
-    // Deleting still uses mock function for now
     try {
       await mockDeleteDailyPuzzle(id);
       toast({ title: "Puzzle Deleted (Mock)", description: `Puzzle ${id} has been deleted.` });
-      fetchPuzzles(); // Refresh list
+      fetchPuzzles(); 
     } catch (error: any) {
       toast({ title: "Error Deleting Puzzle", description: error.message || "Could not delete puzzle.", variant: "destructive" });
     }
   };
+
+  // AI Puzzle Generation Functions
+  const handleGenerateSuggestions = async () => {
+    if (generationQuantity < 1) {
+      toast({ title: "Invalid Quantity", description: "Please enter a quantity of 1 or more.", variant: "destructive" });
+      return;
+    }
+    setIsGeneratingSuggestions(true);
+    setPuzzleSuggestions([]); 
+    setSelectedSuggestionIds(new Set());
+
+    try {
+      const result = await generatePuzzleSuggestions({ quantity: generationQuantity });
+      if (result.suggestions && result.suggestions.length > 0) {
+        setPuzzleSuggestions(result.suggestions.map(s => ({ ...s, id: crypto.randomUUID() })));
+        toast({ title: "Suggestions Generated", description: `${result.suggestions.length} puzzle suggestions have been generated.` });
+      } else {
+        toast({ title: "No Suggestions", description: "The AI didn't return any suggestions.", variant: "default" });
+      }
+    } catch (error: any) {
+      console.error("Error generating puzzle suggestions:", error);
+      toast({ title: "Generation Failed", description: error.message || "Could not generate puzzle suggestions.", variant: "destructive" });
+    } finally {
+      setIsGeneratingSuggestions(false);
+    }
+  };
+
+  const handleToggleSelectSuggestion = (suggestionId: string) => {
+    setSelectedSuggestionIds(prev => {
+      const newSet = new Set(prev);
+      if (newSet.has(suggestionId)) {
+        newSet.delete(suggestionId);
+      } else {
+        newSet.add(suggestionId);
+      }
+      return newSet;
+    });
+  };
+  
+  async function saveSingleGeneratedPuzzleToFirestore(puzzleData: Omit<DailyPuzzle, 'id'>): Promise<DailyPuzzle> {
+    const docId = format(puzzleData.puzzleDateGMT, 'yyyy-MM-dd');
+    const puzzleDocRef = doc(firestore, "DailyPuzzles", docId);
+    const newPuzzleForFirestore = {
+      wordOfTheDayText: puzzleData.wordOfTheDayText.toUpperCase(),
+      wordOfTheDayPoints: puzzleData.wordOfTheDayPoints,
+      seedingLetters: puzzleData.seedingLetters.toUpperCase(),
+      status: puzzleData.status,
+      puzzleDateGMT: Timestamp.fromDate(puzzleData.puzzleDateGMT),
+    };
+    await setDoc(puzzleDocRef, newPuzzleForFirestore);
+    return { id: docId, ...puzzleData };
+  }
+
+  const handleSaveSelectedPuzzles = async () => {
+    if (selectedSuggestionIds.size === 0) {
+      toast({ title: "No Puzzles Selected", description: "Please select at least one puzzle suggestion to save.", variant: "default" });
+      return;
+    }
+    setIsLoading(true);
+    const puzzlesToSave = puzzleSuggestions.filter(s => selectedSuggestionIds.has(s.id));
+    const existingPuzzleDates = new Set(puzzles.map(p => format(p.puzzleDateGMT instanceof Timestamp ? p.puzzleDateGMT.toDate() : p.puzzleDateGMT, 'yyyy-MM-dd')));
+    
+    try {
+        const puzzlesCollectionRef = collection(firestore, "DailyPuzzles");
+        const querySnapshot = await getDocs(puzzlesCollectionRef);
+        querySnapshot.forEach((docSnap) => existingPuzzleDates.add(docSnap.id));
+    } catch (error) {
+        console.error("Error fetching existing puzzle dates from Firestore:", error);
+        toast({ title: "Error", description: "Could not verify existing puzzle dates. Aborting save.", variant: "destructive"});
+        setIsLoading(false);
+        return;
+    }
+
+    let currentDate = new Date();
+    currentDate.setHours(0, 0, 0, 0); 
+    currentDate.setDate(currentDate.getDate() + 1); 
+
+    let savedCount = 0;
+    for (const suggestion of puzzlesToSave) {
+      let assignedDate = false;
+      let attempts = 0; // Safety for finding a date
+      while (!assignedDate && attempts < 365 * 2) { // Try for 2 years
+        const dateStr = format(currentDate, 'yyyy-MM-dd');
+        if (!existingPuzzleDates.has(dateStr)) {
+          const newPuzzleData: Omit<DailyPuzzle, 'id'> = {
+            puzzleDateGMT: new Date(currentDate.getTime()), // Important: use new Date object
+            wordOfTheDayText: suggestion.wordOfTheDayText,
+            wordOfTheDayPoints: suggestion.wordOfTheDayText.length * 10, 
+            seedingLetters: suggestion.seedingLetters,
+            status: 'Upcoming',
+          };
+          try {
+            await saveSingleGeneratedPuzzleToFirestore(newPuzzleData);
+            existingPuzzleDates.add(dateStr); 
+            savedCount++;
+            assignedDate = true;
+          } catch (error: any) {
+            toast({ title: "Error Saving Puzzle", description: `Could not save ${suggestion.wordOfTheDayText} for ${dateStr}: ${error.message}`, variant: "destructive" });
+            assignedDate = true; 
+          }
+        }
+        currentDate.setDate(currentDate.getDate() + 1);
+        attempts++;
+      }
+       if (!assignedDate) {
+         toast({ title: "Date Assignment Error", description: `Could not find an available date for ${suggestion.wordOfTheDayText} within the next 2 years.`, variant: "destructive"});
+       }
+    }
+
+    if (savedCount > 0) {
+      toast({ title: "Puzzles Saved", description: `${savedCount} puzzles have been scheduled.` });
+      fetchPuzzles(); 
+      setPuzzleSuggestions([]); 
+      setSelectedSuggestionIds(new Set());
+    } else if (puzzlesToSave.length > 0) {
+        toast({ title: "No Puzzles Saved", description: "Could not save any selected puzzles.", variant: "default"});
+    }
+    setIsLoading(false);
+  };
+
   
   return (
     <div className="space-y-6">
@@ -363,8 +475,7 @@ export default function DailyPuzzleManagementPage() {
               </div>
               {formabilityError && <p className="text-sm text-destructive mt-1">{formabilityError}</p>}
                <p className="text-xs text-muted-foreground">
-                 Note: WotD existence in Master Dictionary and point accuracy should be verified (ideally via server-side check not yet implemented).
-                 Formability from seeding letters is checked client-side.
+                 Note: WotD existence in Master Dictionary and point accuracy should be verified. Formability from seeding letters is checked client-side.
                </p>
             </CardContent>
             <CardFooter className="flex justify-end space-x-2">
@@ -377,16 +488,81 @@ export default function DailyPuzzleManagementPage() {
         </Card>
       )}
 
+      <Card className="mb-6">
+        <CardHeader>
+          <CardTitle>Generate Puzzle Suggestions (AI)</CardTitle>
+          <CardDescription>
+            Let AI generate new Word of the Day and Seeding Letter combinations.
+            Selected puzzles will be scheduled for the next available future dates.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="flex items-end gap-2">
+            <div className="flex-grow">
+              <Label htmlFor="generationQuantity">Number of Puzzles to Generate (1-10)</Label>
+              <Input
+                id="generationQuantity"
+                type="number"
+                value={generationQuantity}
+                onChange={(e) => setGenerationQuantity(Math.max(1, Math.min(10, parseInt(e.target.value, 10) || 1)))}
+                min="1"
+                max="10"
+                disabled={isGeneratingSuggestions}
+                className="w-full"
+              />
+            </div>
+            <Button onClick={handleGenerateSuggestions} disabled={isGeneratingSuggestions}>
+              {isGeneratingSuggestions ? (
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              ) : (
+                <Sparkles className="mr-2 h-4 w-4" />
+              )}
+              Generate
+            </Button>
+          </div>
+
+          {isGeneratingSuggestions && <p className="text-muted-foreground text-center py-4"><Loader2 className="inline mr-2 h-4 w-4 animate-spin" />Generating suggestions...</p>}
+
+          {puzzleSuggestions.length > 0 && !isGeneratingSuggestions && (
+            <div className="space-y-3 mt-4">
+              <h3 className="text-lg font-semibold">Generated Suggestions:</h3>
+              <div className="max-h-80 overflow-y-auto space-y-2 border p-3 rounded-md bg-muted/20">
+                {puzzleSuggestions.map((suggestion) => (
+                  <Card key={suggestion.id} className={`p-3 transition-colors cursor-pointer hover:border-primary ${selectedSuggestionIds.has(suggestion.id) ? 'border-primary bg-secondary' : 'bg-background'}`} onClick={() => handleToggleSelectSuggestion(suggestion.id)}>
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <p className="font-semibold">WotD: <span className="font-mono text-primary">{suggestion.wordOfTheDayText}</span></p>
+                        <p className="text-sm text-muted-foreground">Seeding: <span className="font-mono">{suggestion.seedingLetters}</span></p>
+                      </div>
+                      <Checkbox
+                        checked={selectedSuggestionIds.has(suggestion.id)}
+                        onCheckedChange={() => handleToggleSelectSuggestion(suggestion.id)}
+                        id={`select-suggestion-${suggestion.id}`}
+                        aria-label={`Select puzzle suggestion ${suggestion.wordOfTheDayText}`}
+                      />
+                    </div>
+                  </Card>
+                ))}
+              </div>
+              <Button onClick={handleSaveSelectedPuzzles} disabled={selectedSuggestionIds.size === 0 || isLoading} className="w-full mt-4">
+                {isLoading && selectedSuggestionIds.size > 0 ? ( <Loader2 className="mr-2 h-4 w-4 animate-spin" /> ) : ( <Save className="mr-2 h-4 w-4" />) } 
+                Save Selected ({selectedSuggestionIds.size}) to Firebase
+              </Button>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
       <Card>
         <CardHeader>
           <CardTitle>Puzzle List</CardTitle>
           <CardDescription>View and manage all upcoming, active, and past puzzles. (List includes newly created puzzles from Firebase and mock data)</CardDescription>
         </CardHeader>
         <CardContent>
-          {isLoading ? (
+          {isLoading && !isGeneratingSuggestions && puzzles.length === 0 ? ( // Show loading only if not generating suggestions and no puzzles yet
             <p>Loading puzzles...</p>
-          ) : puzzles.length === 0 ? (
-            <p className="text-muted-foreground">No puzzles found. Click "Add New Puzzle" to create one.</p>
+          ) : puzzles.length === 0 && !isGeneratingSuggestions ? (
+            <p className="text-muted-foreground">No puzzles found. Click "Add New Puzzle" or "Generate Suggestions".</p>
           ) : (
             <Table>
               <TableHeader>
@@ -412,9 +588,9 @@ export default function DailyPuzzleManagementPage() {
                       <TableCell>{puzzle.wordOfTheDayPoints}</TableCell>
                       <TableCell>
                           <span className={`px-2 py-1 text-xs rounded-full ${
-                              puzzle.status === 'Active' ? 'bg-green-100 text-green-700' :
-                              puzzle.status === 'Upcoming' ? 'bg-blue-100 text-blue-700' :
-                              'bg-gray-100 text-gray-700'
+                              puzzle.status === 'Active' ? 'bg-green-100 text-green-700 dark:bg-green-700 dark:text-green-100' :
+                              puzzle.status === 'Upcoming' ? 'bg-blue-100 text-blue-700 dark:bg-blue-700 dark:text-blue-100' :
+                              'bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-100'
                           }`}>
                               {puzzle.status}
                           </span>
@@ -455,11 +631,10 @@ export default function DailyPuzzleManagementPage() {
         </CardContent>
       </Card>
        <p className="text-xs text-muted-foreground text-center">
-            Reminder: Puzzle creation now saves to Firestore.
+            Reminder: Puzzle creation now saves to Firestore. AI generated puzzles are also saved to Firestore.
             Fetching, updating, and deleting puzzles still use MOCK (client-side) functions for demonstration.
             Implement and connect to actual Firebase Cloud Functions for full persistence and server-side validation.
           </p>
     </div>
   );
 }
-
