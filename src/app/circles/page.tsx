@@ -8,7 +8,7 @@ import { firestore } from '@/lib/firebase';
 import { collection, query, where, getDocs, doc, getDoc } from 'firebase/firestore';
 import type { Circle, CircleMember, CircleMemberRole } from '@/types'; // Removed CircleInvite
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
+import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter } from '@/components/ui/card'; // Added CardFooter
 import { PlusCircle, Users, Eye, Loader2, AlertTriangle, Settings } from 'lucide-react';
 import { Separator } from '@/components/ui/separator';
 import { CircleInviteManagerDialog } from '@/components/circles/CircleInviteManagerDialog'; // Import the new dialog
