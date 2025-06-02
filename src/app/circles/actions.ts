@@ -2,7 +2,7 @@
 'use server';
 
 import { firestore } from '@/lib/firebase';
-import { collection, addDoc, serverTimestamp, doc, writeBatch, query, where, getDocs, updateDoc, deleteDoc, runTransaction, increment } from 'firebase/firestore';
+import { collection, addDoc, serverTimestamp, doc, writeBatch, query, where, getDocs, updateDoc, deleteDoc, runTransaction, increment, getDoc } from 'firebase/firestore';
 import type { Circle, CircleMember, CircleInvite, UserProfile } from '@/types';
 import { customAlphabet } from 'nanoid';
 
@@ -208,11 +208,11 @@ export async function sendCircleInviteAction(payload: SendCircleInvitePayload): 
     const { circleId, circleName, inviterUserId, inviterUsername, inviteeUserId, inviteeEmail, inviteeUsername: targetUsername } = payload;
 
     // Verify inviter is admin
-    const circleDoc = await getDoc(doc(firestore, 'Circles', circleId));
-    if (!circleDoc.exists()){
+    const circleDocSnap = await getDoc(doc(firestore, 'Circles', circleId));
+    if (!circleDocSnap.exists()){
         return { success: false, error: "Circle not found." };
     }
-    const circleData = circleDoc.data() as Circle;
+    const circleData = circleDocSnap.data() as Circle;
     if (circleData.creatorUserID !== inviterUserId) {
       const memberQuery = query(collection(firestore, 'CircleMembers'), 
         where('circleId', '==', circleId), 
@@ -387,9 +387,9 @@ export async function joinCircleWithInviteCodeAction(payload: JoinCircleWithInvi
     if (circlesSnap.empty) {
       return { success: false, error: "Invalid or expired invite code." };
     }
-    const circleDoc = circlesSnap.docs[0];
-    const circleData = circleDoc.data() as Circle;
-    const circleId = circleDoc.id;
+    const circleDocSnap = circlesSnap.docs[0];
+    const circleData = circleDocSnap.data() as Circle;
+    const circleId = circleDocSnap.id;
 
     if (circleData.status !== 'Active') {
       return { success: false, error: "This circle is currently not active or accepting new members." };
