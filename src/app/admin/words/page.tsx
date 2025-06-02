@@ -3,25 +3,22 @@
 
 import React, { useState, useEffect, useCallback } from 'react';
 import { firestore, auth } from '@/lib/firebase';
-import { collection, query, where, getDocs, doc, updateDoc, setDoc, serverTimestamp, Timestamp, increment, getDoc } from 'firebase/firestore';
-import type { WordSubmission, WordSubmissionStatus, MasterWord, UserProfile } from '@/types';
+import { collection, query, where, getDocs, doc, updateDoc, setDoc, serverTimestamp, Timestamp, increment, getDoc as getFirestoreDoc, deleteDoc } from 'firebase/firestore'; // Renamed getDoc to avoid conflict if any
+import type { WordSubmission, WordSubmissionStatus, MasterWord, UserProfile, RejectedWord, RejectionType } from '@/types';
 
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Button } from "@/components/ui/button";
-import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter, DialogClose } from "@/components/ui/dialog";
-import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from '@/components/ui/textarea';
 import { useToast } from '@/hooks/use-toast';
-import { CheckCircle, XCircle, FileX2, ShieldAlert, Loader2, RefreshCw, Settings2 } from 'lucide-react';
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
+import { CheckCircle, XCircle, ThumbsUp, ThumbsDown, ShieldAlert, Loader2, RefreshCw } from 'lucide-react';
 import { format } from 'date-fns';
-
 
 const WORD_SUBMISSIONS_QUEUE = "WordSubmissionsQueue";
 const MASTER_WORDS_COLLECTION = "Words";
+const REJECTED_WORDS_COLLECTION = "RejectedWords";
 const USERS_COLLECTION = "Users";
 
 export default function WordManagementPage() {
@@ -31,14 +28,9 @@ export default function WordManagementPage() {
   
   const [submissionToApprove, setSubmissionToApprove] = useState<WordSubmission | null>(null);
   const [isApproveDialogOpen, setIsApproveDialogOpen] = useState(false);
-  const [pointsForApproval, setPointsForApproval] = useState<number>(0);
   const [notesForApproval, setNotesForApproval] = useState<string>('');
   
-  const [submissionToReject, setSubmissionToReject] = useState<WordSubmission | null>(null);
-  const [rejectActionType, setRejectActionType] = useState<WordSubmissionStatus | null>(null);
-  const [isRejectConfirmDialogOpen, setIsRejectConfirmDialogOpen] = useState(false);
-
-  const [isProcessing, setIsProcessing] = useState(false);
+  const [processingState, setProcessingState] = useState<Record<string, boolean>>({}); // Tracks processing state per submission ID
 
 
   const fetchPendingSubmissions = useCallback(async () => {
@@ -70,36 +62,29 @@ export default function WordManagementPage() {
 
   const openApproveDialog = (submission: WordSubmission) => {
     setSubmissionToApprove(submission);
-    setPointsForApproval(submission.wordText.length * 10); // Default points suggestion
     setNotesForApproval('');
     setIsApproveDialogOpen(true);
   };
 
-  const openRejectConfirmDialog = (submission: WordSubmission, actionType: WordSubmissionStatus) => {
-    setSubmissionToReject(submission);
-    setRejectActionType(actionType);
-    setIsRejectConfirmDialogOpen(true);
-  };
+  const handleApproveWordAction = async () => {
+    if (!submissionToApprove) return;
+    
+    const submissionId = submissionToApprove.id!;
+    setProcessingState(prev => ({ ...prev, [submissionId]: true }));
 
-  const handleApproveAction = async () => {
-    if (!submissionToApprove || pointsForApproval <= 0 || isNaN(pointsForApproval)) {
-        toast({ title: "Invalid Points", description: "Assigned points must be a positive number.", variant: "destructive"});
-        return;
-    }
-    setIsProcessing(true);
     const currentUserUID = auth.currentUser?.uid;
     if (!currentUserUID) {
         toast({ title: "Authentication Error", description: "You must be logged in to moderate.", variant: "destructive" });
-        setIsProcessing(false);
+        setProcessingState(prev => ({ ...prev, [submissionId]: false }));
         return;
     }
 
     try {
-      const submissionDocRef = doc(firestore, WORD_SUBMISSIONS_QUEUE, submissionToApprove.id!);
+      const submissionDocRef = doc(firestore, WORD_SUBMISSIONS_QUEUE, submissionId);
       const wordKey = submissionToApprove.wordText.toUpperCase();
       const masterWordDocRef = doc(firestore, MASTER_WORDS_COLLECTION, wordKey);
       
-      const masterWordSnap = await getDoc(masterWordDocRef);
+      const masterWordSnap = await getFirestoreDoc(masterWordDocRef);
       if (masterWordSnap.exists()) {
           await updateDoc(submissionDocRef, {
               status: 'Rejected_Duplicate',
@@ -111,9 +96,8 @@ export default function WordManagementPage() {
       } else {
           const newMasterWord: MasterWord = {
               wordText: wordKey,
-              points: pointsForApproval,
               definition: submissionToApprove.definition || "No definition provided.",
-              frequency: submissionToApprove.frequency,
+              frequency: submissionToApprove.frequency || 1, // Default frequency if not present
               status: 'Approved',
               addedByUID: currentUserUID,
               dateAdded: serverTimestamp(),
@@ -121,17 +105,18 @@ export default function WordManagementPage() {
               puzzleDateGMTOfSubmission: submissionToApprove.puzzleDateGMT,
           };
           await setDoc(masterWordDocRef, newMasterWord);
-          await updateDoc(submissionDocRef, {
-              status: 'Approved',
-              reviewedByUID: currentUserUID,
-              reviewedTimestamp: serverTimestamp(),
-              assignedPointsOnApproval: pointsForApproval,
-              moderatorNotes: notesForApproval.trim(),
-          });
-          toast({ title: "Word Approved!", description: `${wordKey} added to master dictionary with ${pointsForApproval} points.` });
+          // Decide if to update or delete from queue
+          await deleteDoc(submissionDocRef); 
+          // await updateDoc(submissionDocRef, { 
+          //     status: 'Approved',
+          //     reviewedByUID: currentUserUID,
+          //     reviewedTimestamp: serverTimestamp(),
+          //     moderatorNotes: notesForApproval.trim(),
+          // });
+          toast({ title: "Word Approved!", description: `${wordKey} added to master dictionary.` });
       }
       
-      fetchPendingSubmissions();
+      setPendingSubmissions(prev => prev.filter(s => s.id !== submissionId));
       setIsApproveDialogOpen(false);
       setSubmissionToApprove(null);
 
@@ -139,60 +124,71 @@ export default function WordManagementPage() {
       console.error("Error approving submission:", error);
       toast({ title: "Approval Error", description: `Could not approve submission: ${error.message}`, variant: "destructive" });
     } finally {
-      setIsProcessing(false);
+      setProcessingState(prev => ({ ...prev, [submissionId]: false }));
     }
   };
 
-  const handleRejectAction = async () => {
-    if (!submissionToReject || !rejectActionType) return;
+  const handleRejectWordAction = async (submission: WordSubmission, rejectionType: RejectionType) => {
+    const submissionId = submission.id!;
+    setProcessingState(prev => ({ ...prev, [submissionId]: true }));
 
-    setIsProcessing(true);
     const currentUserUID = auth.currentUser?.uid;
     if (!currentUserUID) {
         toast({ title: "Authentication Error", description: "You must be logged in to moderate.", variant: "destructive" });
-        setIsProcessing(false);
+        setProcessingState(prev => ({ ...prev, [submissionId]: false }));
         return;
     }
+    
+    const wordKey = submission.wordText.toUpperCase();
+    const rejectedWordDocRef = doc(firestore, REJECTED_WORDS_COLLECTION, wordKey);
+    const submissionDocRef = doc(firestore, WORD_SUBMISSIONS_QUEUE, submissionId);
 
     try {
-      const submissionDocRef = doc(firestore, WORD_SUBMISSIONS_QUEUE, submissionToReject.id!);
-      await updateDoc(submissionDocRef, {
-        status: rejectActionType,
-        reviewedByUID: currentUserUID,
-        reviewedTimestamp: serverTimestamp(),
-        moderatorNotes: `Rejected: ${rejectActionType}`, // Basic note, can be expanded
-      });
+      const newRejectedWord: RejectedWord = {
+        wordText: wordKey,
+        rejectionType: rejectionType,
+        rejectedByUID: currentUserUID,
+        dateRejected: serverTimestamp(),
+        originalSubmitterUID: submission.submittedByUID,
+      };
+      await setDoc(rejectedWordDocRef, newRejectedWord, { merge: true }); 
 
-      let toastMessage = `Word "${submissionToReject.wordText}" has been rejected.`;
+      // Decide if to update or delete from queue
+      await deleteDoc(submissionDocRef);
+      // await updateDoc(submissionDocRef, { 
+      //   status: rejectionType === 'Gibberish' ? 'Rejected_NotReal' : 'Rejected_AdminDecision',
+      //   reviewedByUID: currentUserUID,
+      //   reviewedTimestamp: serverTimestamp(),
+      //   moderatorNotes: `Rejected: ${rejectionType}`,
+      // });
 
-      if (rejectActionType === 'Rejected_NotReal') {
-        const userDocRef = doc(firestore, USERS_COLLECTION, submissionToReject.submittedByUID);
-        const userSnap = await getDoc(userDocRef);
+      let toastMessage = `Word "${submission.wordText}" has been rejected as ${rejectionType} and added to rejected list.`;
+
+      if (rejectionType === 'Gibberish') {
+        const userDocRef = doc(firestore, USERS_COLLECTION, submission.submittedByUID);
+        const userSnap = await getFirestoreDoc(userDocRef);
         if (userSnap.exists()) {
-          const deductionPoints = submissionToReject.wordText.length;
+          const deductionPoints = submission.wordText.length;
           await updateDoc(userDocRef, {
             overallPersistentScore: increment(-deductionPoints)
           });
           toastMessage += ` ${deductionPoints} points deducted from submitter.`;
         } else {
           toastMessage += ` Submitter's profile not found for point deduction.`;
-          console.warn(`User profile ${submissionToReject.submittedByUID} not found for point deduction.`);
+          console.warn(`User profile ${submission.submittedByUID} not found for point deduction.`);
         }
       }
       
       toast({ title: "Word Rejected", description: toastMessage });
-      fetchPendingSubmissions();
-      setIsRejectConfirmDialogOpen(false);
-      setSubmissionToReject(null);
+      setPendingSubmissions(prev => prev.filter(s => s.id !== submissionId));
 
     } catch (error: any) {
       console.error("Error rejecting submission:", error);
       toast({ title: "Rejection Error", description: `Could not reject submission: ${error.message}`, variant: "destructive" });
     } finally {
-      setIsProcessing(false);
+      setProcessingState(prev => ({ ...prev, [submissionId]: false }));
     }
   };
-
 
   const formatDate = (timestamp: any) => {
     if (timestamp instanceof Timestamp) {
@@ -209,7 +205,7 @@ export default function WordManagementPage() {
       <div>
         <h1 className="text-3xl font-bold tracking-tight">Word Management & Moderation</h1>
         <p className="text-muted-foreground mt-1">
-          Manage the master game dictionary and moderate user-submitted words.
+          Review submissions. Approved words go to Master List, rejected words to Rejected List.
         </p>
       </div>
 
@@ -219,7 +215,7 @@ export default function WordManagementPage() {
             <CardTitle>Word Submissions Queue</CardTitle>
             <CardDescription>Review and approve/reject words submitted by players.</CardDescription>
           </div>
-           <Button onClick={fetchPendingSubmissions} variant="outline" size="icon" disabled={isLoading || isProcessing}>
+           <Button onClick={fetchPendingSubmissions} variant="outline" size="icon" disabled={isLoading || Object.values(processingState).some(p => p)}>
             <RefreshCw className={`h-4 w-4 ${isLoading ? 'animate-spin' : ''}`} />
           </Button>
         </CardHeader>
@@ -257,27 +253,34 @@ export default function WordManagementPage() {
                     <TableCell className="text-center">
                       {submission.frequency !== undefined ? submission.frequency.toFixed(2) : 'N/A'}
                     </TableCell>
-                    <TableCell className="text-right">
-                      <DropdownMenu>
-                        <DropdownMenuTrigger asChild>
-                          <Button variant="ghost" size="icon" disabled={isProcessing}>
-                            <Settings2 className="h-4 w-4" />
-                          </Button>
-                        </DropdownMenuTrigger>
-                        <DropdownMenuContent align="end">
-                          <DropdownMenuLabel>Moderate Word</DropdownMenuLabel>
-                          <DropdownMenuSeparator />
-                          <DropdownMenuItem onClick={() => openApproveDialog(submission)} disabled={isProcessing}>
-                            <CheckCircle className="mr-2 h-4 w-4 text-green-500" /> Approve
-                          </DropdownMenuItem>
-                          <DropdownMenuItem onClick={() => openRejectConfirmDialog(submission, 'Rejected_NotReal')} disabled={isProcessing}>
-                            <FileX2 className="mr-2 h-4 w-4 text-orange-500" /> Reject (Gibberish)
-                          </DropdownMenuItem>
-                          <DropdownMenuItem onClick={() => openRejectConfirmDialog(submission, 'Rejected_AdminDecision')} disabled={isProcessing}>
-                            <ShieldAlert className="mr-2 h-4 w-4 text-red-500" /> Reject (Admin Decision)
-                          </DropdownMenuItem>
-                        </DropdownMenuContent>
-                      </DropdownMenu>
+                    <TableCell className="text-right space-x-1">
+                       <Button 
+                          variant="ghost" 
+                          size="sm" 
+                          onClick={() => openApproveDialog(submission)} 
+                          disabled={processingState[submission.id!] || isLoading}
+                          className="text-green-600 hover:text-green-700 hover:bg-green-100"
+                        >
+                         {processingState[submission.id!] ? <Loader2 className="h-4 w-4 animate-spin" /> : <ThumbsUp className="h-4 w-4 mr-1" />} Approve
+                       </Button>
+                       <Button 
+                          variant="ghost" 
+                          size="sm" 
+                          onClick={() => handleRejectWordAction(submission, 'Gibberish')} 
+                          disabled={processingState[submission.id!] || isLoading}
+                          className="text-orange-600 hover:text-orange-700 hover:bg-orange-100"
+                        >
+                          {processingState[submission.id!] ? <Loader2 className="h-4 w-4 animate-spin" /> : <ThumbsDown className="h-4 w-4 mr-1" />} Gibberish
+                       </Button>
+                       <Button 
+                          variant="ghost" 
+                          size="sm" 
+                          onClick={() => handleRejectWordAction(submission, 'AdminDecision')} 
+                          disabled={processingState[submission.id!] || isLoading}
+                          className="text-red-600 hover:text-red-700 hover:bg-red-100"
+                        >
+                          {processingState[submission.id!] ? <Loader2 className="h-4 w-4 animate-spin" /> : <ShieldAlert className="h-4 w-4 mr-1" />} Admin Decision
+                       </Button>
                     </TableCell>
                   </TableRow>
                 ))}
@@ -294,40 +297,30 @@ export default function WordManagementPage() {
 
       <Card>
         <CardHeader>
-          <CardTitle>Master Game Dictionary</CardTitle>
-          <CardDescription>View and manage all approved words in the game. (Functionality TBD)</CardDescription>
+          <CardTitle>Master Game Dictionary & Rejected Words</CardTitle>
+          <CardDescription>View/manage approved and permanently rejected words. (Functionality TBD)</CardDescription>
         </CardHeader>
         <CardContent>
           <p className="text-sm text-muted-foreground">
-            Tools for administrators to search, view, edit, or manually add words to the master dictionary will be implemented here.
+            Future: Tools to search, view, edit, or manually add/remove words from the Master List or Rejected List.
           </p>
         </CardContent>
       </Card>
 
-      {/* Approve Dialog */}
+      {/* Approve Dialog (Simplified for notes only) */}
       <Dialog open={isApproveDialogOpen} onOpenChange={setIsApproveDialogOpen}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
             <DialogTitle>Approve Word: "{submissionToApprove?.wordText}"</DialogTitle>
             <DialogDescription>
-              Assign points and add optional notes for this approval.
+              Add optional notes for this approval. Points are calculated dynamically (Length &times; Frequency).
             </DialogDescription>
           </DialogHeader>
           {submissionToApprove && (
             <div className="space-y-4 py-2 text-sm">
               <p><strong>Definition:</strong> {submissionToApprove.definition || "Not provided"}</p>
               <p><strong>Frequency Score:</strong> {submissionToApprove.frequency?.toFixed(2) || "Not provided"}</p>
-              <div>
-                <Label htmlFor="pointsForApproval">Points for Approval</Label>
-                <Input
-                  id="pointsForApproval"
-                  type="number"
-                  value={pointsForApproval}
-                  onChange={(e) => setPointsForApproval(parseInt(e.target.value,10) || 0)}
-                  className="mt-1"
-                  disabled={isProcessing}
-                />
-              </div>
+               <p><strong>Calculated Points (if approved):</strong> {(submissionToApprove.wordText.length * (submissionToApprove.frequency || 1)).toFixed(0)}</p>
               <div>
                 <Label htmlFor="notesForApproval">Moderator Notes (Optional)</Label>
                 <Textarea
@@ -336,60 +329,32 @@ export default function WordManagementPage() {
                   onChange={(e) => setNotesForApproval(e.target.value)}
                   placeholder="e.g., Common word, good addition."
                   className="mt-1"
-                  disabled={isProcessing}
+                  disabled={processingState[submissionToApprove.id!]}
                 />
               </div>
             </div>
           )}
           <DialogFooter>
             <DialogClose asChild>
-              <Button type="button" variant="outline" disabled={isProcessing}>Cancel</Button>
+              <Button type="button" variant="outline" disabled={submissionToApprove && processingState[submissionToApprove.id!]}>Cancel</Button>
             </DialogClose>
             <Button 
-              onClick={handleApproveAction} 
-              disabled={isProcessing || pointsForApproval <=0}
+              onClick={handleApproveWordAction} 
+              disabled={!submissionToApprove || processingState[submissionToApprove.id!]}
               className="bg-green-600 hover:bg-green-700 text-white"
             >
-              {isProcessing ? <Loader2 className="mr-2 h-4 w-4 animate-spin"/> : <CheckCircle className="mr-2 h-4 w-4" />}
+              {submissionToApprove && processingState[submissionToApprove.id!] ? <Loader2 className="mr-2 h-4 w-4 animate-spin"/> : <CheckCircle className="mr-2 h-4 w-4" />}
               Confirm Approve
             </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
 
-      {/* Reject Confirmation Dialog */}
-      <AlertDialog open={isRejectConfirmDialogOpen} onOpenChange={setIsRejectConfirmDialogOpen}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Confirm Rejection</AlertDialogTitle>
-            <AlertDialogDescription>
-              Are you sure you want to reject the word "{submissionToReject?.wordText}" as
-              {rejectActionType === 'Rejected_NotReal' && " 'Gibberish/Not a real word'"}
-              {rejectActionType === 'Rejected_AdminDecision' && " per 'Admin Decision'"}?
-              {rejectActionType === 'Rejected_NotReal' && 
-                ` This will deduct ${submissionToReject?.wordText.length || 0} points from the submitter.`}
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel onClick={() => setIsRejectConfirmDialogOpen(false)} disabled={isProcessing}>Cancel</AlertDialogCancel>
-            <AlertDialogAction 
-              onClick={handleRejectAction} 
-              disabled={isProcessing}
-              className="bg-destructive hover:bg-destructive/90 text-destructive-foreground"
-            >
-              {isProcessing ? <Loader2 className="mr-2 h-4 w-4 animate-spin"/> : <XCircle className="mr-2 h-4 w-4" />}
-              Yes, Reject Word
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
-
        <p className="text-xs text-muted-foreground text-center">
-            Reminder: Word moderation actions update Firestore directly.
-            Point deductions for 'Rejected_NotReal' also update user profiles.
-            Ensure Firestore Security Rules are configured to protect these operations.
+            Word moderation actions update Firestore directly. Rejected words are added to a 'RejectedWords' collection.
+            Point deductions for 'Gibberish' rejections update user profiles. Approved words are added to 'Words' master list.
+            Submissions are deleted from queue after processing.
         </p>
     </div>
   );
 }
-
