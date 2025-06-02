@@ -18,7 +18,7 @@ export interface DailyPuzzle {
   id: string; // Typically PuzzleDate_GMT e.g., "2025-06-01"
   puzzleDateGMT: Date; // Store as Date object client-side, convert to Timestamp for Firestore
   wordOfTheDayText: string;
-  wordOfTheDayPoints: number; // This might become obsolete if points are always dynamic
+  wordOfTheDayPoints: number; 
   seedingLetters: string; // Stored as a 9-char string
   status: 'Upcoming' | 'Active' | 'Expired';
 }
@@ -50,51 +50,53 @@ export interface AdminRoleDoc {
 
 export interface UserProfileWithRole extends UserProfile {
   role: UserRole;
+  ownedWordsCount?: number;
+  ownedWords?: string[];
 }
 
 export type WordSubmissionStatus =
   | 'PendingModeratorReview'
   | 'Approved'
-  | 'Rejected_NotReal'       // For gibberish/non-words
-  | 'Rejected_AdminDecision' // For other admin reasons (e.g., offensive, too obscure)
-  | 'Rejected_Duplicate'     // If found to be a duplicate of an already approved word
-  | 'AutoRejected_KnownBad'; // If the word was already in the RejectedWords list
+  | 'Rejected_NotReal'       
+  | 'Rejected_AdminDecision' 
+  | 'Rejected_Duplicate'     
+  | 'AutoRejected_KnownBad'; 
 
 export interface WordSubmission {
-  id?: string; // Firestore will auto-generate this for WordSubmissionsQueue
-  wordText: string; // Should be normalized (e.g., uppercase)
+  id?: string; 
+  wordText: string; 
   definition?: string;
-  frequency?: number; // e.g., Zipf score from WordsAPI
+  frequency?: number; 
   status: WordSubmissionStatus;
   submittedByUID: string;
-  submittedTimestamp: any; // Firestore serverTimestamp
-  puzzleDateGMT: string; // YYYY-MM-DD format of the puzzle being played
+  submittedTimestamp: any; 
+  puzzleDateGMT: string; 
   moderatorNotes?: string;
   reviewedByUID?: string;
-  reviewedTimestamp?: any; // Firestore serverTimestamp
+  reviewedTimestamp?: any; 
 }
 
-export interface MasterWord {
+export interface MasterWordType { // Renamed from MasterWord to avoid conflict
   // Document ID for this collection will be the wordText in UPPERCASE
   wordText: string; // UPPERCASE
   definition: string;
-  frequency: number; // Store frequency, as points are calculated wordText.length * frequency
-  status: 'Approved' | 'SystemInitial'; // SystemInitial for pre-loaded words
-  addedByUID: string; // UID of admin/moderator who approved/added it
+  frequency: number; 
+  status: 'Approved' | 'SystemInitial'; 
+  addedByUID: string; 
   dateAdded: any; // Firestore serverTimestamp
-  originalSubmitterUID?: string; // UID of the player who first submitted it (if applicable)
-  puzzleDateGMTOfSubmission?: string; // Date of puzzle when it was submitted (if applicable)
+  originalSubmitterUID?: string; 
+  puzzleDateGMTOfSubmission?: string; 
 }
 
 export type RejectionType = 'Gibberish' | 'AdminDecision';
 
-export interface RejectedWord {
+export interface RejectedWordType { // Renamed from RejectedWord to avoid conflict
   // Document ID for this collection will be the wordText in UPPERCASE
   wordText: string; // UPPERCASE
   rejectionType: RejectionType;
   rejectedByUID: string;
   dateRejected: any; // Firestore serverTimestamp
-  originalSubmitterUID?: string; // If this rejection originated from a player's submission
+  originalSubmitterUID?: string; 
 }
 
 
@@ -107,8 +109,8 @@ export interface SystemSettings {
 export interface PuzzleSuggestion {
   wordOfTheDayText: string;
   seedingLetters: string;
-  wordOfTheDayDefinition: string; // Added field
-  id: string; // Client-side unique ID for selection tracking, e.g., crypto.randomUUID()
+  wordOfTheDayDefinition: string; 
+  id: string; 
 }
 
 // Corresponds to the Zod schemas in the AI flow generate-puzzle-suggestions.ts
@@ -121,6 +123,6 @@ type AIPuzzleSuggestionFromFlow = {
 export type GeneratePuzzleSuggestionsOutput = {
   suggestions: AIPuzzleSuggestionFromFlow[];
 };
-export type { GeneratePuzzleSuggestionsInput } from '@/ai/flows/generate-puzzle-suggestions'; // Input type remains the same
+export type { GeneratePuzzleSuggestionsInput } from '@/ai/flows/generate-puzzle-suggestions'; 
 // Re-alias for clarity if used elsewhere, though PuzzleSuggestion from above is likely more used on client.
 export type { AIPuzzleSuggestionFromFlow as AIPuzzleSuggestionType };
