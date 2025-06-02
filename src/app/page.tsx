@@ -16,17 +16,36 @@ import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, 
 import { PlayCircle, Check, AlertTriangle, Send, Loader2 } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { firestore, auth } from '@/lib/firebase';
-import { collection, addDoc, serverTimestamp, doc, getDoc, Timestamp } from 'firebase/firestore';
+import { collection, addDoc, serverTimestamp, doc, getDoc, updateDoc, increment, Timestamp } from 'firebase/firestore';
 import { format } from 'date-fns';
 
 
 const DAILY_GAME_DURATION = 90; // 90 seconds
 const MIN_WORD_LENGTH = 4;
 
-// Mock data - In a real app, this would come from a backend
-const MOCK_SEEDING_LETTERS_CHARS: string[] = ['L', 'E', 'X', 'I', 'V', 'R', 'S', 'E', 'O']; // Example for LEXIVERSE
-const MOCK_WORD_OF_THE_DAY = "LEXIVERSE";
-const MOCK_APPROVED_WORDS = new Set(["LEXI", "VERSE", "ROVE", "LIVE", "SIRE", "EROS", "RISE", MOCK_WORD_OF_THE_DAY]);
+// --- Mock Data Update ---
+interface MockWordDetails {
+  frequency: number;
+  originalSubmitterUID?: string;
+  isWotD?: boolean;
+}
+
+const MOCK_WORD_OF_THE_DAY_TEXT = "LEXIVERSE";
+const MOCK_SEEDING_LETTERS_CHARS: string[] = ['L', 'E', 'X', 'I', 'V', 'R', 'S', 'E', 'O'];
+
+const MOCK_APPROVED_WORDS_MAP: Map<string, MockWordDetails> = new Map([
+  ["LEXI", { frequency: 5.5 }],
+  ["VERSE", { frequency: 4.2 }],
+  ["ROVE", { frequency: 3.0, originalSubmitterUID: "claimerUID123" }], // Test claimed word
+  ["LIVE", { frequency: 6.1, originalSubmitterUID: "anotherClaimerUID456" }],
+  ["SIRE", { frequency: 2.5 }],
+  ["EROS", { frequency: 1.8 }],
+  ["RISE", { frequency: 5.0 }],
+  [MOCK_WORD_OF_THE_DAY_TEXT, { frequency: 7.0, isWotD: true }],
+  ["OXES", { frequency: 2.2 }],
+  ["SOLE", { frequency: 3.5, originalSubmitterUID: "claimerUID123" }],
+]);
+// --- End Mock Data Update ---
 
 const SYSTEM_SETTINGS_COLLECTION = "SystemConfiguration";
 const GAME_SETTINGS_DOC_ID = "gameSettings";
@@ -98,7 +117,7 @@ export default function HomePage() {
         setGameState('cooldown');
       } else {
         setHasPlayedToday(false);
-        setGameState('idle'); // Set to idle if not played today
+        setGameState('idle'); 
       }
       setCurrentPuzzleDate(format(new Date(), 'yyyy-MM-dd'));
       setIsLoadingInitialState(false);
@@ -123,6 +142,7 @@ export default function HomePage() {
     }, 1000);
 
     return () => clearInterval(timerId);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [gameState, timeLeft]);
 
 
@@ -144,9 +164,9 @@ export default function HomePage() {
     setGameState('debrief');
     let finalScore = sessionScore;
     if (guessedWotD) {
-      finalScore *= 2; 
+      finalScore = Math.round(finalScore * 2); 
     }
-    setFinalDailyScore(finalScore);
+    setFinalDailyScore(Math.round(finalScore));
     setShowDebrief(true);
     setHasPlayedToday(true);
     localStorage.setItem(LOCALSTORAGE_LAST_PLAYED_KEY, new Date().toDateString());
@@ -174,7 +194,7 @@ export default function HomePage() {
     setTimeout(() => setWordInvalidFlash(false), 300);
   };
 
-  const handleSubmitWord = () => {
+  const handleSubmitWord = async () => {
     if (gameState !== 'playing') return;
 
     const wordText = currentWord.map(l => l.char).join('').toUpperCase();
@@ -191,21 +211,39 @@ export default function HomePage() {
       return;
     }
     
-    const isWotD = wordText === MOCK_WORD_OF_THE_DAY.toUpperCase();
-    let points = 0;
+    const wordDetails = MOCK_APPROVED_WORDS_MAP.get(wordText);
 
-    if (MOCK_APPROVED_WORDS.has(wordText) || isWotD) {
-      points = wordText.length * 10;
-      if (isWotD) {
-        points *= 2;
+    if (wordDetails) {
+      const points = Math.round(wordText.length * wordDetails.frequency);
+      
+      if (wordDetails.isWotD) {
         setGuessedWotD(true);
-        toast({ title: "Word of the Day!", description: `You found "${wordText}"!`, className: "bg-accent text-accent-foreground" });
+        toast({ title: "Word of the Day!", description: `You found "${wordText}" for ${points} base points!`, className: "bg-accent text-accent-foreground" });
       } else {
          toast({ title: "Word Found!", description: `"${wordText}" is worth ${points} points.`, variant: "default" });
       }
 
       setSessionScore((prev) => prev + points);
-      setSubmittedWords((prev) => [...prev, { id: crypto.randomUUID(), text: wordText, points, isWotD }]);
+      setSubmittedWords((prev) => [...prev, { id: crypto.randomUUID(), text: wordText, points, isWotD: !!wordDetails.isWotD }]);
+      
+      // Claimed Word Bonus Logic
+      const currentUserUID = auth.currentUser?.uid;
+      if (currentUserUID && wordDetails.originalSubmitterUID && wordDetails.originalSubmitterUID !== currentUserUID) {
+        try {
+          const claimerProfileRef = doc(firestore, "Users", wordDetails.originalSubmitterUID);
+          await updateDoc(claimerProfileRef, {
+            overallPersistentScore: increment(wordDetails.frequency)
+          });
+          console.log(`Bonus of ${wordDetails.frequency} points awarded to claimer ${wordDetails.originalSubmitterUID} for word ${wordText}`);
+          toast({
+            title: "Claimer Bonus!",
+            description: `Player ${wordDetails.originalSubmitterUID.substring(0,6)}... (claimer of "${wordText}") got a ${wordDetails.frequency.toFixed(1)} point bonus!`,
+            variant: "default"
+          });
+        } catch (error) {
+          console.error("Error awarding bonus to claimer:", error);
+        }
+      }
       handleClearWord();
     } else {
       setWordToReview(wordText);
@@ -338,7 +376,7 @@ export default function HomePage() {
           <h1 className="text-4xl md:text-5xl font-headline text-primary">Welcome to Lexiverse!</h1>
           <p className="text-lg md:text-xl text-muted-foreground max-w-xl mx-auto">
             Find as many 4+ letter words as you can in 90 seconds using the 9 seeding letters.
-            Discover the special "Word of the Day" for a massive bonus!
+            Discover the special "Word of the Day" for a massive bonus! Word points are based on length and commonality.
           </p>
           <Button size="lg" onClick={startGame} className="font-semibold text-lg py-3 px-8">
             <PlayCircle className="mr-2 h-6 w-6" /> Start Today's Game
@@ -437,6 +475,7 @@ export default function HomePage() {
        <p className="text-xs text-muted-foreground text-center mt-8">
             Note: Word verification (WordsAPI) can be configured with NEXT_PUBLIC_WORDSAPI_KEY.
             If not configured, it will use a SIMULATED call. For production, use a backend function for API calls.
+            The "claimed word" bonus currently uses mock data; in production, it would integrate with the master word dictionary.
         </p>
     </div>
   );
