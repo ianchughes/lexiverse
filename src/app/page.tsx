@@ -219,7 +219,6 @@ export default function HomePage() {
 
     const apiKey = process.env.NEXT_PUBLIC_WORDSAPI_KEY;
     if (!apiKey || apiKey === "YOUR_WORDSAPI_KEY_PLACEHOLDER" || apiKey.length < 10) {
-      // Simulating if API key isn't properly set, or using mock
       console.warn("WordsAPI key not configured or is placeholder. Simulating API call.");
       await new Promise(resolve => setTimeout(resolve, 1500)); 
       const mockApiSuccess = Math.random() > 0.2; 
@@ -442,4 +441,3 @@ export default function HomePage() {
     </div>
   );
 }
-
