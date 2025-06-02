@@ -1,45 +1,35 @@
 
 'use client';
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { firestore, auth } from '@/lib/firebase';
-import { collection, query, where, getDocs, doc, updateDoc, setDoc, serverTimestamp, Timestamp, increment, getDoc as getFirestoreDoc, deleteDoc, orderBy } from 'firebase/firestore';
-import type { WordSubmission, WordSubmissionStatus, MasterWordType, UserProfile, RejectedWordType, RejectionType } from '@/types';
+import { collection, query, where, getDocs, doc, Timestamp, orderBy, limit, startAfter } from 'firebase/firestore';
+import type { WordSubmission, MasterWordType, RejectedWordType, RejectionType } from '@/types';
 
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Button } from "@/components/ui/button";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter, DialogClose } from "@/components/ui/dialog";
-import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle as AlertDialogTitleComp } from "@/components/ui/alert-dialog"; // Renamed AlertDialogTitle
-import { Label } from "@/components/ui/label";
-import { Textarea } from '@/components/ui/textarea';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Checkbox } from '@/components/ui/checkbox';
 import { useToast } from '@/hooks/use-toast';
 import { Input } from '@/components/ui/input';
-import { CheckCircle, XCircle, ThumbsUp, ThumbsDown, ShieldAlert, Loader2, RefreshCw, Settings2, Star } from 'lucide-react';
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
+import { Loader2, RefreshCw, Star, CheckCircle, XCircle, ThumbsDown, ShieldAlert, Settings2, Send } from 'lucide-react';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { format } from 'date-fns';
 import { Skeleton } from '@/components/ui/skeleton';
-
+import { adminApproveWordSubmissionAction, adminRejectWordSubmissionAction, adminBulkProcessWordSubmissionsAction } from './actions';
 
 const WORD_SUBMISSIONS_QUEUE = "WordSubmissionsQueue";
 const MASTER_WORDS_COLLECTION = "Words";
-const REJECTED_WORDS_COLLECTION = "RejectedWords";
-const USERS_COLLECTION = "Users";
+
+type WordAction = 'noAction' | 'approve' | 'rejectGibberish' | 'rejectAdminDecision';
+
 
 export default function WordManagementPage() {
   const { toast } = useToast();
   const [pendingSubmissions, setPendingSubmissions] = useState<WordSubmission[]>([]);
   const [isLoadingSubmissions, setIsLoadingSubmissions] = useState(true);
   
-  const [submissionToProcess, setSubmissionToProcess] = useState<WordSubmission | null>(null);
-  const [isApproveDialogOpen, setIsApproveDialogOpen] = useState(false);
-  const [isRejectConfirmOpen, setIsRejectConfirmOpen] = useState(false);
-  const [rejectActionType, setRejectActionType] = useState<RejectionType | null>(null);
-  
-  const [notesForApproval, setNotesForApproval] = useState<string>('');
-  const [isProcessing, setIsProcessing] = useState(false);
-
   const [masterWordsList, setMasterWordsList] = useState<MasterWordType[]>([]);
   const [isLoadingMasterWords, setIsLoadingMasterWords] = useState(true);
   const [searchTermMasterWords, setSearchTermMasterWords] = useState('');
@@ -49,33 +39,72 @@ export default function WordManagementPage() {
   const [wordsBySelectedSubmitter, setWordsBySelectedSubmitter] = useState<MasterWordType[]>([]);
   const [hasMounted, setHasMounted] = useState(false);
 
+  // State for bulk actions and pagination
+  const [submissionActions, setSubmissionActions] = useState<Record<string, WordAction>>({});
+  const [selectedRowIds, setSelectedRowIds] = useState<Set<string>>(new Set());
+  const [itemsPerPage, setItemsPerPage] = useState(25);
+  const [currentPage, setCurrentPage] = useState(1);
+  const [isProcessingBulk, setIsProcessingBulk] = useState(false);
+  const [lastVisibleSubmission, setLastVisibleSubmission] = useState<any>(null); // For Firestore pagination
+
+
   useEffect(() => {
     setHasMounted(true);
   }, []);
 
-
-  const fetchPendingSubmissions = useCallback(async () => {
+  const fetchPendingSubmissions = useCallback(async (resetPagination = false) => {
     setIsLoadingSubmissions(true);
+    if (resetPagination) {
+        setLastVisibleSubmission(null);
+        setCurrentPage(1);
+        setPendingSubmissions([]); // Clear existing if resetting
+    }
     try {
-      const q = query(collection(firestore, WORD_SUBMISSIONS_QUEUE), where("status", "==", "PendingModeratorReview"));
+      let q = query(
+        collection(firestore, WORD_SUBMISSIONS_QUEUE), 
+        where("status", "==", "PendingModeratorReview"),
+        orderBy("submittedTimestamp", "asc"), // Process oldest first
+        limit(itemsPerPage)
+      );
+
+      if (lastVisibleSubmission && !resetPagination && currentPage > 1) {
+        q = query(
+            collection(firestore, WORD_SUBMISSIONS_QUEUE), 
+            where("status", "==", "PendingModeratorReview"),
+            orderBy("submittedTimestamp", "asc"),
+            startAfter(lastVisibleSubmission),
+            limit(itemsPerPage)
+        );
+      }
+      
       const querySnapshot = await getDocs(q);
       const submissions: WordSubmission[] = [];
       querySnapshot.forEach((docSnap) => {
         submissions.push({ id: docSnap.id, ...docSnap.data() } as WordSubmission);
       });
-      submissions.sort((a, b) => {
-        const tsA = a.submittedTimestamp as Timestamp;
-        const tsB = b.submittedTimestamp as Timestamp;
-        return tsA.toMillis() - tsB.toMillis(); 
+      
+      setPendingSubmissions(prev => resetPagination ? submissions : [...prev, ...submissions]);
+      setLastVisibleSubmission(querySnapshot.docs[querySnapshot.docs.length - 1]);
+
+      // Initialize actions for newly fetched submissions
+      setSubmissionActions(prevActions => {
+        const newActions = {...prevActions};
+        submissions.forEach(s => {
+          if (s.id && !newActions[s.id]) {
+            newActions[s.id] = 'noAction';
+          }
+        });
+        return newActions;
       });
-      setPendingSubmissions(submissions);
+
     } catch (error) {
       console.error("Error fetching pending submissions:", error);
       toast({ title: "Error", description: "Could not fetch pending word submissions.", variant: "destructive" });
     } finally {
       setIsLoadingSubmissions(false);
     }
-  }, [toast]);
+  }, [toast, itemsPerPage, lastVisibleSubmission, currentPage]);
+
 
   const fetchMasterWords = useCallback(async () => {
     setIsLoadingMasterWords(true);
@@ -96,138 +125,111 @@ export default function WordManagementPage() {
   }, [toast]);
 
   useEffect(() => {
-    fetchPendingSubmissions();
+    fetchPendingSubmissions(true); // Initial fetch with pagination reset
+  }, [itemsPerPage]); // Re-fetch if itemsPerPage changes
+
+   useEffect(() => {
     fetchMasterWords();
-  }, [fetchPendingSubmissions, fetchMasterWords]);
+  }, [fetchMasterWords]);
 
-  const openApproveDialog = (submission: WordSubmission) => {
-    setSubmissionToProcess(submission);
-    setNotesForApproval('');
-    setIsApproveDialogOpen(true);
-  };
 
-  const openRejectConfirmDialog = (submission: WordSubmission, type: RejectionType) => {
-    setSubmissionToProcess(submission);
-    setRejectActionType(type);
-    setIsRejectConfirmOpen(true);
-  };
-
-  const handleApproveWordAction = async () => {
-    if (!submissionToProcess) return;
-    
-    setIsProcessing(true);
-    const currentUserUID = auth.currentUser?.uid;
-    if (!currentUserUID) {
-        toast({ title: "Authentication Error", description: "You must be logged in to moderate.", variant: "destructive" });
-        setIsProcessing(false);
-        return;
+  const handleLoadMoreSubmissions = () => {
+    if (lastVisibleSubmission) {
+        setCurrentPage(prev => prev + 1);
+        fetchPendingSubmissions(false); // Fetch next page
+    } else {
+        toast({ title: "No More Submissions", description: "All pending submissions have been loaded.", variant: "default"});
     }
+  };
 
-    try {
-      const submissionDocRef = doc(firestore, WORD_SUBMISSIONS_QUEUE, submissionToProcess.id!);
-      const wordKey = submissionToProcess.wordText.toUpperCase();
-      const masterWordDocRef = doc(firestore, MASTER_WORDS_COLLECTION, wordKey);
-      
-      const masterWordSnap = await getFirestoreDoc(masterWordDocRef);
-      if (masterWordSnap.exists()) {
-          await updateDoc(submissionDocRef, {
-              status: 'Rejected_Duplicate',
-              reviewedByUID: currentUserUID,
-              reviewedTimestamp: serverTimestamp(),
-              moderatorNotes: `Rejected as duplicate. Word already exists in master dictionary. ${notesForApproval || ''}`.trim(),
-          });
-          toast({ title: "Word Already Exists", description: `${wordKey} is already in the master dictionary. Marked as duplicate.`, variant: "default" });
+  const handleSubmissionActionChange = (submissionId: string, action: WordAction) => {
+    setSubmissionActions(prev => ({ ...prev, [submissionId]: action }));
+  };
+
+  const handleRowSelectionChange = (submissionId: string, checked: boolean) => {
+    setSelectedRowIds(prev => {
+      const newSet = new Set(prev);
+      if (checked) {
+        newSet.add(submissionId);
       } else {
-          const newMasterWord: MasterWordType = {
-              wordText: wordKey,
-              definition: submissionToProcess.definition || "No definition provided.",
-              frequency: submissionToProcess.frequency || 1, 
-              status: 'Approved',
-              addedByUID: currentUserUID,
-              dateAdded: serverTimestamp(),
-              originalSubmitterUID: submissionToProcess.submittedByUID,
-              puzzleDateGMTOfSubmission: submissionToProcess.puzzleDateGMT,
-          };
-          await setDoc(masterWordDocRef, newMasterWord);
-          await deleteDoc(submissionDocRef); 
-          toast({ title: "Word Approved!", description: `${wordKey} added to master dictionary.` });
-          fetchMasterWords(); // Refresh master list
+        newSet.delete(submissionId);
       }
-      
-      setPendingSubmissions(prev => prev.filter(s => s.id !== submissionToProcess.id));
-      setIsApproveDialogOpen(false);
-      setSubmissionToProcess(null);
-
-    } catch (error: any) {
-      console.error("Error approving submission:", error);
-      toast({ title: "Approval Error", description: `Could not approve submission: ${error.message}`, variant: "destructive" });
-    } finally {
-      setIsProcessing(false);
-    }
+      return newSet;
+    });
   };
 
-  const handleRejectAction = async () => {
-    if (!submissionToProcess || !rejectActionType) return;
-    
-    setIsProcessing(true);
-    const currentUserUID = auth.currentUser?.uid;
-    if (!currentUserUID) {
-        toast({ title: "Authentication Error", description: "You must be logged in to moderate.", variant: "destructive" });
-        setIsProcessing(false);
+  const handleSelectAllOnPage = (checked: boolean) => {
+    const newSet = new Set(selectedRowIds);
+    const submissionIdsOnPage = pendingSubmissions.map(s => s.id!);
+    if (checked) {
+      submissionIdsOnPage.forEach(id => newSet.add(id));
+    } else {
+      submissionIdsOnPage.forEach(id => newSet.delete(id));
+    }
+    setSelectedRowIds(newSet);
+  };
+
+  const handleBulkProcessSubmissions = async () => {
+    if (selectedRowIds.size === 0) {
+      toast({ title: "No Submissions Selected", description: "Please select submissions to process.", variant: "default" });
+      return;
+    }
+    setIsProcessingBulk(true);
+
+    const submissionsToProcessPayload: BulkSubmissionItem[] = [];
+    selectedRowIds.forEach(id => {
+      const submission = pendingSubmissions.find(s => s.id === id);
+      const action = submissionActions[id];
+      if (submission && action && action !== 'noAction') {
+        submissionsToProcessPayload.push({
+          submissionId: submission.id!,
+          wordText: submission.wordText,
+          definition: submission.definition,
+          frequency: submission.frequency,
+          submittedByUID: submission.submittedByUID,
+          puzzleDateGMT: submission.puzzleDateGMT,
+          action: action,
+          isWotDClaim: submission.isWotDClaim
+        });
+      }
+    });
+
+    if (submissionsToProcessPayload.length === 0) {
+        toast({ title: "No Actions Selected", description: "Please select an action (Approve/Reject) for the selected submissions.", variant: "default" });
+        setIsProcessingBulk(false);
         return;
     }
-    
-    const wordKey = submissionToProcess.wordText.toUpperCase();
-    const rejectedWordDocRef = doc(firestore, REJECTED_WORDS_COLLECTION, wordKey);
-    const submissionDocRef = doc(firestore, WORD_SUBMISSIONS_QUEUE, submissionToProcess.id!);
 
     try {
-      const newRejectedWord: RejectedWordType = {
-        wordText: wordKey,
-        rejectionType: rejectActionType,
-        rejectedByUID: currentUserUID,
-        dateRejected: serverTimestamp(),
-        originalSubmitterUID: submissionToProcess.submittedByUID,
-      };
-      await setDoc(rejectedWordDocRef, newRejectedWord, { merge: true }); 
-      await deleteDoc(submissionDocRef);
-
-      let toastMessage = `Word "${submissionToProcess.wordText}" has been rejected as ${rejectActionType} and added to rejected list.`;
-
-      if (rejectActionType === 'Gibberish') {
-        const userDocRef = doc(firestore, USERS_COLLECTION, submissionToProcess.submittedByUID);
-        const userSnap = await getFirestoreDoc(userDocRef);
-        if (userSnap.exists()) {
-          const deductionPoints = submissionToProcess.wordText.length;
-          await updateDoc(userDocRef, {
-            overallPersistentScore: increment(-deductionPoints)
-          });
-          toastMessage += ` ${deductionPoints} points deducted from submitter.`;
-        } else {
-          toastMessage += ` Submitter's profile not found for point deduction.`;
+      const result = await adminBulkProcessWordSubmissionsAction({ submissionsToProcess: submissionsToProcessPayload });
+      let successCount = 0;
+      let errorCount = 0;
+      result.results.forEach(res => {
+        if (res.status.startsWith('approved') || res.status.startsWith('rejected')) {
+          successCount++;
+        } else if (res.status === 'error' || res.status === 'error_batch_commit') {
+          errorCount++;
+          console.error(`Error processing ${res.id}: ${res.error}`);
         }
+      });
+
+      if (result.success) {
+        toast({ title: "Bulk Processing Complete", description: `${successCount} submissions processed. ${errorCount > 0 ? `${errorCount} failed.` : ''}` });
+      } else {
+         toast({ title: "Bulk Processing Error", description: `An error occurred during bulk processing. ${successCount} processed, ${errorCount} failed. Details: ${result.error || ''}`, variant: "destructive" });
       }
       
-      toast({ title: "Word Rejected", description: toastMessage });
-      setPendingSubmissions(prev => prev.filter(s => s.id !== submissionToProcess!.id));
-      // No need to fetchRejectedWords separately as they are not displayed in a list yet
+      // Refresh and clear selections
+      await fetchPendingSubmissions(true); // Full refresh
+      setSelectedRowIds(new Set());
+      // submissionActions will be reset by fetchPendingSubmissions
+      fetchMasterWords(); // Refresh master list too
 
     } catch (error: any) {
-      console.error("Error rejecting submission:", error);
-      toast({ title: "Rejection Error", description: `Could not reject submission: ${error.message}`, variant: "destructive" });
+      toast({ title: "Bulk Action Failed", description: error.message || "Could not process submissions.", variant: "destructive" });
     } finally {
-      setIsProcessing(false);
-      setIsRejectConfirmOpen(false);
-      setSubmissionToProcess(null);
-      setRejectActionType(null);
+      setIsProcessingBulk(false);
     }
-  };
-
-  const handleShowWordsBySubmitter = (submitterUID: string) => {
-    const words = masterWordsList.filter(word => word.originalSubmitterUID === submitterUID);
-    setWordsBySelectedSubmitter(words);
-    setSelectedSubmitterUID(submitterUID);
-    setShowWordsBySubmitterDialog(true);
   };
   
   const filteredMasterWords = masterWordsList.filter(word => 
@@ -244,28 +246,42 @@ export default function WordManagementPage() {
     }
     return 'N/A';
   };
+
+  const isAllOnPageSelected = pendingSubmissions.length > 0 && pendingSubmissions.every(s => s.id && selectedRowIds.has(s.id));
   
   return (
     <div className="space-y-6">
       <div>
         <h1 className="text-3xl font-bold tracking-tight">Word Management & Moderation</h1>
         <p className="text-muted-foreground mt-1">
-          Review submissions. Approved words go to Master List, rejected words to Rejected List.
+          Review submissions. Approve, reject, or skip. Process selected words in bulk.
         </p>
       </div>
 
       <Card>
-        <CardHeader className="flex flex-row items-center justify-between">
+        <CardHeader className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
           <div>
             <CardTitle>Word Submissions Queue</CardTitle>
             <CardDescription>Review and approve/reject words submitted by players.</CardDescription>
           </div>
-           <Button onClick={fetchPendingSubmissions} variant="outline" size="icon" disabled={isLoadingSubmissions || isProcessing}>
-            <RefreshCw className={`h-4 w-4 ${isLoadingSubmissions ? 'animate-spin' : ''}`} />
-          </Button>
+          <div className="flex items-center gap-2">
+             <Select value={String(itemsPerPage)} onValueChange={(val) => {setItemsPerPage(Number(val)); fetchPendingSubmissions(true);}}>
+              <SelectTrigger className="w-[120px]">
+                <SelectValue placeholder="Items per page" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="25">25 / page</SelectItem>
+                <SelectItem value="50">50 / page</SelectItem>
+                <SelectItem value="100">100 / page</SelectItem>
+              </SelectContent>
+            </Select>
+            <Button onClick={() => fetchPendingSubmissions(true)} variant="outline" size="icon" disabled={isLoadingSubmissions || isProcessingBulk}>
+              <RefreshCw className={`h-4 w-4 ${isLoadingSubmissions && !isProcessingBulk ? 'animate-spin' : ''}`} />
+            </Button>
+          </div>
         </CardHeader>
         <CardContent>
-          {isLoadingSubmissions ? (
+          {isLoadingSubmissions && pendingSubmissions.length === 0 ? (
             <div className="flex items-center justify-center py-8">
               <Loader2 className="h-8 w-8 animate-spin text-primary" />
               <p className="ml-2 text-muted-foreground">Loading submissions...</p>
@@ -278,17 +294,33 @@ export default function WordManagementPage() {
             <Table>
               <TableHeader>
                 <TableRow>
+                  <TableHead className="w-[50px]">
+                    <Checkbox 
+                        checked={isAllOnPageSelected}
+                        onCheckedChange={(checked) => handleSelectAllOnPage(Boolean(checked))}
+                        aria-label="Select all on page"
+                        disabled={isProcessingBulk}
+                    />
+                  </TableHead>
                   <TableHead>Word</TableHead>
                   <TableHead>Submitted By (UID)</TableHead>
                   <TableHead>Date</TableHead>
                   <TableHead>Definition</TableHead>
                   <TableHead className="text-center">Frequency</TableHead>
-                  <TableHead className="text-right">Actions</TableHead>
+                  <TableHead className="w-[200px]">Action</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {pendingSubmissions.map((submission) => (
-                  <TableRow key={submission.id}>
+                  <TableRow key={submission.id} data-state={selectedRowIds.has(submission.id!) ? "selected" : ""}>
+                    <TableCell>
+                      <Checkbox
+                        checked={selectedRowIds.has(submission.id!)}
+                        onCheckedChange={(checked) => handleRowSelectionChange(submission.id!, Boolean(checked))}
+                        aria-labelledby={`select-submission-${submission.id}`}
+                        disabled={isProcessingBulk}
+                      />
+                    </TableCell>
                     <TableCell className="font-medium">{submission.wordText}</TableCell>
                     <TableCell className="font-mono text-xs" title={submission.submittedByUID}>{submission.submittedByUID.substring(0,10)}...</TableCell>
                     <TableCell>{formatDate(submission.submittedTimestamp)}</TableCell>
@@ -298,27 +330,22 @@ export default function WordManagementPage() {
                     <TableCell className="text-center">
                       {submission.frequency !== undefined ? submission.frequency.toFixed(2) : 'N/A'}
                     </TableCell>
-                    <TableCell className="text-right">
-                       <DropdownMenu>
-                        <DropdownMenuTrigger asChild>
-                          <Button variant="ghost" size="icon" disabled={isProcessing}>
-                            {isProcessing && submissionToProcess?.id === submission.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <Settings2 className="h-4 w-4" />}
-                          </Button>
-                        </DropdownMenuTrigger>
-                        <DropdownMenuContent align="end">
-                          <DropdownMenuLabel>Moderate "{submission.wordText}"</DropdownMenuLabel>
-                          <DropdownMenuSeparator />
-                          <DropdownMenuItem onClick={() => openApproveDialog(submission)} className="text-green-600 focus:text-green-700 focus:bg-green-100">
-                            <ThumbsUp className="mr-2 h-4 w-4" /> Approve Word
-                          </DropdownMenuItem>
-                          <DropdownMenuItem onClick={() => openRejectConfirmDialog(submission, 'Gibberish')} className="text-orange-600 focus:text-orange-700 focus:bg-orange-100">
-                            <ThumbsDown className="mr-2 h-4 w-4" /> Reject (Gibberish)
-                          </DropdownMenuItem>
-                          <DropdownMenuItem onClick={() => openRejectConfirmDialog(submission, 'AdminDecision')} className="text-red-600 focus:text-red-700 focus:bg-red-100">
-                            <ShieldAlert className="mr-2 h-4 w-4" /> Reject (Admin Decision)
-                          </DropdownMenuItem>
-                        </DropdownMenuContent>
-                      </DropdownMenu>
+                    <TableCell>
+                       <Select
+                        value={submission.id ? submissionActions[submission.id] || 'noAction' : 'noAction'}
+                        onValueChange={(value) => handleSubmissionActionChange(submission.id!, value as WordAction)}
+                        disabled={isProcessingBulk}
+                       >
+                         <SelectTrigger className="h-9">
+                           <SelectValue placeholder="Select action" />
+                         </SelectTrigger>
+                         <SelectContent>
+                           <SelectItem value="noAction">No Action</SelectItem>
+                           <SelectItem value="approve" className="text-green-600">Approve</SelectItem>
+                           <SelectItem value="rejectGibberish" className="text-orange-600">Reject (Gibberish)</SelectItem>
+                           <SelectItem value="rejectAdminDecision" className="text-red-600">Reject (Admin)</SelectItem>
+                         </SelectContent>
+                       </Select>
                     </TableCell>
                   </TableRow>
                 ))}
@@ -326,10 +353,28 @@ export default function WordManagementPage() {
             </Table>
           )}
         </CardContent>
-         <CardFooter>
+         <CardFooter className="flex flex-col sm:flex-row justify-between items-center gap-4 pt-4 border-t">
             <p className="text-xs text-muted-foreground">
-              Total pending submissions: {pendingSubmissions.length}
+              Showing {pendingSubmissions.length} submissions. Selected: {selectedRowIds.size}
             </p>
+            <div className="flex gap-2">
+                 <Button 
+                    variant="outline" 
+                    onClick={handleLoadMoreSubmissions} 
+                    disabled={isLoadingSubmissions || !lastVisibleSubmission || isProcessingBulk}
+                >
+                    {isLoadingSubmissions && !isProcessingBulk ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                    Load More
+                </Button>
+                <Button 
+                    onClick={handleBulkProcessSubmissions} 
+                    disabled={selectedRowIds.size === 0 || isProcessingBulk}
+                    className="bg-primary hover:bg-primary/90"
+                >
+                  {isProcessingBulk ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Send className="mr-2 h-4 w-4" />}
+                  Process Selected ({selectedRowIds.size})
+                </Button>
+            </div>
           </CardFooter>
       </Card>
 
@@ -378,7 +423,7 @@ export default function WordManagementPage() {
                       <TableCell className="text-center">{word.frequency.toFixed(2)}</TableCell>
                       <TableCell>
                         {word.originalSubmitterUID ? (
-                          <Button variant="link" className="p-0 h-auto text-primary font-mono text-xs" onClick={() => handleShowWordsBySubmitter(word.originalSubmitterUID!)} title={word.originalSubmitterUID}>
+                          <Button variant="link" className="p-0 h-auto text-primary font-mono text-xs" onClick={() => { /* Logic for showing words by submitter, if needed */ setSelectedSubmitterUID(word.originalSubmitterUID!); setShowWordsBySubmitterDialog(true); }} title={word.originalSubmitterUID}>
                             {word.originalSubmitterUID.substring(0,10)}... <Star className="h-3 w-3 ml-1 fill-amber-400 text-amber-500 inline"/>
                           </Button>
                         ) : (
@@ -400,101 +445,11 @@ export default function WordManagementPage() {
         </CardFooter>
       </Card>
 
-      <Dialog open={isApproveDialogOpen} onOpenChange={setIsApproveDialogOpen}>
-        <DialogContent className="sm:max-w-md">
-          <DialogHeader>
-            <DialogTitle>Approve Word: "{submissionToProcess?.wordText}"</DialogTitle>
-            <DialogDescription>
-              Confirm approval. Frequency is from WordsAPI.
-            </DialogDescription>
-          </DialogHeader>
-          {submissionToProcess && (
-            <div className="space-y-4 py-2 text-sm">
-              <p><strong>Definition:</strong> {submissionToProcess.definition || "Not provided"}</p>
-              <p><strong>Frequency Score:</strong> {submissionToProcess.frequency?.toFixed(2) || "Not provided"}</p>
-              <div>
-                <Label htmlFor="notesForApproval">Moderator Notes (Optional)</Label>
-                <Textarea
-                  id="notesForApproval"
-                  value={notesForApproval}
-                  onChange={(e) => setNotesForApproval(e.target.value)}
-                  placeholder="e.g., Common word, good addition."
-                  className="mt-1"
-                  disabled={isProcessing}
-                />
-              </div>
-            </div>
-          )}
-          <DialogFooter>
-            <DialogClose asChild>
-              <Button type="button" variant="outline" disabled={isProcessing}>Cancel</Button>
-            </DialogClose>
-            <Button 
-              onClick={handleApproveWordAction} 
-              disabled={!submissionToProcess || isProcessing}
-              className="bg-green-600 hover:bg-green-700 text-white"
-            >
-              {isProcessing ? <Loader2 className="mr-2 h-4 w-4 animate-spin"/> : <CheckCircle className="mr-2 h-4 w-4" />}
-              Confirm Approve
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      <AlertDialog open={isRejectConfirmOpen} onOpenChange={setIsRejectConfirmOpen}>
-        <AlertDialogContent>
-            <AlertDialogHeader>
-                <AlertDialogTitleComp>Confirm Rejection</AlertDialogTitleComp>
-                <AlertDialogDescription>
-                    Are you sure you want to reject the word "{submissionToProcess?.wordText}" as "{rejectActionType}"?
-                    {rejectActionType === 'Gibberish' && ` This will deduct ${submissionToProcess?.wordText.length || 0} points from the submitter.`}
-                    This action cannot be undone easily.
-                </AlertDialogDescription>
-            </AlertDialogHeader>
-            <AlertDialogFooter>
-                <AlertDialogCancel disabled={isProcessing} onClick={() => setIsRejectConfirmOpen(false)}>Cancel</AlertDialogCancel>
-                <AlertDialogAction onClick={handleRejectAction} disabled={isProcessing} className="bg-destructive hover:bg-destructive/90 text-destructive-foreground">
-                    {isProcessing ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null} Confirm Reject
-                </AlertDialogAction>
-            </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
-
-      {selectedSubmitterUID && (
-        <Dialog open={showWordsBySubmitterDialog} onOpenChange={setShowWordsBySubmitterDialog}>
-          <DialogContent className="sm:max-w-md">
-            <DialogHeader>
-              <DialogTitle>Words Submitted by UID: {selectedSubmitterUID.substring(0,10)}...</DialogTitle>
-              <DialogDescription>
-                This user was the original submitter for the following words in the master dictionary:
-              </DialogDescription>
-            </DialogHeader>
-            {wordsBySelectedSubmitter.length > 0 ? (
-              <ScrollArea className="h-60 my-4 border rounded-md p-2">
-                <ul className="space-y-1">
-                  {wordsBySelectedSubmitter.map(word => (
-                    <li key={word.wordText} className="text-sm p-1 bg-muted/50 rounded-sm">{word.wordText}</li>
-                  ))}
-                </ul>
-              </ScrollArea>
-            ) : (
-              <p className="my-4 text-muted-foreground">This user has not submitted any words to the master dictionary yet.</p>
-            )}
-            <DialogFooter>
-              <DialogClose asChild>
-                <Button type="button" variant="outline">Close</Button>
-              </DialogClose>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
-      )}
-
+      {/* Dialogs for single approve/reject are removed as primary interaction is now bulk. Can be added back if needed. */}
+      {/* Dialog for showing words by submitter can remain if useful */}
        <p className="text-xs text-muted-foreground text-center">
-            Word moderation actions update Firestore directly. Rejected words are added to 'RejectedWords' collection.
-            Point deductions for 'Gibberish' rejections update user profiles. Approved words are added to 'Words' master list.
-            Submissions are deleted from queue after processing. Master dictionary shows approved words.
+            Word moderation actions update Firestore directly. Use the 'Action' column and 'Process Selected' button.
         </p>
     </div>
   );
 }
-
