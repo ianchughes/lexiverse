@@ -16,7 +16,7 @@ import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, 
 import { PlayCircle, Check, AlertTriangle, Send, Loader2, ThumbsDown, Users } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { firestore, auth } from '@/lib/firebase';
-import { collection, addDoc, serverTimestamp, doc, getDoc, getDocs, updateDoc, increment, Timestamp, writeBatch } from 'firebase/firestore';
+import { collection, addDoc, serverTimestamp, doc, getDoc, updateDoc, increment, Timestamp, writeBatch, getDocs } from 'firebase/firestore';
 import { format } from 'date-fns';
 import { useAuth } from '@/contexts/AuthContext'; // Import useAuth
 import { updateUserCircleDailyScoresAction } from '@/app/circles/actions';
@@ -62,7 +62,7 @@ export default function HomePage() {
 
   const [approvedWords, setApprovedWords] = useState<Map<string, MasterWordType>>(new Map());
   const [rejectedWords, setRejectedWords] = useState<Map<string, RejectedWordType>>(new Map());
-  const [wordOfTheDay, setWordOfTheDay] = useState<MasterWordType | null>(null);
+  const [actualWordOfTheDayText, setActualWordOfTheDayText] = useState<string | null>(null);
 
 
   const { toast } = useToast();
@@ -70,38 +70,34 @@ export default function HomePage() {
   const initializeGameData = useCallback(async (puzzleDate: string) => {
     setIsLoadingInitialState(true);
     try {
-      // Fetch today's puzzle
       const puzzleDocRef = doc(firestore, "DailyPuzzles", puzzleDate);
       const puzzleSnap = await getDoc(puzzleDocRef);
-      let currentWotDText = MOCK_WORD_OF_THE_DAY_TEXT;
+      let effectiveWotDText = MOCK_WORD_OF_THE_DAY_TEXT;
       let currentSeedingChars = MOCK_SEEDING_LETTERS_CHARS;
 
       if (puzzleSnap.exists()) {
         const puzzleData = puzzleSnap.data();
-        currentWotDText = puzzleData.wordOfTheDayText.toUpperCase();
+        effectiveWotDText = puzzleData.wordOfTheDayText.toUpperCase();
         currentSeedingChars = puzzleData.seedingLetters.toUpperCase().split('');
       } else {
         toast({ title: "Puzzle Data Missing", description: "Using default puzzle for today.", variant: "default"});
       }
+      setActualWordOfTheDayText(effectiveWotDText);
       
       const initialLetters = currentSeedingChars.map((char, index) => ({
-        id: `letter-${index}-${char}-${Date.now()}`, // Ensure unique IDs on re-init
+        id: `letter-${index}-${char}-${Date.now()}`, 
         char,
         index,
       }));
       setSeedingLetters(initialLetters);
 
-      // Fetch all approved words
       const approvedWordsSnap = await getDocs(collection(firestore, MASTER_WORDS_COLLECTION));
       const newApprovedMap = new Map<string, MasterWordType>();
       approvedWordsSnap.forEach(docSnap => {
         newApprovedMap.set(docSnap.id, { wordText: docSnap.id, ...docSnap.data() } as MasterWordType);
       });
       setApprovedWords(newApprovedMap);
-      setWordOfTheDay(newApprovedMap.get(currentWotDText) || null);
 
-
-      // Fetch all rejected words
       const rejectedWordsSnap = await getDocs(collection(firestore, REJECTED_WORDS_COLLECTION));
       const newRejectedMap = new Map<string, RejectedWordType>();
       rejectedWordsSnap.forEach(docSnap => {
@@ -116,9 +112,9 @@ export default function HomePage() {
             id: `letter-${index}-${char}-${Date.now()}`, char, index,
         }));
         setSeedingLetters(initialLetters);
+        setActualWordOfTheDayText(MOCK_WORD_OF_THE_DAY_TEXT);
     }
 
-    // Check admin reset and play status (remains largely the same)
     try {
         const settingsDocRef = doc(firestore, SYSTEM_SETTINGS_COLLECTION, GAME_SETTINGS_DOC_ID);
         const settingsSnap = await getDoc(settingsDocRef);
@@ -143,7 +139,7 @@ export default function HomePage() {
       }
 
       const lastPlayedStorage = localStorage.getItem(LOCALSTORAGE_LAST_PLAYED_KEY);
-      const todayAsDateString = new Date().toDateString(); // Local date string for comparison
+      const todayAsDateString = new Date().toDateString(); 
       if (lastPlayedStorage === todayAsDateString) {
         setHasPlayedToday(true);
         setGameState('cooldown');
@@ -151,16 +147,16 @@ export default function HomePage() {
         setHasPlayedToday(false);
         setGameState('idle'); 
       }
-      setCurrentPuzzleDate(puzzleDate); // This is YYYY-MM-DD GMT
+      setCurrentPuzzleDate(puzzleDate); 
       setIsLoadingInitialState(false);
 
   }, [toast]);
 
 
   useEffect(() => {
-    const todayGMTStr = format(new Date(), 'yyyy-MM-dd'); // GMT date string
+    const todayGMTStr = format(new Date(), 'yyyy-MM-dd'); 
     initializeGameData(todayGMTStr);
-  }, [initializeGameData]); // Run once on mount
+  }, [initializeGameData]); 
 
 
   useEffect(() => {
@@ -177,9 +173,8 @@ export default function HomePage() {
     }, 1000);
     return () => clearInterval(timerId);
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [gameState]); // timeLeft removed from deps to avoid re-triggering interval on each tick
+  }, [gameState]); 
 
-  // Effect to return to idle state after debrief/share dialogs are closed
   useEffect(() => {
     if (gameState === 'debrief' && !showDebrief && !showShareModal) {
       setGameState('idle');
@@ -187,7 +182,7 @@ export default function HomePage() {
   }, [gameState, showDebrief, showShareModal]);
 
   const startGame = () => {
-    if (isLoadingAuth) { // Prevent starting if auth state is not yet clear
+    if (isLoadingAuth) { 
         toast({title: "Loading...", description: "Please wait while we verify your session.", variant: "default"});
         return;
     }
@@ -203,8 +198,7 @@ export default function HomePage() {
     setGameState('playing');
     const todayGMTStr = format(new Date(), 'yyyy-MM-dd');
     setCurrentPuzzleDate(todayGMTStr); 
-    // Re-initialize game data in case it's a new day and data wasn't fetched on mount
-    if(currentPuzzleDate !== todayGMTStr) {
+    if(currentPuzzleDate !== todayGMTStr || actualWordOfTheDayText === null) { // Also re-init if WotD text isn't set
         initializeGameData(todayGMTStr);
     }
   };
@@ -212,26 +206,27 @@ export default function HomePage() {
   const handleGameEnd = async () => {
     setGameState('debrief');
     let finalScore = sessionScore;
-    if (guessedWotD && wordOfTheDay) { // Check if wordOfTheDay is not null
+    const wotdDetailsIfApproved = actualWordOfTheDayText ? approvedWords.get(actualWordOfTheDayText) : null;
+
+    if (guessedWotD && wotdDetailsIfApproved) { 
       finalScore = Math.round(finalScore * 2); 
     }
     const roundedFinalScore = Math.round(finalScore);
     setFinalDailyScore(roundedFinalScore);
     setShowDebrief(true);
     setHasPlayedToday(true);
-    localStorage.setItem(LOCALSTORAGE_LAST_PLAYED_KEY, new Date().toDateString()); // Use local date for this key
+    localStorage.setItem(LOCALSTORAGE_LAST_PLAYED_KEY, new Date().toDateString()); 
 
     if (currentUser && userProfile) {
         const userDocRef = doc(firestore, "Users", currentUser.uid);
         const batch = writeBatch(firestore);
         batch.update(userDocRef, {
             overallPersistentScore: increment(roundedFinalScore),
-            lastPlayedDate_GMT: currentPuzzleDate, // Store GMT date string 'YYYY-MM-DD'
-            wotdStreakCount: guessedWotD ? increment(1) : 0, // Reset streak if WotD not guessed
+            lastPlayedDate_GMT: currentPuzzleDate, 
+            wotdStreakCount: (guessedWotD && wotdDetailsIfApproved) ? increment(1) : 0, 
         });
         await batch.commit();
         
-        // Update Circle Daily Scores
         if (userProfile.activeCircleId) {
             await updateUserCircleDailyScoresAction({
                 userId: currentUser.uid,
@@ -282,26 +277,30 @@ export default function HomePage() {
       return;
     }
     
+    let isTheWotDString = false;
+    if (actualWordOfTheDayText && wordText === actualWordOfTheDayText) {
+      isTheWotDString = true;
+      setGuessedWotD(true); 
+    }
+
     const approvedWordDetails = approvedWords.get(wordText);
     if (approvedWordDetails) {
       const points = Math.round(wordText.length * approvedWordDetails.frequency);
-      const isCurrentWotD = wordOfTheDay?.wordText === wordText;
       
-      if (isCurrentWotD) {
-        setGuessedWotD(true);
+      if (isTheWotDString) {
         toast({ title: "Word of the Day!", description: `You found "${wordText}" for ${points} base points!`, className: "bg-accent text-accent-foreground" });
       } else {
          toast({ title: "Word Found!", description: `"${wordText}" is worth ${points} points.`, variant: "default" });
       }
 
       setSessionScore((prev) => prev + points);
-      setSubmittedWords((prev) => [...prev, { id: crypto.randomUUID(), text: wordText, points, isWotD: isCurrentWotD }]);
+      setSubmittedWords((prev) => [...prev, { id: crypto.randomUUID(), text: wordText, points, isWotD: isTheWotDString }]);
       
       if (approvedWordDetails.originalSubmitterUID && approvedWordDetails.originalSubmitterUID !== currentUser.uid) {
         try {
           const claimerProfileRef = doc(firestore, "Users", approvedWordDetails.originalSubmitterUID);
           await updateDoc(claimerProfileRef, {
-            overallPersistentScore: increment(Math.round(approvedWordDetails.frequency)) // Bonus is frequency only
+            overallPersistentScore: increment(Math.round(approvedWordDetails.frequency)) 
           });
           toast({
             title: "Claimer Bonus!",
@@ -319,14 +318,14 @@ export default function HomePage() {
     const rejectedWordDetails = rejectedWords.get(wordText);
     if (rejectedWordDetails) {
       if (rejectedWordDetails.rejectionType === 'Gibberish') {
-        const pointsDeducted = wordText.length; // Deduct length of word
+        const pointsDeducted = wordText.length; 
         setSessionScore(prev => Math.max(0, prev - pointsDeducted)); 
         toast({
           title: "Word Rejected",
           description: `"${wordText}" is not a valid word. ${pointsDeducted} points deducted from session score.`,
           variant: "destructive",
         });
-      } else { // AdminDecision
+      } else { 
         toast({
           title: "Word Not Allowed",
           description: `"${wordText}" is not allowed in the game.`,
@@ -394,14 +393,13 @@ export default function HomePage() {
       }
       const data = await response.json();
       const definition = data.results?.[0]?.definition || "No definition found.";
-      // Ensure frequency is a number and defaults to 1 if missing or invalid
       let frequency = 1;
       if (data.frequencyDetails?.[0]?.zipf) {
         frequency = parseFloat(data.frequencyDetails[0].zipf);
       } else if (data.frequency) {
         frequency = parseFloat(data.frequency);
       }
-      if (isNaN(frequency) || frequency <= 0) frequency = 1; // Default to 1 if invalid
+      if (isNaN(frequency) || frequency <= 0) frequency = 1; 
       
       await saveSubmissionToFirestore(wordToSubmit, definition, frequency);
 
@@ -418,7 +416,7 @@ export default function HomePage() {
         toast({ title: "Authentication Error", description: "You must be logged in to submit words.", variant: "destructive" });
         return;
     }
-    const newSubmission: Omit<WordSubmission, 'id' | 'submittedTimestamp'> = { // ID and timestamp are auto-generated
+    const newSubmission: Omit<WordSubmission, 'id' | 'submittedTimestamp'> = { 
         wordText: wordText.toUpperCase(),
         definition: definition,
         frequency: frequency,
@@ -537,15 +535,15 @@ export default function HomePage() {
         onOpenChange={setShowDebrief}
         score={finalDailyScore}
         wordsFoundCount={submittedWords.length}
-        guessedWotD={guessedWotD}
+        guessedWotD={guessedWotD && !!(actualWordOfTheDayText && approvedWords.get(actualWordOfTheDayText))} // Pass true only if WotD was guessed AND approved
         onShare={() => {
           setShowDebrief(false);
           setShareableGameDate(currentPuzzleDate);
           setShowShareModal(true);
         }}
-        userProfile={userProfile} // Pass userProfile
-        circleId={userProfile?.activeCircleId} // Pass activeCircleId
-        circleName={userProfile?.activeCircleId ? "Your Circle" : undefined} // Fetch actual circle name if needed
+        userProfile={userProfile} 
+        circleId={userProfile?.activeCircleId} 
+        circleName={userProfile?.activeCircleId ? "Your Circle" : undefined} 
       />
       
       <ShareMomentDialog
@@ -553,10 +551,9 @@ export default function HomePage() {
         onOpenChange={setShowShareModal}
         gameData={{
           score: finalDailyScore,
-          guessedWotD,
+          guessedWotD: guessedWotD && !!(actualWordOfTheDayText && approvedWords.get(actualWordOfTheDayText)), // Consistent WotD status
           wordsFoundCount: submittedWords.length,
           date: shareableGameDate,
-          // circleName: userProfile?.activeCircleId ? "CircleNamePlaceholder" : undefined
         }}
       />
 
@@ -591,3 +588,4 @@ export default function HomePage() {
     </div>
   );
 }
+
