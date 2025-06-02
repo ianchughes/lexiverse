@@ -160,8 +160,8 @@ export interface CircleInvite {
   circleName: string; // Denormalized
   inviterUserId: string;
   inviterUsername: string; // Denormalized
-  inviteeUserId?: string; 
-  inviteeEmail?: string; 
+  inviteeUserId?: string;
+  inviteeEmail?: string;
   status: CircleInviteStatus;
   dateSent: Timestamp;
   dateResponded?: Timestamp;
@@ -219,4 +219,14 @@ export interface AppNotification { // Basic notification structure
   isRead: boolean;
   dateCreated: Timestamp;
   link?: string; // Optional link for the notification
+}
+
+// User Suggestions Log
+export interface UserSuggestionLog {
+  id?: string;
+  userId?: string; // Optional, if user is logged in
+  suggestionText: string;
+  botResponse: string;
+  conversationHistory?: Array<{ role: 'user' | 'model'; content: string }>;
+  timestamp: Timestamp;
 }

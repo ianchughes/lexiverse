@@ -9,6 +9,7 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { Lightbulb, MessageSquarePlus, Send, X, Bot, User } from 'lucide-react';
 import { handleUserSuggestion, type HandleSuggestionInput, type HandleSuggestionOutput } from '@/ai/flows/handle-suggestion-flow';
 import { cn } from '@/lib/utils';
+import { useAuth } from '@/contexts/AuthContext'; // Import useAuth
 
 interface Message {
   id: string;
@@ -22,6 +23,7 @@ export function SuggestionsBot() {
   const [inputValue, setInputValue] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const scrollAreaRef = useRef<HTMLDivElement>(null);
+  const { currentUser } = useAuth(); // Get current user
 
   useEffect(() => {
     if (isOpen && messages.length === 0 && !isLoading) {
@@ -49,22 +51,28 @@ export function SuggestionsBot() {
   const handleSendMessage = async () => {
     if (!inputValue.trim()) return;
 
+    const currentSuggestionText = inputValue;
     const userMessage: Message = {
       id: crypto.randomUUID(),
-      text: inputValue,
+      text: currentSuggestionText,
       sender: 'user',
     };
-    setMessages((prev) => [...prev, userMessage]);
-    setInputValue('');
+
+    // Prepare conversation history *before* adding the new user message to the UI state
+    const historyForFlow = messages.map(m => ({
+        role: m.sender === 'user' ? 'user' : 'model',
+        content: m.text,
+    }));
+
+    setMessages((prev) => [...prev, userMessage]); // Update UI with user's message
+    setInputValue(''); // Clear input
     setIsLoading(true);
 
     try {
       const flowInput: HandleSuggestionInput = {
-        suggestionText: userMessage.text,
-        conversationHistory: messages.map(m => ({
-          role: m.sender === 'user' ? 'user' : 'model',
-          content: m.text,
-        }))
+        userId: currentUser?.uid, // Pass userId if available
+        suggestionText: currentSuggestionText,
+        conversationHistory: historyForFlow,
       };
       const result: HandleSuggestionOutput = await handleUserSuggestion(flowInput);
       const botMessage: Message = {

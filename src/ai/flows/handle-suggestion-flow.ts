@@ -1,17 +1,20 @@
 
 'use server';
 /**
- * @fileOverview Handles user suggestions via an AI chat interface.
+ * @fileOverview Handles user suggestions via an AI chat interface and logs them.
  *
- * - handleUserSuggestion - A function that takes a user's suggestion and returns an AI response.
+ * - handleUserSuggestion - A function that takes a user's suggestion, logs it, and returns an AI response.
  * - HandleSuggestionInput - The input type for the handleUserSuggestion function.
  * - HandleSuggestionOutput - The return type for the handleUserSuggestion function.
  */
 
 import {ai} from '@/ai/genkit';
 import {z} from 'genkit';
+import { firestore } from '@/lib/firebase';
+import { collection, addDoc, serverTimestamp } from 'firebase/firestore';
 
 const HandleSuggestionInputSchema = z.object({
+  userId: z.string().optional().describe('The ID of the user making the suggestion, if logged in.'),
   suggestionText: z.string().min(1, {message: "Suggestion text cannot be empty."}).describe('The user\'s suggestion for improving the game.'),
   conversationHistory: z.array(z.object({
     role: z.enum(['user', 'model']),
@@ -74,10 +77,24 @@ const handleSuggestionFlow = ai.defineFlow(
   },
   async (input) => {
     const {output} = await suggestionPrompt(input);
-    if (!output) {
-      return {response: "Thanks for your suggestion! I'll make sure our team sees it."};
+    const botResponseText = output?.response || "Thanks for your suggestion! I'll make sure our team sees it.";
+
+    try {
+      const suggestionLogData: any = {
+        suggestionText: input.suggestionText,
+        botResponse: botResponseText,
+        conversationHistory: input.conversationHistory || [],
+        timestamp: serverTimestamp(),
+      };
+      if (input.userId) {
+        suggestionLogData.userId = input.userId;
+      }
+      await addDoc(collection(firestore, 'UserSuggestions'), suggestionLogData);
+    } catch (error) {
+      console.error("Error saving user suggestion to Firestore:", error);
+      // We'll still return the bot's response even if saving fails
     }
-    return output;
+
+    return {response: botResponseText};
   }
 );
-
