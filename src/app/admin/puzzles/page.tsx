@@ -12,12 +12,12 @@ import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, 
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Checkbox } from '@/components/ui/checkbox';
 import { useToast } from '@/hooks/use-toast';
-import { PlusCircle, Edit2, Trash2, Sparkles, Save, Loader2, RefreshCw } from 'lucide-react';
+import { PlusCircle, Edit2, Trash2, Sparkles, Save, Loader2, RefreshCw, CalendarSync } from 'lucide-react';
 import type { DailyPuzzle, AdminPuzzleFormState, PuzzleSuggestion as ClientPuzzleSuggestion, GeneratePuzzleSuggestionsOutput } from '@/types';
 import { generatePuzzleSuggestions } from '@/ai/flows/generate-puzzle-suggestions';
-import { format } from 'date-fns';
+import { format, addDays, startOfTomorrow } from 'date-fns';
 import { firestore } from '@/lib/firebase';
-import { doc, setDoc, getDoc, Timestamp, collection, getDocs, deleteDoc, updateDoc, query, orderBy } from 'firebase/firestore';
+import { doc, setDoc, getDoc, Timestamp, collection, getDocs, deleteDoc, updateDoc, query, orderBy, writeBatch } from 'firebase/firestore';
 
 const DAILY_PUZZLES_COLLECTION = "DailyPuzzles";
 
@@ -128,6 +128,10 @@ export default function DailyPuzzleManagementPage() {
   const [isGeneratingSuggestions, setIsGeneratingSuggestions] = useState(false);
   const [puzzleSuggestions, setPuzzleSuggestions] = useState<ClientPuzzleSuggestion[]>([]);
   const [selectedSuggestionIds, setSelectedSuggestionIds] = useState<Set<string>>(new Set());
+
+  // State for Fill Gaps feature
+  const [isFillingGaps, setIsFillingGaps] = useState(false);
+  const [isFillGapsConfirmOpen, setIsFillGapsConfirmOpen] = useState(false);
 
 
   const fetchPuzzles = useCallback(async () => {
@@ -411,6 +415,98 @@ export default function DailyPuzzleManagementPage() {
     setIsLoading(false);
   };
 
+  const handleFillGaps = async () => {
+    setIsFillingGaps(true);
+    try {
+      const allPuzzlesFromFirestore = await fetchPuzzlesFromFirestore();
+      const fixedPuzzles = allPuzzlesFromFirestore.filter(p => p.status === 'Active' || p.status === 'Expired');
+      const upcomingPuzzlesToReDate = allPuzzlesFromFirestore
+        .filter(p => p.status === 'Upcoming')
+        .sort((a, b) => a.puzzleDateGMT.getTime() - b.puzzleDateGMT.getTime());
+
+      if (upcomingPuzzlesToReDate.length === 0) {
+        toast({ title: "No Upcoming Puzzles", description: "There are no 'Upcoming' puzzles to re-date.", variant: "default" });
+        setIsFillingGaps(false);
+        return;
+      }
+
+      let earliestPossibleStartDate = startOfTomorrow();
+      earliestPossibleStartDate.setUTCHours(0, 0, 0, 0);
+
+      if (fixedPuzzles.length > 0) {
+        const latestFixedPuzzleDateTime = Math.max(...fixedPuzzles.map(p => p.puzzleDateGMT.getTime()));
+        const latestFixedPuzzleDate = new Date(latestFixedPuzzleDateTime);
+        latestFixedPuzzleDate.setUTCHours(0,0,0,0);
+        
+        const dayAfterLatestFixed = addDays(latestFixedPuzzleDate, 1);
+        if (dayAfterLatestFixed.getTime() > earliestPossibleStartDate.getTime()) {
+          earliestPossibleStartDate = dayAfterLatestFixed;
+        }
+      }
+      
+      let currentDateToFill = new Date(earliestPossibleStartDate.getTime());
+      const batchCommiter = writeBatch(firestore);
+      let movedCount = 0;
+      
+      const currentPuzzlesById = new Map(allPuzzlesFromFirestore.map(p => [p.id, p]));
+
+      for (const puzzleToMove of upcomingPuzzlesToReDate) {
+        const originalPuzzleDateStr = puzzleToMove.id; // puzzle.id is already 'yyyy-MM-dd'
+        let targetDateForThisPuzzle = new Date(currentDateToFill.getTime());
+        let targetDateStr = format(targetDateForThisPuzzle, 'yyyy-MM-dd');
+
+        // Ensure targetDateForThisPuzzle is not occupied by a fixed puzzle (Active/Expired)
+        // Puzzles in currentPuzzlesById that are 'Upcoming' are candidates for moving themselves, so they don't block the slot.
+        while (currentPuzzlesById.has(targetDateStr) && currentPuzzlesById.get(targetDateStr)!.status !== 'Upcoming') {
+            targetDateForThisPuzzle = addDays(targetDateForThisPuzzle, 1);
+            targetDateStr = format(targetDateForThisPuzzle, 'yyyy-MM-dd');
+        }
+
+        if (targetDateStr !== originalPuzzleDateStr) {
+          const oldDocRef = doc(firestore, DAILY_PUZZLES_COLLECTION, originalPuzzleDateStr);
+          const newDocRef = doc(firestore, DAILY_PUZZLES_COLLECTION, targetDateStr);
+
+          const newPuzzleDataForFirestore = {
+            id: targetDateStr,
+            wordOfTheDayText: puzzleToMove.wordOfTheDayText.toUpperCase(),
+            wordOfTheDayPoints: puzzleToMove.wordOfTheDayPoints,
+            seedingLetters: puzzleToMove.seedingLetters.toUpperCase(),
+            status: 'Upcoming' as const,
+            puzzleDateGMT: Timestamp.fromDate(targetDateForThisPuzzle),
+          };
+
+          batchCommiter.delete(oldDocRef);
+          batchCommiter.set(newDocRef, newPuzzleDataForFirestore);
+          movedCount++;
+
+          // Update our temporary map to reflect the move for subsequent checks
+          currentPuzzlesById.delete(originalPuzzleDateStr);
+          currentPuzzlesById.set(targetDateStr, {
+            ...puzzleToMove,
+            id: targetDateStr,
+            puzzleDateGMT: targetDateForThisPuzzle, // this is a Date object
+            status: 'Upcoming'
+          });
+        }
+        currentDateToFill = addDays(targetDateForThisPuzzle, 1);
+      }
+
+      if (movedCount > 0) {
+        await batchCommiter.commit();
+        toast({ title: "Gaps Filled", description: `${movedCount} upcoming puzzles were re-dated.` });
+      } else {
+        toast({ title: "No Gaps to Fill", description: "Upcoming puzzles are already sequential or no gaps found.", variant: "default" });
+      }
+      fetchPuzzles();
+    } catch (error: any) {
+      console.error("Error filling gaps:", error);
+      toast({ title: "Error Filling Gaps", description: error.message || "Could not re-date puzzles.", variant: "destructive" });
+    } finally {
+      setIsFillingGaps(false);
+      setIsFillGapsConfirmOpen(false);
+    }
+  };
+
   
   return (
     <div className="space-y-6">
@@ -512,11 +608,11 @@ export default function DailyPuzzleManagementPage() {
                 onChange={(e) => setGenerationQuantity(Math.max(1, Math.min(10, parseInt(e.target.value, 10) || 1)))}
                 min="1"
                 max="10"
-                disabled={isGeneratingSuggestions}
+                disabled={isGeneratingSuggestions || isFillingGaps}
                 className="w-full"
               />
             </div>
-            <Button onClick={handleGenerateSuggestions} disabled={isGeneratingSuggestions || isLoading}>
+            <Button onClick={handleGenerateSuggestions} disabled={isGeneratingSuggestions || isLoading || isFillingGaps}>
               {isGeneratingSuggestions ? (
                 <Loader2 className="mr-2 h-4 w-4 animate-spin" />
               ) : (
@@ -551,7 +647,7 @@ export default function DailyPuzzleManagementPage() {
                   </Card>
                 ))}
               </div>
-              <Button onClick={handleSaveSelectedPuzzles} disabled={selectedSuggestionIds.size === 0 || isLoading || isGeneratingSuggestions} className="w-full mt-4">
+              <Button onClick={handleSaveSelectedPuzzles} disabled={selectedSuggestionIds.size === 0 || isLoading || isGeneratingSuggestions || isFillingGaps} className="w-full mt-4">
                 {isLoading && selectedSuggestionIds.size > 0 ? ( <Loader2 className="mr-2 h-4 w-4 animate-spin" /> ) : ( <Save className="mr-2 h-4 w-4" />) } 
                 Save Selected ({selectedSuggestionIds.size}) to Firebase
               </Button>
@@ -562,6 +658,33 @@ export default function DailyPuzzleManagementPage() {
               No suggestions generated, or all were filtered out. Try again, check AI flow logs, or ensure WordsAPI key is correctly configured.
             </p>
           )}
+          <div className="pt-4 border-t">
+            <h3 className="text-md font-semibold mb-2">Puzzle Schedule Maintenance</h3>
+             <AlertDialog open={isFillGapsConfirmOpen} onOpenChange={setIsFillGapsConfirmOpen}>
+                <AlertDialogTrigger asChild>
+                    <Button variant="outline" className="w-full" disabled={isLoading || isGeneratingSuggestions || isFillingGaps}>
+                        <CalendarSync className="mr-2 h-4 w-4" />
+                        Fill Date Gaps in Upcoming Puzzles
+                    </Button>
+                </AlertDialogTrigger>
+                <AlertDialogContent>
+                    <AlertDialogHeader>
+                    <AlertDialogTitle>Confirm Fill Gaps</AlertDialogTitle>
+                    <AlertDialogDescription>
+                        This will re-date 'Upcoming' puzzles to fill any gaps, starting from the day after the last Active/Expired puzzle (or tomorrow if none). Original 'Upcoming' puzzle entries will be deleted and re-created with new dates. This action cannot be easily undone. Are you sure?
+                    </AlertDialogDescription>
+                    </AlertDialogHeader>
+                    <AlertDialogFooter>
+                    <AlertDialogCancel disabled={isFillingGaps}>Cancel</AlertDialogCancel>
+                    <AlertDialogAction onClick={handleFillGaps} disabled={isFillingGaps}>
+                        {isFillingGaps ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                        Yes, Fill Gaps
+                    </AlertDialogAction>
+                    </AlertDialogFooter>
+                </AlertDialogContent>
+            </AlertDialog>
+            <p className="text-xs text-muted-foreground mt-1">Ensures 'Upcoming' puzzles are sequential without empty days.</p>
+          </div>
         </CardContent>
       </Card>
 
@@ -571,8 +694,8 @@ export default function DailyPuzzleManagementPage() {
             <CardTitle>Puzzle List</CardTitle>
             <CardDescription>View and manage all puzzles from Firestore.</CardDescription>
           </div>
-           <Button onClick={fetchPuzzles} variant="outline" size="icon" disabled={isLoading || isGeneratingSuggestions}>
-              <RefreshCw className={`h-4 w-4 ${isLoading && !isGeneratingSuggestions ? 'animate-spin' : ''}`} />
+           <Button onClick={fetchPuzzles} variant="outline" size="icon" disabled={isLoading || isGeneratingSuggestions || isFillingGaps}>
+              <RefreshCw className={`h-4 w-4 ${isLoading && !isGeneratingSuggestions && !isFillingGaps ? 'animate-spin' : ''}`} />
             </Button>
         </CardHeader>
         <CardContent>
@@ -612,12 +735,12 @@ export default function DailyPuzzleManagementPage() {
                           </span>
                       </TableCell>
                       <TableCell className="text-right space-x-1">
-                        <Button variant="ghost" size="icon" onClick={() => openEditForm(puzzle)} title="Edit" disabled={isLoading || isGeneratingSuggestions}>
+                        <Button variant="ghost" size="icon" onClick={() => openEditForm(puzzle)} title="Edit" disabled={isLoading || isGeneratingSuggestions || isFillingGaps}>
                           <Edit2 className="h-4 w-4" />
                         </Button>
                         <AlertDialog>
                           <AlertDialogTrigger asChild>
-                            <Button variant="ghost" size="icon" title="Delete" className="text-destructive hover:text-destructive" disabled={isLoading || isGeneratingSuggestions}>
+                            <Button variant="ghost" size="icon" title="Delete" className="text-destructive hover:text-destructive" disabled={isLoading || isGeneratingSuggestions || isFillingGaps}>
                               <Trash2 className="h-4 w-4" />
                             </Button>
                           </AlertDialogTrigger>
@@ -629,9 +752,13 @@ export default function DailyPuzzleManagementPage() {
                               </AlertDialogDescription>
                             </AlertDialogHeader>
                             <AlertDialogFooter>
-                              <AlertDialogCancel disabled={isLoading}>Cancel</AlertDialogCancel>
-                              <AlertDialogAction onClick={() => handleDelete(puzzle.id, puzzle.puzzleDateGMT)} disabled={isLoading} className="bg-destructive hover:bg-destructive/90 text-destructive-foreground">
-                                {isLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin"/> : "Yes, delete puzzle"}
+                              <AlertDialogCancel disabled={isLoading || isFillingGaps}>Cancel</AlertDialogCancel>
+                              <AlertDialogAction 
+                                onClick={() => handleDelete(puzzle.id, puzzle.puzzleDateGMT)} 
+                                disabled={isLoading || isFillingGaps} 
+                                className="bg-destructive hover:bg-destructive/90 text-destructive-foreground"
+                              >
+                                {(isLoading || isFillingGaps) && editingPuzzleId === null ? <Loader2 className="mr-2 h-4 w-4 animate-spin"/> : "Yes, delete puzzle"}
                               </AlertDialogAction>
                             </AlertDialogFooter>
                           </AlertDialogContent>
