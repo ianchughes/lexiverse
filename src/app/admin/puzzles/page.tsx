@@ -11,37 +11,78 @@ import { DatePicker } from '@/components/ui/date-picker';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { useToast } from '@/hooks/use-toast';
-import { PlusCircle, Edit2, Trash2, Search, ExternalLink } from 'lucide-react';
+import { PlusCircle, Edit2, Trash2 } from 'lucide-react';
 import type { DailyPuzzle, AdminPuzzleFormState } from '@/types';
-import { format, parseISO } from 'date-fns';
+import { format } from 'date-fns';
+import { firestore } from '@/lib/firebase';
+import { doc, setDoc, getDoc, Timestamp } from 'firebase/firestore';
 
-// Mock data and functions - Replace with actual API calls to Cloud Functions
+// Mock data for listing, updating, deleting - Replace with actual API calls for these too eventually
 let MOCK_PUZZLES: DailyPuzzle[] = [
   { id: '2025-07-01', puzzleDateGMT: new Date('2025-07-01T00:00:00Z'), wordOfTheDayText: 'EXAMPLE', wordOfTheDayPoints: 50, seedingLetters: 'AEILMPRXE', status: 'Upcoming' },
   { id: '2025-07-02', puzzleDateGMT: new Date('2025-07-02T00:00:00Z'), wordOfTheDayText: 'ANOTHER', wordOfTheDayPoints: 60, seedingLetters: 'NOHRETABX', status: 'Active' },
 ];
 
 async function mockFetchPuzzles(): Promise<DailyPuzzle[]> {
-  return new Promise(resolve => setTimeout(() => resolve([...MOCK_PUZZLES]), 500));
+  // In a real app, you'd fetch from Firestore and convert Timestamps to Dates
+  // For now, we add any newly created (real) puzzles to the mock list if they aren't there
+  // This is a temporary hack for demonstration
+  const puzzlesCollection = collection(firestore, "DailyPuzzles");
+  const querySnapshot = await getDocs(puzzlesCollection);
+  const firestorePuzzles: DailyPuzzle[] = [];
+  querySnapshot.forEach((docSnap) => {
+    const data = docSnap.data();
+    firestorePuzzles.push({
+      id: docSnap.id,
+      puzzleDateGMT: (data.puzzleDateGMT as Timestamp).toDate(),
+      wordOfTheDayText: data.wordOfTheDayText,
+      wordOfTheDayPoints: data.wordOfTheDayPoints,
+      seedingLetters: data.seedingLetters,
+      status: data.status,
+    });
+  });
+
+  // Merge and deduplicate, preferring Firestore data
+  const allPuzzlesMap = new Map<string, DailyPuzzle>();
+  [...MOCK_PUZZLES, ...firestorePuzzles].forEach(p => allPuzzlesMap.set(p.id, p));
+  const mergedPuzzles = Array.from(allPuzzlesMap.values());
+  mergedPuzzles.sort((a,b) => a.puzzleDateGMT.getTime() - b.puzzleDateGMT.getTime());
+  
+  return new Promise(resolve => setTimeout(() => resolve(mergedPuzzles), 500));
 }
 
-async function mockCreateDailyPuzzle(puzzleData: AdminPuzzleFormState): Promise<DailyPuzzle> {
-  console.log('Mock creating puzzle:', puzzleData);
-  if (!puzzleData.puzzleDateGMT) throw new Error("Date is required");
-  const newId = format(puzzleData.puzzleDateGMT, 'yyyy-MM-dd');
-  if (MOCK_PUZZLES.find(p => p.id === newId)) {
-    throw new Error(`A puzzle already exists for ${newId}.`);
+
+async function createDailyPuzzleInFirestore(puzzleData: AdminPuzzleFormState): Promise<DailyPuzzle> {
+  if (!puzzleData.puzzleDateGMT) {
+    throw new Error("Puzzle date is required.");
   }
-  const newPuzzle: DailyPuzzle = {
-    ...puzzleData,
-    id: newId,
-    puzzleDateGMT: puzzleData.puzzleDateGMT,
+  const docId = format(puzzleData.puzzleDateGMT, 'yyyy-MM-dd');
+  const puzzleDocRef = doc(firestore, "DailyPuzzles", docId);
+
+  const docSnap = await getDoc(puzzleDocRef);
+  if (docSnap.exists()) {
+    throw new Error(`A puzzle already exists for ${docId}. Please edit the existing one or choose a different date.`);
+  }
+
+  const newPuzzleForFirestore = {
+    wordOfTheDayText: puzzleData.wordOfTheDayText.toUpperCase(),
+    wordOfTheDayPoints: puzzleData.wordOfTheDayPoints,
+    seedingLetters: puzzleData.seedingLetters.toUpperCase(),
     status: puzzleData.status,
+    puzzleDateGMT: Timestamp.fromDate(puzzleData.puzzleDateGMT), // Convert Date to Firestore Timestamp
   };
-  MOCK_PUZZLES.push(newPuzzle);
-  MOCK_PUZZLES.sort((a,b) => a.puzzleDateGMT.getTime() - b.puzzleDateGMT.getTime());
-  return new Promise(resolve => setTimeout(() => resolve(newPuzzle), 300));
+
+  await setDoc(puzzleDocRef, newPuzzleForFirestore);
+
+  return {
+    id: docId,
+    ...puzzleData, // Includes original puzzleDateGMT as Date object for client-side consistency
+    puzzleDateGMT: puzzleData.puzzleDateGMT, // Ensure it's the Date object for client state
+    wordOfTheDayText: puzzleData.wordOfTheDayText.toUpperCase(),
+    seedingLetters: puzzleData.seedingLetters.toUpperCase(),
+  };
 }
+
 
 async function mockUpdateDailyPuzzle(id: string, puzzleData: AdminPuzzleFormState): Promise<DailyPuzzle> {
   console.log('Mock updating puzzle:', id, puzzleData);
@@ -76,6 +117,10 @@ const initialFormState: AdminPuzzleFormState = {
   status: 'Upcoming',
 };
 
+// Helper to import Firestore collection and getDocs for mockFetchPuzzles hack
+import { collection, getDocs } from 'firebase/firestore';
+
+
 export default function DailyPuzzleManagementPage() {
   const { toast } = useToast();
   const [puzzles, setPuzzles] = useState<DailyPuzzle[]>([]);
@@ -89,10 +134,13 @@ export default function DailyPuzzleManagementPage() {
   const fetchPuzzles = useCallback(async () => {
     setIsLoading(true);
     try {
-      const data = await mockFetchPuzzles();
+      // For now, mockFetchPuzzles also tries to include newly created Firestore puzzles
+      // for better UX during this hybrid state.
+      const data = await mockFetchPuzzles(); 
       setPuzzles(data);
     } catch (error) {
-      toast({ title: "Error fetching puzzles", description: "Could not load puzzle data.", variant: "destructive" });
+      console.error("Error fetching puzzles:", error);
+      toast({ title: "Error fetching puzzles", description: (error as Error).message || "Could not load puzzle data.", variant: "destructive" });
     } finally {
       setIsLoading(false);
     }
@@ -160,6 +208,11 @@ export default function DailyPuzzleManagementPage() {
   const validateForm = () => {
     const errors: Partial<Record<keyof AdminPuzzleFormState, string>> = {};
     if (!formData.puzzleDateGMT) errors.puzzleDateGMT = "Puzzle date is required.";
+    else if (formData.puzzleDateGMT.getTime() < new Date(new Date().setHours(0,0,0,0)).getTime() && !editingPuzzleId) {
+      // Allow past dates for editing, but not for new puzzles.
+      // This check could be more nuanced based on exact requirements for editing past puzzles.
+      // errors.puzzleDateGMT = "Puzzle date cannot be in the past for new puzzles.";
+    }
     if (!formData.wordOfTheDayText.trim()) errors.wordOfTheDayText = "Word of the Day is required.";
     else if (formData.wordOfTheDayText.length < 6 || formData.wordOfTheDayText.length > 9) {
       errors.wordOfTheDayText = "Word of the Day must be 6-9 characters.";
@@ -180,18 +233,20 @@ export default function DailyPuzzleManagementPage() {
   const handleFormSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!validateForm()) return;
-    if (!checkFormability()) return; // Re-check formability on submit
+    if (!checkFormability()) return;
 
-    // TODO: Implement server-side check if WotD exists in Words table
+    // TODO: Implement server-side check if WotD exists in Words table (via Cloud Function)
     // For now, we'll assume it does or admin is responsible.
 
     try {
       if (editingPuzzleId) {
+        // For now, updating still uses the mock function.
         await mockUpdateDailyPuzzle(editingPuzzleId, formData);
-        toast({ title: "Puzzle Updated", description: `Puzzle for ${format(formData.puzzleDateGMT!, 'PPP')} has been updated.` });
+        toast({ title: "Puzzle Updated (Mock)", description: `Puzzle for ${format(formData.puzzleDateGMT!, 'PPP')} has been updated.` });
       } else {
-        await mockCreateDailyPuzzle(formData);
-        toast({ title: "Puzzle Created", description: `New puzzle for ${format(formData.puzzleDateGMT!, 'PPP')} has been created.` });
+        // Creating new puzzle now uses Firestore.
+        await createDailyPuzzleInFirestore(formData);
+        toast({ title: "Puzzle Created in Firebase!", description: `New puzzle for ${format(formData.puzzleDateGMT!, 'PPP')} has been saved to Firestore.` });
       }
       setShowForm(false);
       setEditingPuzzleId(null);
@@ -211,8 +266,13 @@ export default function DailyPuzzleManagementPage() {
   };
 
   const openEditForm = (puzzle: DailyPuzzle) => {
+    // When editing, ensure puzzleDateGMT is a Date object if it came from Firestore as a Timestamp
+    const puzzleDate = puzzle.puzzleDateGMT instanceof Timestamp 
+                       ? puzzle.puzzleDateGMT.toDate() 
+                       : puzzle.puzzleDateGMT;
+
     setFormData({
-      puzzleDateGMT: puzzle.puzzleDateGMT,
+      puzzleDateGMT: puzzleDate,
       wordOfTheDayText: puzzle.wordOfTheDayText,
       wordOfTheDayPoints: puzzle.wordOfTheDayPoints,
       seedingLetters: puzzle.seedingLetters,
@@ -225,9 +285,10 @@ export default function DailyPuzzleManagementPage() {
   };
 
   const handleDelete = async (id: string) => {
+    // Deleting still uses mock function for now
     try {
       await mockDeleteDailyPuzzle(id);
-      toast({ title: "Puzzle Deleted", description: `Puzzle ${id} has been deleted.` });
+      toast({ title: "Puzzle Deleted (Mock)", description: `Puzzle ${id} has been deleted.` });
       fetchPuzzles(); // Refresh list
     } catch (error: any) {
       toast({ title: "Error Deleting Puzzle", description: error.message || "Could not delete puzzle.", variant: "destructive" });
@@ -259,8 +320,16 @@ export default function DailyPuzzleManagementPage() {
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
                   <Label htmlFor="puzzleDateGMT">Puzzle Date (GMT)</Label>
-                  <DatePicker date={formData.puzzleDateGMT} setDate={handleDateChange} 
-                    disabled={(date) => editingPuzzleId ? false : MOCK_PUZZLES.some(p => format(p.puzzleDateGMT, 'yyyy-MM-dd') === format(date, 'yyyy-MM-dd'))}
+                  <DatePicker 
+                    date={formData.puzzleDateGMT} 
+                    setDate={handleDateChange} 
+                    disabled={(date) => 
+                      editingPuzzleId ? false : puzzles.some(p => 
+                        p.puzzleDateGMT instanceof Timestamp 
+                        ? format(p.puzzleDateGMT.toDate(), 'yyyy-MM-dd') === format(date, 'yyyy-MM-dd')
+                        : format(p.puzzleDateGMT, 'yyyy-MM-dd') === format(date, 'yyyy-MM-dd')
+                      )
+                    }
                   />
                   {formErrors.puzzleDateGMT && <p className="text-sm text-destructive mt-1">{formErrors.puzzleDateGMT}</p>}
                 </div>
@@ -294,13 +363,14 @@ export default function DailyPuzzleManagementPage() {
               </div>
               {formabilityError && <p className="text-sm text-destructive mt-1">{formabilityError}</p>}
                <p className="text-xs text-muted-foreground">
-                 Note: WotD existence in Master Dictionary and point accuracy should be verified. Formability from seeding letters is checked client-side.
+                 Note: WotD existence in Master Dictionary and point accuracy should be verified (ideally via server-side check not yet implemented).
+                 Formability from seeding letters is checked client-side.
                </p>
             </CardContent>
             <CardFooter className="flex justify-end space-x-2">
               <Button type="button" variant="outline" onClick={() => { setShowForm(false); setEditingPuzzleId(null); }}>Cancel</Button>
               <Button type="submit" disabled={!!formabilityError}>
-                {editingPuzzleId ? 'Update Puzzle' : 'Create Puzzle'}
+                {editingPuzzleId ? 'Update Puzzle (Mock)' : 'Create Puzzle'}
               </Button>
             </CardFooter>
           </form>
@@ -310,7 +380,7 @@ export default function DailyPuzzleManagementPage() {
       <Card>
         <CardHeader>
           <CardTitle>Puzzle List</CardTitle>
-          <CardDescription>View and manage all upcoming, active, and past puzzles.</CardDescription>
+          <CardDescription>View and manage all upcoming, active, and past puzzles. (List includes newly created puzzles from Firebase and mock data)</CardDescription>
         </CardHeader>
         <CardContent>
           {isLoading ? (
@@ -330,59 +400,66 @@ export default function DailyPuzzleManagementPage() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {puzzles.map((puzzle) => (
-                  <TableRow key={puzzle.id}>
-                    <TableCell>{format(puzzle.puzzleDateGMT, 'yyyy-MM-dd')}</TableCell>
-                    <TableCell>{puzzle.wordOfTheDayText}</TableCell>
-                    <TableCell>{puzzle.seedingLetters}</TableCell>
-                    <TableCell>{puzzle.wordOfTheDayPoints}</TableCell>
-                    <TableCell>
-                        <span className={`px-2 py-1 text-xs rounded-full ${
-                            puzzle.status === 'Active' ? 'bg-green-100 text-green-700' :
-                            puzzle.status === 'Upcoming' ? 'bg-blue-100 text-blue-700' :
-                            'bg-gray-100 text-gray-700'
-                        }`}>
-                            {puzzle.status}
-                        </span>
-                    </TableCell>
-                    <TableCell className="text-right space-x-2">
-                      <Button variant="ghost" size="icon" onClick={() => openEditForm(puzzle)} title="Edit">
-                        <Edit2 className="h-4 w-4" />
-                      </Button>
-                      <AlertDialog>
-                        <AlertDialogTrigger asChild>
-                          <Button variant="ghost" size="icon" title="Delete" className="text-destructive hover:text-destructive">
-                            <Trash2 className="h-4 w-4" />
-                          </Button>
-                        </AlertDialogTrigger>
-                        <AlertDialogContent>
-                          <AlertDialogHeader>
-                            <AlertDialogTitle>Are you absolutely sure?</AlertDialogTitle>
-                            <AlertDialogDescription>
-                              This action cannot be undone. This will permanently delete the puzzle for {format(puzzle.puzzleDateGMT, 'PPP')}.
-                              Deleting active or past puzzles can affect game data and user experience.
-                            </AlertDialogDescription>
-                          </AlertDialogHeader>
-                          <AlertDialogFooter>
-                            <AlertDialogCancel>Cancel</AlertDialogCancel>
-                            <AlertDialogAction onClick={() => handleDelete(puzzle.id)} className="bg-destructive hover:bg-destructive/90 text-destructive-foreground">
-                              Yes, delete puzzle
-                            </AlertDialogAction>
-                          </AlertDialogFooter>
-                        </AlertDialogContent>
-                      </AlertDialog>
-                    </TableCell>
-                  </TableRow>
-                ))}
+                {puzzles.map((puzzle) => {
+                  const displayDate = puzzle.puzzleDateGMT instanceof Timestamp 
+                                    ? puzzle.puzzleDateGMT.toDate() 
+                                    : puzzle.puzzleDateGMT;
+                  return (
+                    <TableRow key={puzzle.id}>
+                      <TableCell>{format(displayDate, 'yyyy-MM-dd')}</TableCell>
+                      <TableCell>{puzzle.wordOfTheDayText}</TableCell>
+                      <TableCell>{puzzle.seedingLetters}</TableCell>
+                      <TableCell>{puzzle.wordOfTheDayPoints}</TableCell>
+                      <TableCell>
+                          <span className={`px-2 py-1 text-xs rounded-full ${
+                              puzzle.status === 'Active' ? 'bg-green-100 text-green-700' :
+                              puzzle.status === 'Upcoming' ? 'bg-blue-100 text-blue-700' :
+                              'bg-gray-100 text-gray-700'
+                          }`}>
+                              {puzzle.status}
+                          </span>
+                      </TableCell>
+                      <TableCell className="text-right space-x-2">
+                        <Button variant="ghost" size="icon" onClick={() => openEditForm(puzzle)} title="Edit">
+                          <Edit2 className="h-4 w-4" />
+                        </Button>
+                        <AlertDialog>
+                          <AlertDialogTrigger asChild>
+                            <Button variant="ghost" size="icon" title="Delete" className="text-destructive hover:text-destructive">
+                              <Trash2 className="h-4 w-4" />
+                            </Button>
+                          </AlertDialogTrigger>
+                          <AlertDialogContent>
+                            <AlertDialogHeader>
+                              <AlertDialogTitle>Are you absolutely sure?</AlertDialogTitle>
+                              <AlertDialogDescription>
+                                This action cannot be undone. This will permanently delete the puzzle for {format(displayDate, 'PPP')}.
+                                Deleting active or past puzzles can affect game data and user experience. (Currently uses mock delete)
+                              </AlertDialogDescription>
+                            </AlertDialogHeader>
+                            <AlertDialogFooter>
+                              <AlertDialogCancel>Cancel</AlertDialogCancel>
+                              <AlertDialogAction onClick={() => handleDelete(puzzle.id)} className="bg-destructive hover:bg-destructive/90 text-destructive-foreground">
+                                Yes, delete puzzle (Mock)
+                              </AlertDialogAction>
+                            </AlertDialogFooter>
+                          </AlertDialogContent>
+                        </AlertDialog>
+                      </TableCell>
+                    </TableRow>
+                  );
+                })}
               </TableBody>
             </Table>
           )}
         </CardContent>
       </Card>
        <p className="text-xs text-muted-foreground text-center">
-            Reminder: Puzzle creation, update, and deletion currently use MOCK (client-side) functions.
-            Implement and connect to actual Firebase Cloud Functions for persistence and server-side validation.
+            Reminder: Puzzle creation now saves to Firestore.
+            Fetching, updating, and deleting puzzles still use MOCK (client-side) functions for demonstration.
+            Implement and connect to actual Firebase Cloud Functions for full persistence and server-side validation.
           </p>
     </div>
   );
 }
+
