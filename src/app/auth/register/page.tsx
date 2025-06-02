@@ -1,7 +1,7 @@
 
 'use client';
 
-import { useState, useEffect } from 'react';
+import React, { useState, useEffect, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -17,7 +17,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Form, FormControl, FormDescription, FormField, FormItem, FormLabel, FormMessage } from '@/components/ui/form';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { useToast } from '@/hooks/use-toast';
-import { Eye, EyeOff, UserPlus } from 'lucide-react';
+import { Eye, EyeOff, UserPlus, Loader2 } from 'lucide-react';
 import type { CircleInvite } from '@/types';
 
 const COUNTRIES = [
@@ -50,7 +50,7 @@ const formSchema = z.object({
 
 type RegistrationFormValues = z.infer<typeof formSchema>;
 
-export default function RegisterPage() {
+function RegisterFormContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const { toast } = useToast();
@@ -100,7 +100,7 @@ export default function RegisterPage() {
         // Check for pending email invites
         const invitesQuery = query(
           collection(firestore, "CircleInvites"),
-          where("inviteeEmail", "==", values.email.toLowerCase()), // Store and query emails consistently (e.g., lowercase)
+          where("inviteeEmail", "==", values.email.toLowerCase()), 
           where("status", "==", "SentToEmail")
         );
         const invitesSnapshot = await getDocs(invitesQuery);
@@ -109,11 +109,10 @@ export default function RegisterPage() {
           const batch = writeBatch(firestore);
           invitesSnapshot.forEach(inviteDoc => {
             const inviteData = inviteDoc.data() as CircleInvite;
-            // Link invite to the new user if inviteIdFromUrl matches, or if it's any pending email invite for this user.
-            if (inviteIdFromUrl === inviteDoc.id || !inviteIdFromUrl) { // Prioritize URL inviteId if present
+            if (inviteIdFromUrl === inviteDoc.id || !inviteIdFromUrl) { 
                  batch.update(doc(firestore, "CircleInvites", inviteDoc.id), {
                     inviteeUserId: user.uid,
-                    status: "Sent" // Change status so it appears as a normal in-app notification
+                    status: "Sent" 
                 });
                  toast({
                     title: "Circle Invite Updated",
@@ -281,7 +280,7 @@ export default function RegisterPage() {
                 )}
               />
               <Button type="submit" className="w-full font-semibold text-lg py-3" disabled={isLoading}>
-                {isLoading ? 'Creating Account...' : 'Sign Up'}
+                {isLoading ? (<><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Creating Account...</>) : 'Sign Up'}
               </Button>
             </form>
           </Form>
@@ -294,5 +293,18 @@ export default function RegisterPage() {
         </CardContent>
       </Card>
     </div>
+  );
+}
+
+export default function RegisterPage() {
+  return (
+    <Suspense fallback={
+      <div className="flex items-center justify-center min-h-screen py-12">
+        <Loader2 className="h-12 w-12 animate-spin text-primary" /> 
+        <p className="ml-4 text-lg text-muted-foreground">Loading registration form...</p>
+      </div>
+    }>
+      <RegisterFormContent />
+    </Suspense>
   );
 }
