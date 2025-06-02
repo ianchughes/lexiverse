@@ -4,6 +4,7 @@ import './globals.css';
 import { SiteHeader } from '@/components/layout/SiteHeader';
 import { SiteFooter } from '@/components/layout/SiteFooter';
 import { Toaster } from "@/components/ui/toaster";
+import { AuthProvider } from '@/contexts/AuthContext'; // Import AuthProvider
 
 export const metadata: Metadata = {
   title: 'Lexiverse - Daily Word Puzzle',
@@ -23,12 +24,14 @@ export default function RootLayout({
         <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
       </head>
       <body className="font-body antialiased min-h-screen flex flex-col" suppressHydrationWarning>
-        <SiteHeader />
-        <main className="flex-grow container mx-auto px-4 py-8">
-          {children}
-        </main>
-        <SiteFooter />
-        <Toaster />
+        <AuthProvider> {/* Wrap with AuthProvider */}
+          <SiteHeader />
+          <main className="flex-grow container mx-auto px-4 py-8">
+            {children}
+          </main>
+          <SiteFooter />
+          <Toaster />
+        </AuthProvider>
       </body>
     </html>
   );

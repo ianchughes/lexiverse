@@ -10,51 +10,24 @@ import { GameTimer } from '@/components/game/GameTimer';
 import { SubmittedWordsList } from '@/components/game/SubmittedWordsList';
 import { DailyDebriefDialog } from '@/components/game/DailyDebriefDialog';
 import { ShareMomentDialog } from '@/components/game/ShareMomentDialog';
-import type { SeedingLetter, SubmittedWord, GameState, WordSubmission, SystemSettings, RejectionType, MasterWord as MasterWordType, RejectedWord as RejectedWordType } from '@/types';
+import type { SeedingLetter, SubmittedWord, GameState, WordSubmission, SystemSettings, MasterWordType, RejectedWordType, UserProfile } from '@/types';
 import { useToast } from '@/hooks/use-toast';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
-import { PlayCircle, Check, AlertTriangle, Send, Loader2, ThumbsDown } from 'lucide-react';
+import { PlayCircle, Check, AlertTriangle, Send, Loader2, ThumbsDown, Users } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { firestore, auth } from '@/lib/firebase';
-import { collection, addDoc, serverTimestamp, doc, getDoc, updateDoc, increment, Timestamp } from 'firebase/firestore';
+import { collection, addDoc, serverTimestamp, doc, getDoc, updateDoc, increment, Timestamp, writeBatch } from 'firebase/firestore';
 import { format } from 'date-fns';
+import { useAuth } from '@/contexts/AuthContext'; // Import useAuth
+import { updateUserCircleDailyScoresAction } from '@/app/circles/actions';
+import Link from 'next/link';
+
 
 const DAILY_GAME_DURATION = 90; // 90 seconds
 const MIN_WORD_LENGTH = 4;
 
-interface MockApprovedWordDetails {
-  frequency: number;
-  originalSubmitterUID?: string;
-  isWotD?: boolean;
-  definition?: string; 
-}
-
-interface MockRejectedWordDetails {
-  rejectionType: RejectionType;
-}
-
 const MOCK_WORD_OF_THE_DAY_TEXT = "LEXIVERSE";
 const MOCK_SEEDING_LETTERS_CHARS: string[] = ['L', 'E', 'X', 'I', 'V', 'R', 'S', 'E', 'O'];
-
-// In production, these would be fetched from Firestore
-const MOCK_APPROVED_WORDS_MAP: Map<string, MockApprovedWordDetails> = new Map([
-  ["LEXI", { frequency: 5.5, definition: "A lexical unit." }],
-  ["VERSE", { frequency: 4.2, definition: "A line of poetry." }],
-  ["ROVE", { frequency: 3.0, originalSubmitterUID: "claimerUID123", definition: "To wander." }],
-  ["LIVE", { frequency: 6.1, originalSubmitterUID: "anotherClaimerUID456", definition: "To be alive." }],
-  ["SIRE", { frequency: 2.5, definition: "A male parent." }],
-  ["EROS", { frequency: 1.8, definition: "Greek god of love." }],
-  ["RISE", { frequency: 5.0, definition: "To get up." }],
-  [MOCK_WORD_OF_THE_DAY_TEXT, { frequency: 7.0, isWotD: true, definition: "The universe of words." }],
-  ["OXES", { frequency: 2.2, definition: "Plural of ox." }],
-  ["SOLE", { frequency: 3.5, originalSubmitterUID: "claimerUID123", definition: "Bottom of a shoe, or a fish." }],
-]);
-
-const MOCK_REJECTED_WORDS_MAP: Map<string, MockRejectedWordDetails> = new Map([
-  ["GIBBER", { rejectionType: 'Gibberish' }],
-  ["XYZPQ", { rejectionType: 'Gibberish' }],
-  ["BADWORD", { rejectionType: 'AdminDecision' }],
-]);
 
 
 const SYSTEM_SETTINGS_COLLECTION = "SystemConfiguration";
@@ -67,6 +40,7 @@ const REJECTED_WORDS_COLLECTION = "RejectedWords";
 
 
 export default function HomePage() {
+  const { currentUser, userProfile, isLoadingAuth } = useAuth(); // Use auth context
   const [seedingLetters, setSeedingLetters] = useState<SeedingLetter[]>([]);
   const [currentWord, setCurrentWord] = useState<SeedingLetter[]>([]);
   const [submittedWords, setSubmittedWords] = useState<SubmittedWord[]>([]);
@@ -86,46 +60,66 @@ export default function HomePage() {
   const [currentPuzzleDate, setCurrentPuzzleDate] = useState<string>(format(new Date(), 'yyyy-MM-dd'));
   const [isLoadingInitialState, setIsLoadingInitialState] = useState(true);
 
-  // For production, these would be loaded from Firestore and cached
-  const [approvedWords, setApprovedWords] = useState<Map<string, MockApprovedWordDetails>>(MOCK_APPROVED_WORDS_MAP);
-  const [rejectedWords, setRejectedWords] = useState<Map<string, MockRejectedWordDetails>>(MOCK_REJECTED_WORDS_MAP);
+  const [approvedWords, setApprovedWords] = useState<Map<string, MasterWordType>>(new Map());
+  const [rejectedWords, setRejectedWords] = useState<Map<string, RejectedWordType>>(new Map());
+  const [wordOfTheDay, setWordOfTheDay] = useState<MasterWordType | null>(null);
 
 
   const { toast } = useToast();
 
-  useEffect(() => {
-    // TODO: In Production, fetch actual approved/rejected words from Firestore here
-    // For now, we use mocks.
-    // Example:
-    // const fetchWordLists = async () => {
-    //   const approvedSnap = await getDocs(collection(firestore, MASTER_WORDS_COLLECTION));
-    //   const newApprovedMap = new Map<string, MockApprovedWordDetails>();
-    //   approvedSnap.forEach(doc => {
-    //     const data = doc.data() as MasterWordType;
-    //     newApprovedMap.set(doc.id, { frequency: data.frequency, originalSubmitterUID: data.originalSubmitterUID, definition: data.definition, isWotD: doc.id === MOCK_WORD_OF_THE_DAY_TEXT });
-    //   });
-    //   setApprovedWords(newApprovedMap);
+  const initializeGameData = useCallback(async (puzzleDate: string) => {
+    setIsLoadingInitialState(true);
+    try {
+      // Fetch today's puzzle
+      const puzzleDocRef = doc(firestore, "DailyPuzzles", puzzleDate);
+      const puzzleSnap = await getDoc(puzzleDocRef);
+      let currentWotDText = MOCK_WORD_OF_THE_DAY_TEXT;
+      let currentSeedingChars = MOCK_SEEDING_LETTERS_CHARS;
 
-    //   const rejectedSnap = await getDocs(collection(firestore, REJECTED_WORDS_COLLECTION));
-    //   const newRejectedMap = new Map<string, MockRejectedWordDetails>();
-    //   rejectedSnap.forEach(doc => {
-    //     const data = doc.data() as RejectedWordType;
-    //     newRejectedMap.set(doc.id, { rejectionType: data.rejectionType });
-    //   });
-    //   setRejectedWords(newRejectedMap);
-    // };
-    // fetchWordLists();
+      if (puzzleSnap.exists()) {
+        const puzzleData = puzzleSnap.data();
+        currentWotDText = puzzleData.wordOfTheDayText.toUpperCase();
+        currentSeedingChars = puzzleData.seedingLetters.toUpperCase().split('');
+      } else {
+        toast({ title: "Puzzle Data Missing", description: "Using default puzzle for today.", variant: "default"});
+      }
+      
+      const initialLetters = currentSeedingChars.map((char, index) => ({
+        id: `letter-${index}-${char}-${Date.now()}`, // Ensure unique IDs on re-init
+        char,
+        index,
+      }));
+      setSeedingLetters(initialLetters);
 
-    const initialLetters = MOCK_SEEDING_LETTERS_CHARS.map((char, index) => ({
-      id: `letter-${index}-${char}`,
-      char,
-      index,
-    }));
-    setSeedingLetters(initialLetters);
+      // Fetch all approved words
+      const approvedWordsSnap = await getDocs(collection(firestore, MASTER_WORDS_COLLECTION));
+      const newApprovedMap = new Map<string, MasterWordType>();
+      approvedWordsSnap.forEach(docSnap => {
+        newApprovedMap.set(docSnap.id, { wordText: docSnap.id, ...docSnap.data() } as MasterWordType);
+      });
+      setApprovedWords(newApprovedMap);
+      setWordOfTheDay(newApprovedMap.get(currentWotDText) || null);
 
-    const checkAdminResetAndPlayStatus = async () => {
-      setIsLoadingInitialState(true);
-      try {
+
+      // Fetch all rejected words
+      const rejectedWordsSnap = await getDocs(collection(firestore, REJECTED_WORDS_COLLECTION));
+      const newRejectedMap = new Map<string, RejectedWordType>();
+      rejectedWordsSnap.forEach(docSnap => {
+        newRejectedMap.set(docSnap.id, { wordText: docSnap.id, ...docSnap.data() } as RejectedWordType);
+      });
+      setRejectedWords(newRejectedMap);
+
+    } catch (error) {
+        console.error("Error initializing game data:", error);
+        toast({title: "Game Init Error", description: "Could not load game data. Using defaults.", variant: "destructive"});
+         const initialLetters = MOCK_SEEDING_LETTERS_CHARS.map((char, index) => ({
+            id: `letter-${index}-${char}-${Date.now()}`, char, index,
+        }));
+        setSeedingLetters(initialLetters);
+    }
+
+    // Check admin reset and play status (remains largely the same)
+    try {
         const settingsDocRef = doc(firestore, SYSTEM_SETTINGS_COLLECTION, GAME_SETTINGS_DOC_ID);
         const settingsSnap = await getDoc(settingsDocRef);
         
@@ -149,20 +143,25 @@ export default function HomePage() {
       }
 
       const lastPlayedStorage = localStorage.getItem(LOCALSTORAGE_LAST_PLAYED_KEY);
-      const today = new Date().toDateString();
-      if (lastPlayedStorage === today) {
+      const todayAsDateString = new Date().toDateString(); // Local date string for comparison
+      if (lastPlayedStorage === todayAsDateString) {
         setHasPlayedToday(true);
         setGameState('cooldown');
       } else {
         setHasPlayedToday(false);
         setGameState('idle'); 
       }
-      setCurrentPuzzleDate(format(new Date(), 'yyyy-MM-dd'));
+      setCurrentPuzzleDate(puzzleDate); // This is YYYY-MM-DD GMT
       setIsLoadingInitialState(false);
-    };
 
-    checkAdminResetAndPlayStatus();
   }, [toast]);
+
+
+  useEffect(() => {
+    const todayGMTStr = format(new Date(), 'yyyy-MM-dd'); // GMT date string
+    initializeGameData(todayGMTStr);
+  }, [initializeGameData]); // Run once on mount
+
 
   useEffect(() => {
     if (gameState !== 'playing' || timeLeft === 0) return;
@@ -178,9 +177,13 @@ export default function HomePage() {
     }, 1000);
     return () => clearInterval(timerId);
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [gameState, timeLeft]);
+  }, [gameState]); // timeLeft removed from deps to avoid re-triggering interval on each tick
 
   const startGame = () => {
+    if (isLoadingAuth) { // Prevent starting if auth state is not yet clear
+        toast({title: "Loading...", description: "Please wait while we verify your session.", variant: "default"});
+        return;
+    }
     if (hasPlayedToday) {
       toast({ title: "Already Played", description: "You've already played today. Come back tomorrow!", variant: "default" });
       return;
@@ -191,20 +194,45 @@ export default function HomePage() {
     setGuessedWotD(false);
     setTimeLeft(DAILY_GAME_DURATION);
     setGameState('playing');
-    setCurrentPuzzleDate(format(new Date(), 'yyyy-MM-dd')); 
+    const todayGMTStr = format(new Date(), 'yyyy-MM-dd');
+    setCurrentPuzzleDate(todayGMTStr); 
+    // Re-initialize game data in case it's a new day and data wasn't fetched on mount
+    if(currentPuzzleDate !== todayGMTStr) {
+        initializeGameData(todayGMTStr);
+    }
   };
 
-  const handleGameEnd = () => {
+  const handleGameEnd = async () => {
     setGameState('debrief');
     let finalScore = sessionScore;
     if (guessedWotD) {
       finalScore = Math.round(finalScore * 2); 
     }
-    setFinalDailyScore(Math.round(finalScore));
+    const roundedFinalScore = Math.round(finalScore);
+    setFinalDailyScore(roundedFinalScore);
     setShowDebrief(true);
     setHasPlayedToday(true);
-    localStorage.setItem(LOCALSTORAGE_LAST_PLAYED_KEY, new Date().toDateString());
+    localStorage.setItem(LOCALSTORAGE_LAST_PLAYED_KEY, new Date().toDateString()); // Use local date for this key
+
+    if (currentUser && userProfile) {
+        const userDocRef = doc(firestore, "Users", currentUser.uid);
+        const batch = writeBatch(firestore);
+        batch.update(userDocRef, {
+            overallPersistentScore: increment(roundedFinalScore),
+            lastPlayedDate_GMT: currentPuzzleDate, // Store GMT date string 'YYYY-MM-DD'
+            wotdStreakCount: guessedWotD ? increment(1) : 0, // Reset streak if WotD not guessed
+        });
+        await batch.commit();
+        
+        // Update Circle Daily Scores
+        await updateUserCircleDailyScoresAction({
+            userId: currentUser.uid,
+            puzzleDateGMT: currentPuzzleDate,
+            finalDailyScore: roundedFinalScore,
+        });
+    }
   };
+
 
   const handleLetterClick = useCallback((letter: SeedingLetter) => {
     if (gameState !== 'playing') return;
@@ -229,7 +257,7 @@ export default function HomePage() {
   };
 
   const handleSubmitWord = async () => {
-    if (gameState !== 'playing') return;
+    if (gameState !== 'playing' || !currentUser) return;
 
     const wordText = currentWord.map(l => l.char).join('').toUpperCase();
     if (wordText.length < MIN_WORD_LENGTH) {
@@ -247,9 +275,10 @@ export default function HomePage() {
     
     const approvedWordDetails = approvedWords.get(wordText);
     if (approvedWordDetails) {
-      const points = Math.round(wordText.length * (approvedWordDetails.frequency || 1));
+      const points = Math.round(wordText.length * approvedWordDetails.frequency);
+      const isCurrentWotD = wordOfTheDay?.wordText === wordText;
       
-      if (approvedWordDetails.isWotD) {
+      if (isCurrentWotD) {
         setGuessedWotD(true);
         toast({ title: "Word of the Day!", description: `You found "${wordText}" for ${points} base points!`, className: "bg-accent text-accent-foreground" });
       } else {
@@ -257,18 +286,17 @@ export default function HomePage() {
       }
 
       setSessionScore((prev) => prev + points);
-      setSubmittedWords((prev) => [...prev, { id: crypto.randomUUID(), text: wordText, points, isWotD: !!approvedWordDetails.isWotD }]);
+      setSubmittedWords((prev) => [...prev, { id: crypto.randomUUID(), text: wordText, points, isWotD: isCurrentWotD }]);
       
-      const currentUserUID = auth.currentUser?.uid;
-      if (currentUserUID && approvedWordDetails.originalSubmitterUID && approvedWordDetails.originalSubmitterUID !== currentUserUID) {
+      if (approvedWordDetails.originalSubmitterUID && approvedWordDetails.originalSubmitterUID !== currentUser.uid) {
         try {
           const claimerProfileRef = doc(firestore, "Users", approvedWordDetails.originalSubmitterUID);
           await updateDoc(claimerProfileRef, {
-            overallPersistentScore: increment(approvedWordDetails.frequency)
+            overallPersistentScore: increment(Math.round(approvedWordDetails.frequency)) // Bonus is frequency only
           });
           toast({
             title: "Claimer Bonus!",
-            description: `Original submitter of "${wordText}" got a ${approvedWordDetails.frequency.toFixed(1)} point bonus!`,
+            description: `Original submitter of "${wordText}" got a ${Math.round(approvedWordDetails.frequency)} point bonus!`,
             variant: "default"
           });
         } catch (error) {
@@ -282,7 +310,7 @@ export default function HomePage() {
     const rejectedWordDetails = rejectedWords.get(wordText);
     if (rejectedWordDetails) {
       if (rejectedWordDetails.rejectionType === 'Gibberish') {
-        const pointsDeducted = wordText.length;
+        const pointsDeducted = wordText.length; // Deduct length of word
         setSessionScore(prev => Math.max(0, prev - pointsDeducted)); 
         toast({
           title: "Word Rejected",
@@ -309,7 +337,6 @@ export default function HomePage() {
     setIsSubmittingForReview(true);
     toast({ title: "Checking Word...", description: `Verifying "${wordToSubmit}"...` });
 
-    // In production, this would be an async check against Firestore's RejectedWords collection
     const rejectedDetails = rejectedWords.get(wordToSubmit.toUpperCase());
     if (rejectedDetails) {
          toast({
@@ -324,13 +351,13 @@ export default function HomePage() {
 
     const apiKey = process.env.NEXT_PUBLIC_WORDSAPI_KEY;
     if (!apiKey || apiKey === "YOUR_WORDSAPI_KEY_PLACEHOLDER" || apiKey.length < 10) {
-      console.warn("WordsAPI key not configured or is placeholder. Simulating API call.");
+      console.warn("WordsAPI key not configured or is placeholder. Simulating API call for submission.");
       await new Promise(resolve => setTimeout(resolve, 1500)); 
       const mockApiSuccess = Math.random() > 0.2; 
       
       if (mockApiSuccess) {
         const mockDefinition = `A simulated definition for ${wordToSubmit}.`;
-        const mockFrequency = parseFloat((Math.random() * 6 + 1).toFixed(2)); // Ensure frequency >= 1
+        const mockFrequency = parseFloat((Math.random() * 6 + 1).toFixed(2));
         await saveSubmissionToFirestore(wordToSubmit, mockDefinition, mockFrequency);
       } else {
         toast({
@@ -358,7 +385,14 @@ export default function HomePage() {
       }
       const data = await response.json();
       const definition = data.results?.[0]?.definition || "No definition found.";
-      const frequency = data.frequencyDetails?.[0]?.zipf || (data.frequency ? parseFloat(data.frequency) : 0) || 1;
+      // Ensure frequency is a number and defaults to 1 if missing or invalid
+      let frequency = 1;
+      if (data.frequencyDetails?.[0]?.zipf) {
+        frequency = parseFloat(data.frequencyDetails[0].zipf);
+      } else if (data.frequency) {
+        frequency = parseFloat(data.frequency);
+      }
+      if (isNaN(frequency) || frequency <= 0) frequency = 1; // Default to 1 if invalid
       
       await saveSubmissionToFirestore(wordToSubmit, definition, frequency);
 
@@ -371,21 +405,23 @@ export default function HomePage() {
   };
 
   const saveSubmissionToFirestore = async (wordText: string, definition: string, frequency: number) => {
-    if (!auth.currentUser) {
+    if (!currentUser) {
         toast({ title: "Authentication Error", description: "You must be logged in to submit words.", variant: "destructive" });
         return;
     }
-    const newSubmission: WordSubmission = {
+    const newSubmission: Omit<WordSubmission, 'id' | 'submittedTimestamp'> = { // ID and timestamp are auto-generated
         wordText: wordText.toUpperCase(),
         definition: definition,
         frequency: frequency,
         status: 'PendingModeratorReview',
-        submittedByUID: auth.currentUser.uid,
-        submittedTimestamp: serverTimestamp(),
+        submittedByUID: currentUser.uid,
         puzzleDateGMT: currentPuzzleDate,
     };
     try {
-        await addDoc(collection(firestore, WORD_SUBMISSIONS_QUEUE), newSubmission);
+        await addDoc(collection(firestore, WORD_SUBMISSIONS_QUEUE), {
+            ...newSubmission,
+            submittedTimestamp: serverTimestamp()
+        });
         toast({
         title: "Word Submitted!",
         description: `"${wordText}" has been sent for review.`,
@@ -413,7 +449,7 @@ export default function HomePage() {
   const currentWordText = currentWord.map(l => l.char).join('');
   const selectedLetterIndices = currentWord.map(l => l.index);
 
-  if (isLoadingInitialState) {
+  if (isLoadingInitialState && isLoadingAuth) {
     return (
       <div className="flex flex-col items-center justify-center text-center h-full py-12">
         <Loader2 className="w-16 h-16 text-primary animate-spin mb-4" />
@@ -441,12 +477,11 @@ export default function HomePage() {
         <div className="text-center space-y-6">
           <h1 className="text-4xl md:text-5xl font-headline text-primary">Welcome to Lexiverse!</h1>
           <p className="text-lg md:text-xl text-muted-foreground max-w-xl mx-auto">
-            Find as many 4+ letter words as you can in 90 seconds.
-            Points: Word Length &times; Word Frequency.
-            Discover the "Word of the Day" for a massive bonus!
-            Claimed words give bonuses to their original submitter.
+            Find as many 4+ letter words as you can in {DAILY_GAME_DURATION} seconds.
+            Points: Each letter is 1 point &times; Word Frequency. WotD gets 2x final score bonus.
+            Claimed words give their original submitter a bonus!
           </p>
-          <Button size="lg" onClick={startGame} className="font-semibold text-lg py-3 px-8">
+          <Button size="lg" onClick={startGame} className="font-semibold text-lg py-3 px-8" disabled={isLoadingAuth && !currentUser}>
             <PlayCircle className="mr-2 h-6 w-6" /> Start Today's Game
           </Button>
         </div>
@@ -499,6 +534,9 @@ export default function HomePage() {
           setShareableGameDate(currentPuzzleDate);
           setShowShareModal(true);
         }}
+        userProfile={userProfile} // Pass userProfile
+        circleId={userProfile?.activeCircleId} // Pass activeCircleId
+        circleName={userProfile?.activeCircleId ? "Your Circle" : undefined} // Fetch actual circle name if needed
       />
       
       <ShareMomentDialog
@@ -509,6 +547,7 @@ export default function HomePage() {
           guessedWotD,
           wordsFoundCount: submittedWords.length,
           date: shareableGameDate,
+          // circleName: userProfile?.activeCircleId ? "CircleNamePlaceholder" : undefined
         }}
       />
 
@@ -540,11 +579,10 @@ export default function HomePage() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
-       <p className="text-xs text-muted-foreground text-center mt-8">
-            Note: Word verification (WordsAPI) and master word lists are currently using MOCK client-side data for demonstration.
-            In production, these would connect to Firestore for approved/rejected words and use secure backend API calls.
-            The "claimed word" bonus also uses mock data for claimer UIDs.
+       <p className="text-xs text-muted-foreground text-center mt-8 max-w-lg mx-auto">
+            Game data (words, puzzles) is now fetched from Firestore. WordsAPI for submissions uses NEXT_PUBLIC_WORDSAPI_KEY or simulates if not set. Scores update user profiles. Circle scores are updated via a server action.
         </p>
     </div>
   );
 }
+
