@@ -23,7 +23,7 @@ import { format } from 'date-fns';
 import { useAuth } from '@/contexts/AuthContext';
 import { updateUserCircleDailyScoresAction } from '@/app/circles/actions';
 import Link from 'next/link';
-import { calculateWordScore } from '@/lib/scoring'; // Import the new scoring function
+import { calculateWordScore } from '@/lib/scoring';
 
 
 const DAILY_GAME_DURATION = 90;
@@ -68,7 +68,7 @@ export default function HomePage() {
   const [rejectedWords, setRejectedWords] = useState<Map<string, RejectedWordType>>(new Map());
   const [actualWordOfTheDayText, setActualWordOfTheDayText] = useState<string | null>(null);
   const [actualWordOfTheDayDefinition, setActualWordOfTheDayDefinition] = useState<string | null>(null);
-  const [actualWordOfTheDayPoints, setActualWordOfTheDayPoints] = useState<number | null>(null); // Points from DailyPuzzle config
+  const [actualWordOfTheDayPoints, setActualWordOfTheDayPoints] = useState<number | null>(null);
   const [pendingInvitesCount, setPendingInvitesCount] = useState(0);
   const [showWelcomeInstructionsModal, setShowWelcomeInstructionsModal] = useState(false);
 
@@ -83,7 +83,7 @@ export default function HomePage() {
       let effectiveWotDText = MOCK_WORD_OF_THE_DAY_TEXT;
       let currentSeedingChars = MOCK_SEEDING_LETTERS_CHARS;
       let wotdDefinition: string | null = "A fun word puzzle game.";
-      let wotdPointsFromConfig: number | null = MOCK_WORD_OF_THE_DAY_TEXT.length * 5; // Default point estimate
+      let wotdPointsFromConfig: number | null = MOCK_WORD_OF_THE_DAY_TEXT.length * 5;
 
 
       if (puzzleSnap.exists()) {
@@ -470,7 +470,7 @@ export default function HomePage() {
       
       if (mockApiSuccess) {
         const mockDefinition = `A simulated definition for ${wordToSubmit}.`;
-        const mockFrequency = parseFloat((Math.random() * 6 + 1).toFixed(2)); // Random frequency 1-7
+        const mockFrequency = parseFloat((Math.random() * 6 + 1).toFixed(2));
         await saveSubmissionToFirestore(wordToSubmit, mockDefinition, mockFrequency);
       } else {
         const pointsDeducted = wordToSubmit.length;
@@ -512,13 +512,13 @@ export default function HomePage() {
       }
       const data = await response.json();
       const definition = data.results?.[0]?.definition || "No definition found.";
-      let frequency = 1; // Default frequency if not found
-      if (data.frequencyDetails?.[0]?.zipf) { // Prefer zipf if available
+      let frequency = 1; 
+      if (data.frequencyDetails?.[0]?.zipf) {
         frequency = parseFloat(data.frequencyDetails[0].zipf);
-      } else if (data.frequency) { // Fallback to general frequency
+      } else if (data.frequency) { 
         frequency = parseFloat(data.frequency);
       }
-      if (isNaN(frequency) || frequency <= 0) frequency = 1; // Ensure valid positive number
+      if (isNaN(frequency) || frequency <= 0) frequency = 1;
       
       await saveSubmissionToFirestore(wordToSubmit, definition, frequency);
 
@@ -541,8 +541,27 @@ export default function HomePage() {
         toast({ title: "Authentication Error", description: "You must be logged in to submit words.", variant: "destructive" });
         return;
     }
+
+    const wordUpperCase = wordText.toUpperCase();
+
+    // Check if word is already pending review
+    const q = query(
+        collection(firestore, WORD_SUBMISSIONS_QUEUE),
+        where("wordText", "==", wordUpperCase),
+        where("status", "==", "PendingModeratorReview")
+    );
+    const querySnapshot = await getDocs(q);
+    if (!querySnapshot.empty) {
+        toast({
+            title: "Already Pending",
+            description: `"${wordUpperCase}" is already pending review.`,
+            variant: "default"
+        });
+        return;
+    }
+
     const newSubmission: Omit<WordSubmission, 'id' | 'submittedTimestamp'> = { 
-        wordText: wordText.toUpperCase(),
+        wordText: wordUpperCase,
         definition: definition,
         frequency: frequency,
         status: 'PendingModeratorReview',
@@ -803,5 +822,3 @@ export default function HomePage() {
     </div>
   );
 }
-
-    
