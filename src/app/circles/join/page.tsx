@@ -1,7 +1,7 @@
 
 'use client';
 
-import { Suspense, useState } from 'react';
+import { Suspense, useState, useEffect } from 'react'; // Added useEffect
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -30,18 +30,28 @@ function JoinCircleFormContent() {
   const { currentUser, userProfile, isLoadingAuth } = useAuth();
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  const inviteCodeFromUrl = searchParams.get('code');
+  // Get inviteCodeFromUrl once and use it. Default to empty string if not present.
+  const inviteCodeFromUrl = searchParams.get('code') || '';
 
   const form = useForm<JoinCircleFormValues>({
     resolver: zodResolver(joinCircleFormSchema),
     defaultValues: {
-      inviteCode: inviteCodeFromUrl || "",
+      inviteCode: inviteCodeFromUrl, // Pre-fill from URL if available
     },
   });
+  
+  // Effect to update form if inviteCodeFromUrl changes (e.g., SPA navigation updates params)
+  useEffect(() => {
+    if (inviteCodeFromUrl && form.getValues("inviteCode") !== inviteCodeFromUrl) {
+      form.reset({ inviteCode: inviteCodeFromUrl });
+    }
+  }, [inviteCodeFromUrl, form]);
+
 
   async function onSubmit(values: JoinCircleFormValues) {
     if (!currentUser || !userProfile) {
-      toast({ title: "Error", description: "You must be logged in to join a circle.", variant: "destructive" });
+      toast({ title: "Authentication Required", description: "You must be logged in to join a circle.", variant: "destructive" });
+      router.push(`/auth/login?inviteCode=${values.inviteCode}&redirect=/circles/join%3Fcode=${values.inviteCode}`);
       return;
     }
     setIsSubmitting(true);
@@ -78,7 +88,8 @@ function JoinCircleFormContent() {
   }
 
   if (!currentUser) {
-    const inviteCode = searchParams.get('code') || '';
+    // This is the UI for unauthenticated users with an invite link.
+    // The screenshot shows a different "Access Denied" message, suggesting this block might not be reached in prod.
     return (
       <div className="flex items-center justify-center min-h-screen py-12 bg-gradient-to-br from-background to-secondary/20 px-4">
         <Card className="w-full max-w-lg shadow-2xl text-center">
@@ -105,24 +116,31 @@ function JoinCircleFormContent() {
             </p>
             <div className="flex flex-col sm:flex-row gap-4 justify-center pt-4">
               <Button size="lg" className="w-full sm:w-auto font-semibold text-lg" asChild>
-                <Link href={`/auth/login?inviteCode=${inviteCode}`}>
+                <Link href={`/auth/login?inviteCode=${inviteCodeFromUrl}`}>
                   <LogIn className="mr-2 h-5 w-5" /> Log In to Join
                 </Link>
               </Button>
               <Button size="lg" variant="secondary" className="w-full sm:w-auto font-semibold text-lg" asChild>
-                <Link href={`/auth/register?inviteCode=${inviteCode}`}>
+                <Link href={`/auth/register?inviteCode=${inviteCodeFromUrl}`}>
                   <UserPlus className="mr-2 h-5 w-5" /> Sign Up & Team Up!
                 </Link>
               </Button>
             </div>
+            {inviteCodeFromUrl && (
+              <div className="mt-6 p-4 bg-accent/10 border border-accent/30 rounded-lg">
+                <Info className="inline h-5 w-5 mr-2 text-accent mb-1" />
+                <p className="text-sm text-accent-foreground">
+                  It looks like you were trying to join a specific Circle using an invite! Once you've signed up or logged in, if you're not automatically taken to the Circle, you can use the invite code: <strong className="font-mono bg-muted px-1 rounded">{inviteCodeFromUrl}</strong> or simply try your original invite link again. We'll make sure you get to the right place!
+                </p>
+              </div>
+            )}
           </CardContent>
         </Card>
       </div>
     );
   }
   
-  // This case implies currentUser is truthy, but userProfile might still be loading or null
-  if (!userProfile && !isLoadingAuth) { // Check !isLoadingAuth to avoid premature rendering of this state
+  if (!userProfile && !isLoadingAuth) { 
      return (
       <div className="flex flex-col items-center justify-center text-center py-10">
         <AlertTriangle className="mx-auto h-12 w-12 text-destructive mb-4" />
@@ -133,7 +151,6 @@ function JoinCircleFormContent() {
     );
   }
   
-  // If currentUser and userProfile are available, render the form
   return (
     <div className="max-w-md w-full">
       <Card className="shadow-lg">
