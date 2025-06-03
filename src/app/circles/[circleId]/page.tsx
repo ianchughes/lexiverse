@@ -20,6 +20,7 @@ import { useToast } from '@/hooks/use-toast';
 import { Loader2, Users, Settings, LogOut, Trash2, UserPlus, Link2, AlertTriangle, Copy, Check, Mail, UserSearch, Crown, TrendingUp, UserCheck } from 'lucide-react';
 import { leaveCircleAction, deleteCircleAction, sendCircleInviteAction } from '@/app/circles/actions';
 import { format } from 'date-fns';
+import { Badge } from '@/components/ui/badge'; // Added import for Badge
 
 // Helper function to get initials
 const getInitials = (name?: string) => {
