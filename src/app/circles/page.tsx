@@ -93,28 +93,28 @@ function MyCirclesPageContent() {
           <CardHeader className="pt-8">
             <Handshake className="mx-auto h-16 w-16 text-primary mb-4" />
             <CardTitle className="text-3xl md:text-4xl font-headline text-primary">
-              Eager to Dive into LexiVerse Teams? Awesome! 🤝
+              Eager to Dive into LexiVerse Circles? Awesome! 🤝
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-6 px-6 md:px-8 pb-8">
             <p className="text-muted-foreground text-lg leading-relaxed">
-              We see you're ready to explore LexiVerse Teams – that's fantastic! Circles are where you can team up with friends, combine your daily scores, and climb the leaderboards together. It's a core part of the fun!
+              We see you're ready to explore LexiVerse Circles – that's fantastic! Circles are where you can team up with friends, combine your daily scores, and climb the leaderboards together. It's a core part of the fun!
             </p>
             <p className="text-lg text-foreground">
               To create, join, or manage your Circles, we just need to know who you are first.
             </p>
-            <div className="text-lg text-foreground">
-              New to LexiVerse? It only takes a moment to{' '}
-              <Button variant="link" asChild className="p-0 h-auto text-lg text-accent">
-                <Link href={`/auth/register${inviteCodeFromUrl ? `?inviteCode=${inviteCodeFromUrl}` : ''}`}>Create Your Free Account</Link>
-              </Button>
-              {' '}and get started!
-              <br />
-              Already have an account? Please{' '}
-              <Button variant="link" asChild className="p-0 h-auto text-lg text-accent">
-                <Link href={`/auth/login${inviteCodeFromUrl ? `?inviteCode=${inviteCodeFromUrl}` : ''}`}>Log In</Link>
-              </Button>
-              {' '}to access your Circles.
+            
+            <div className="flex flex-col sm:flex-row gap-4 justify-center pt-4">
+                <Button size="lg" className="w-full sm:w-auto font-semibold text-lg" asChild>
+                  <Link href={`/auth/register${inviteCodeFromUrl ? `?inviteCode=${inviteCodeFromUrl}` : ''}`}>
+                    <UserPlus className="mr-2 h-5 w-5" /> Create Your Free Account
+                  </Link>
+                </Button>
+                <Button size="lg" variant="secondary" className="w-full sm:w-auto font-semibold text-lg" asChild>
+                  <Link href={`/auth/login${inviteCodeFromUrl ? `?inviteCode=${inviteCodeFromUrl}` : ''}`}>
+                    <LogIn className="mr-2 h-5 w-5" /> Log In
+                  </Link>
+                </Button>
             </div>
 
             {inviteCodeFromUrl ? (
