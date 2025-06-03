@@ -48,25 +48,41 @@ export default function LoginPage() {
       });
       router.push('/'); // Navigate to homepage or dashboard
     } catch (error: any) {
-      console.error("Login error:", error);
-      let errorMessage = "Invalid email or password. Please try again.";
+      let errorMessage = "An unexpected error occurred. Please try again.";
+      // Default to logging, but skip for common auth issues handled by toast.
+      let shouldLogError = true;
+
       if (error.code) {
         switch (error.code) {
           case 'auth/user-not-found':
           case 'auth/wrong-password':
           case 'auth/invalid-credential':
             errorMessage = "Invalid email or password. Please check your credentials.";
+            shouldLogError = false; // User error, already handled by toast
             break;
           case 'auth/invalid-email':
             errorMessage = "The email address format is invalid.";
+            shouldLogError = false; // User error
             break;
           case 'auth/user-disabled':
             errorMessage = "This account has been disabled.";
+            shouldLogError = false; // User status, handled by toast
             break;
           default:
+            // For any other Firebase error or unexpected error, keep the generic message and log it.
             errorMessage = `Login failed: ${error.message || "Please try again."}`;
+            // shouldLogError remains true
         }
+      } else {
+        // Non-Firebase error, or Firebase error without a code. Log it.
+        errorMessage = `Login failed: ${error.message || "An unexpected error occurred. Please try again."}`;
+        // shouldLogError remains true
       }
+
+      if (shouldLogError) {
+        console.error("Login error:", error); // Log only unexpected errors
+      }
+      
       toast({
         title: "Login Failed",
         description: errorMessage,
@@ -143,4 +159,3 @@ export default function LoginPage() {
     </div>
   );
 }
-
