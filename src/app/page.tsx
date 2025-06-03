@@ -23,6 +23,7 @@ import { format } from 'date-fns';
 import { useAuth } from '@/contexts/AuthContext';
 import { updateUserCircleDailyScoresAction } from '@/app/circles/actions';
 import Link from 'next/link';
+import { calculateWordScore } from '@/lib/scoring'; // Import the new scoring function
 
 
 const DAILY_GAME_DURATION = 90;
@@ -67,7 +68,7 @@ export default function HomePage() {
   const [rejectedWords, setRejectedWords] = useState<Map<string, RejectedWordType>>(new Map());
   const [actualWordOfTheDayText, setActualWordOfTheDayText] = useState<string | null>(null);
   const [actualWordOfTheDayDefinition, setActualWordOfTheDayDefinition] = useState<string | null>(null);
-  const [actualWordOfTheDayPoints, setActualWordOfTheDayPoints] = useState<number | null>(null);
+  const [actualWordOfTheDayPoints, setActualWordOfTheDayPoints] = useState<number | null>(null); // Points from DailyPuzzle config
   const [pendingInvitesCount, setPendingInvitesCount] = useState(0);
   const [showWelcomeInstructionsModal, setShowWelcomeInstructionsModal] = useState(false);
 
@@ -82,7 +83,7 @@ export default function HomePage() {
       let effectiveWotDText = MOCK_WORD_OF_THE_DAY_TEXT;
       let currentSeedingChars = MOCK_SEEDING_LETTERS_CHARS;
       let wotdDefinition: string | null = "A fun word puzzle game.";
-      let wotdPoints: number | null = MOCK_WORD_OF_THE_DAY_TEXT.length * 10;
+      let wotdPointsFromConfig: number | null = MOCK_WORD_OF_THE_DAY_TEXT.length * 5; // Default point estimate
 
 
       if (puzzleSnap.exists()) {
@@ -90,13 +91,13 @@ export default function HomePage() {
         effectiveWotDText = puzzleData.wordOfTheDayText.toUpperCase();
         currentSeedingChars = puzzleData.seedingLetters.toUpperCase().split('');
         wotdDefinition = puzzleData.wordOfTheDayDefinition || `Definition for ${effectiveWotDText}`;
-        wotdPoints = puzzleData.wordOfTheDayPoints;
+        wotdPointsFromConfig = puzzleData.wordOfTheDayPoints;
       } else {
         toast({ title: "Puzzle Data Missing", description: "Using default puzzle for today.", variant: "default"});
       }
       setActualWordOfTheDayText(effectiveWotDText);
       setActualWordOfTheDayDefinition(wotdDefinition);
-      setActualWordOfTheDayPoints(wotdPoints);
+      setActualWordOfTheDayPoints(wotdPointsFromConfig);
       
       const initialLetters = currentSeedingChars.map((char, index) => ({
         id: `letter-${index}-${char}-${Date.now()}`, 
@@ -128,7 +129,7 @@ export default function HomePage() {
         setSeedingLetters(initialLetters);
         setActualWordOfTheDayText(MOCK_WORD_OF_THE_DAY_TEXT);
         setActualWordOfTheDayDefinition("A fun word puzzle game.");
-        setActualWordOfTheDayPoints(MOCK_WORD_OF_THE_DAY_TEXT.length * 10);
+        setActualWordOfTheDayPoints(MOCK_WORD_OF_THE_DAY_TEXT.length * 5);
     }
 
     try {
@@ -193,6 +194,7 @@ export default function HomePage() {
       });
     }, 1000);
     return () => clearInterval(timerId);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [gameState, timeLeft]); 
 
   useEffect(() => {
@@ -273,7 +275,7 @@ export default function HomePage() {
     setGameState('debrief');
     let finalScore = sessionScore;
     
-    if (guessedWotD && actualWordOfTheDayText && (approvedWords.has(actualWordOfTheDayText.toUpperCase()) || sessionScore > 0 )) { 
+    if (guessedWotD && actualWordOfTheDayText ) { 
       finalScore = Math.round(finalScore * 2); 
     }
 
@@ -372,49 +374,39 @@ export default function HomePage() {
     let isTheWotDString = false;
     if (actualWordOfTheDayText && wordText === actualWordOfTheDayText.toUpperCase()) {
       isTheWotDString = true;
-      setGuessedWotD(true); 
     }
 
     const approvedWordDetails = approvedWords.get(wordText);
 
     if (isTheWotDString) {
+      setGuessedWotD(true);
+      let wotdSessionPoints = 0;
       if (approvedWordDetails) {
-        const points = Math.round(wordText.length * approvedWordDetails.frequency);
-        toast({ title: "Word of the Day!", description: `You found "${wordText}" for ${points} base points! (Bonus applied at end)`, className: "bg-accent text-accent-foreground" });
-        setSessionScore((prev) => prev + points);
-        setSubmittedWords((prev) => [...prev, { id: crypto.randomUUID(), text: wordText, points, isWotD: true }]);
-        
+        wotdSessionPoints = calculateWordScore(wordText, approvedWordDetails.frequency);
         if (approvedWordDetails.originalSubmitterUID && approvedWordDetails.originalSubmitterUID !== currentUser.uid) {
           try {
             const claimerProfileRef = doc(firestore, "Users", approvedWordDetails.originalSubmitterUID);
-            await updateDoc(claimerProfileRef, {
-              overallPersistentScore: increment(Math.round(approvedWordDetails.frequency)) 
-            });
-            toast({
-              title: "Claimer Bonus!",
-              description: `Original submitter of "${wordText}" got a ${Math.round(approvedWordDetails.frequency)} point bonus!`,
-              variant: "default"
-            });
-          } catch (error) {
-            console.error("Error awarding bonus to claimer:", error);
-          }
+            await updateDoc(claimerProfileRef, { overallPersistentScore: increment(Math.round(approvedWordDetails.frequency)) }); // Or a fixed bonus
+            toast({ title: "Claimer Bonus!", description: `Original submitter of WotD "${wordText}" got a bonus!`, variant: "default"});
+          } catch (error) { console.error("Error awarding WotD claimer bonus:", error); }
         }
       } else {
-        const points = 40; 
-        toast({ title: "Word of the Day Claimed!", description: `You found the special Word of the Day "${wordText}" for ${points} points! It's now submitted for review.`, className: "bg-accent text-accent-foreground" });
-        setSessionScore((prev) => prev + points);
-        setSubmittedWords((prev) => [...prev, { id: crypto.randomUUID(), text: wordText, points, isWotD: true }]);
-        
+        // WotD is being claimed for the first time, use admin-defined points for this session
+        wotdSessionPoints = actualWordOfTheDayPoints || (wordText.length * 5); // Fallback if points not set in puzzle
         const definitionForSubmission = actualWordOfTheDayDefinition || `Definition for Word of the Day: ${wordText}`;
-        const frequencyForSubmission = actualWordOfTheDayPoints ? Math.max(1, actualWordOfTheDayPoints / wordText.length) : 3; 
+        // Estimate frequency for WotD claim submission or use a default. Here, using points to derive a rough one.
+        const frequencyForSubmission = actualWordOfTheDayPoints ? Math.max(1, actualWordOfTheDayPoints / Math.max(MIN_WORD_LENGTH, wordText.length)) : 3;
         await saveSubmissionToFirestore(wordText, definitionForSubmission, frequencyForSubmission, true);
       }
+      toast({ title: "Word of the Day!", description: `You found "${wordText}" for ${wotdSessionPoints} base points! (Bonus applied at end)`, className: "bg-accent text-accent-foreground" });
+      setSessionScore((prev) => prev + wotdSessionPoints);
+      setSubmittedWords((prev) => [...prev, { id: crypto.randomUUID(), text: wordText, points: wotdSessionPoints, isWotD: true }]);
       handleClearWord();
       return;
     }
 
     if (approvedWordDetails) {
-      const points = Math.round(wordText.length * approvedWordDetails.frequency);
+      const points = calculateWordScore(wordText, approvedWordDetails.frequency);
       toast({ title: "Word Found!", description: `"${wordText}" is worth ${points} points.`, variant: "default" });
       setSessionScore((prev) => prev + points);
       setSubmittedWords((prev) => [...prev, { id: crypto.randomUUID(), text: wordText, points, isWotD: false }]);
@@ -422,17 +414,9 @@ export default function HomePage() {
       if (approvedWordDetails.originalSubmitterUID && approvedWordDetails.originalSubmitterUID !== currentUser.uid) {
          try {
           const claimerProfileRef = doc(firestore, "Users", approvedWordDetails.originalSubmitterUID);
-          await updateDoc(claimerProfileRef, {
-            overallPersistentScore: increment(Math.round(approvedWordDetails.frequency)) 
-          });
-          toast({
-            title: "Claimer Bonus!",
-            description: `Original submitter of "${wordText}" got a ${Math.round(approvedWordDetails.frequency)} point bonus!`,
-            variant: "default"
-          });
-        } catch (error) {
-          console.error("Error awarding bonus to claimer:", error);
-        }
+           await updateDoc(claimerProfileRef, { overallPersistentScore: increment(Math.round(approvedWordDetails.frequency)) }); // Or a fixed bonus
+          toast({ title: "Claimer Bonus!", description: `Original submitter of "${wordText}" got a bonus!`, variant: "default"});
+        } catch (error) { console.error("Error awarding claimer bonus:", error); }
       }
       handleClearWord();
       return;
@@ -488,7 +472,7 @@ export default function HomePage() {
       
       if (mockApiSuccess) {
         const mockDefinition = `A simulated definition for ${wordToSubmit}.`;
-        const mockFrequency = parseFloat((Math.random() * 6 + 1).toFixed(2));
+        const mockFrequency = parseFloat((Math.random() * 6 + 1).toFixed(2)); // Random frequency 1-7
         await saveSubmissionToFirestore(wordToSubmit, mockDefinition, mockFrequency);
       } else {
         const pointsDeducted = wordToSubmit.length;
@@ -530,13 +514,13 @@ export default function HomePage() {
       }
       const data = await response.json();
       const definition = data.results?.[0]?.definition || "No definition found.";
-      let frequency = 1;
-      if (data.frequencyDetails?.[0]?.zipf) {
+      let frequency = 1; // Default frequency if not found
+      if (data.frequencyDetails?.[0]?.zipf) { // Prefer zipf if available
         frequency = parseFloat(data.frequencyDetails[0].zipf);
-      } else if (data.frequency) {
+      } else if (data.frequency) { // Fallback to general frequency
         frequency = parseFloat(data.frequency);
       }
-      if (isNaN(frequency) || frequency <= 0) frequency = 1; 
+      if (isNaN(frequency) || frequency <= 0) frequency = 1; // Ensure valid positive number
       
       await saveSubmissionToFirestore(wordToSubmit, definition, frequency);
 
@@ -712,8 +696,8 @@ export default function HomePage() {
         <div className="text-center space-y-6">
           <h1 className="text-4xl md:text-5xl font-headline text-primary">Welcome to Lexiverse!</h1>
           <p className="text-lg md:text-xl text-muted-foreground max-w-xl mx-auto">
-            Find as many 4+ letter words as you can in {DAILY_GAME_DURATION} seconds.
-            Points: Each letter is 1 point &times; Word Frequency. WotD gets 2x final score bonus.
+            Find as many {MIN_WORD_LENGTH}+ letter words as you can in {DAILY_GAME_DURATION} seconds.
+            Points are awarded based on word rarity and length. WotD gets 2x final score bonus.
             Claimed words give their original submitter a bonus!
           </p>
           <Button size="lg" onClick={startGame} className="font-semibold text-lg py-3 px-8" disabled={isLoadingAuth && !currentUser}>
