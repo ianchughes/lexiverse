@@ -29,7 +29,7 @@ export interface DailyPuzzle {
 export type AdminPuzzleFormState = Omit<DailyPuzzle, 'id' | 'status' | 'puzzleDateGMT'> & {
   puzzleDateGMT: Date | undefined;
   status: 'Upcoming' | 'Active';
-  wordOfTheDayText: string; 
+  wordOfTheDayText: string;
   wordOfTheDayPoints: number;
   seedingLetters: string;
   wordOfTheDayDefinition?: string;
@@ -43,6 +43,7 @@ export interface UserProfile {
   uid: string;
   username: string;
   email: string;
+  photoURL?: string; // Added for profile picture
   registrationCountry: string;
   overallPersistentScore: number;
   dateCreated: Timestamp;

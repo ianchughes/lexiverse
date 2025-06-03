@@ -3,7 +3,7 @@
 
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import { onAuthStateChanged, User as FirebaseUser } from 'firebase/auth';
-import { doc, getDoc } from 'firebase/firestore';
+import { doc, getDoc, onSnapshot } from 'firebase/firestore'; // Added onSnapshot
 import { auth, firestore } from '@/lib/firebase';
 import type { UserProfile, UserRole } from '@/types';
 
@@ -12,6 +12,7 @@ interface AuthContextType {
   userProfile: UserProfile | null;
   userRole: UserRole | null; // admin, moderator, or user
   isLoadingAuth: boolean;
+  setUserProfile: React.Dispatch<React.SetStateAction<UserProfile | null>>; // Expose setUserProfile
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -23,20 +24,25 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   const [isLoadingAuth, setIsLoadingAuth] = useState(true);
 
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, async (user) => {
+    const unsubscribeAuth = onAuthStateChanged(auth, async (user) => {
       setIsLoadingAuth(true);
       setCurrentUser(user);
       if (user) {
-        // Fetch UserProfile
+        // Fetch UserProfile and listen for real-time updates
         const userDocRef = doc(firestore, 'Users', user.uid);
-        const userDocSnap = await getDoc(userDocRef);
-        if (userDocSnap.exists()) {
-          setUserProfile(userDocSnap.data() as UserProfile);
-        } else {
-          setUserProfile(null); // Should not happen for a logged-in user
-        }
-
-        // Fetch UserRole (from admin_users collection)
+        // Listen for real-time updates to userProfile
+        const unsubscribeProfile = onSnapshot(userDocRef, (docSnap) => {
+          if (docSnap.exists()) {
+            setUserProfile(docSnap.data() as UserProfile);
+          } else {
+            setUserProfile(null);
+          }
+        }, (error) => {
+          console.error("Error fetching user profile:", error);
+          setUserProfile(null);
+        });
+        
+        // Fetch UserRole (from admin_users collection) - this typically doesn't need real-time updates
         const adminRoleDocRef = doc(firestore, 'admin_users', user.uid);
         const adminRoleDocSnap = await getDoc(adminRoleDocRef);
         if (adminRoleDocSnap.exists()) {
@@ -44,18 +50,20 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         } else {
           setUserRole('user');
         }
+        setIsLoadingAuth(false); // Set loading to false after initial fetch
+        return () => unsubscribeProfile(); // Cleanup profile listener on user change or unmount
       } else {
         setUserProfile(null);
         setUserRole(null);
+        setIsLoadingAuth(false);
       }
-      setIsLoadingAuth(false);
     });
 
-    return () => unsubscribe();
+    return () => unsubscribeAuth(); // Cleanup auth listener on component unmount
   }, []);
 
   return (
-    <AuthContext.Provider value={{ currentUser, userProfile, userRole, isLoadingAuth }}>
+    <AuthContext.Provider value={{ currentUser, userProfile, userRole, isLoadingAuth, setUserProfile }}>
       {children}
     </AuthContext.Provider>
   );

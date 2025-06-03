@@ -2,7 +2,7 @@
 import { initializeApp, getApps, getApp, type FirebaseOptions } from 'firebase/app';
 import { getAuth } from 'firebase/auth';
 import { getFirestore } from 'firebase/firestore';
-// import { getStorage } from 'firebase/storage'; // Uncomment if you need Firebase Storage
+import { getStorage } from 'firebase/storage'; // Import getStorage
 // import { getAnalytics } from "firebase/analytics"; // Uncomment if you need Firebase Analytics
 
 const firebaseConfig: FirebaseOptions = {
@@ -25,7 +25,8 @@ if (!getApps().length) {
 
 const auth = getAuth(app);
 const firestore = getFirestore(app);
-// const storage = getStorage(app); // Uncomment if needed
+const storage = getStorage(app); // Initialize Firebase Storage
 // const analytics = typeof window !== 'undefined' ? getAnalytics(app) : null; // Uncomment if needed
 
-export { app, auth, firestore };
+export { app, auth, firestore, storage }; // Export storage
+
