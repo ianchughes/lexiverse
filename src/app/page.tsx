@@ -386,15 +386,13 @@ export default function HomePage() {
         if (approvedWordDetails.originalSubmitterUID && approvedWordDetails.originalSubmitterUID !== currentUser.uid) {
           try {
             const claimerProfileRef = doc(firestore, "Users", approvedWordDetails.originalSubmitterUID);
-            await updateDoc(claimerProfileRef, { overallPersistentScore: increment(Math.round(approvedWordDetails.frequency)) }); // Or a fixed bonus
-            toast({ title: "Claimer Bonus!", description: `Original submitter of WotD "${wordText}" got a bonus!`, variant: "default"});
+            await updateDoc(claimerProfileRef, { overallPersistentScore: increment(wotdSessionPoints) });
+            toast({ title: "Claimer Bonus!", description: `Original submitter of WotD "${wordText}" got a bonus of ${wotdSessionPoints} points!`, variant: "default"});
           } catch (error) { console.error("Error awarding WotD claimer bonus:", error); }
         }
       } else {
-        // WotD is being claimed for the first time, use admin-defined points for this session
-        wotdSessionPoints = actualWordOfTheDayPoints || (wordText.length * 5); // Fallback if points not set in puzzle
+        wotdSessionPoints = actualWordOfTheDayPoints || (wordText.length * 5); 
         const definitionForSubmission = actualWordOfTheDayDefinition || `Definition for Word of the Day: ${wordText}`;
-        // Estimate frequency for WotD claim submission or use a default. Here, using points to derive a rough one.
         const frequencyForSubmission = actualWordOfTheDayPoints ? Math.max(1, actualWordOfTheDayPoints / Math.max(MIN_WORD_LENGTH, wordText.length)) : 3;
         await saveSubmissionToFirestore(wordText, definitionForSubmission, frequencyForSubmission, true);
       }
@@ -414,8 +412,8 @@ export default function HomePage() {
       if (approvedWordDetails.originalSubmitterUID && approvedWordDetails.originalSubmitterUID !== currentUser.uid) {
          try {
           const claimerProfileRef = doc(firestore, "Users", approvedWordDetails.originalSubmitterUID);
-           await updateDoc(claimerProfileRef, { overallPersistentScore: increment(Math.round(approvedWordDetails.frequency)) }); // Or a fixed bonus
-          toast({ title: "Claimer Bonus!", description: `Original submitter of "${wordText}" got a bonus!`, variant: "default"});
+           await updateDoc(claimerProfileRef, { overallPersistentScore: increment(points) }); 
+          toast({ title: "Claimer Bonus!", description: `Original submitter of "${wordText}" got a bonus of ${points} points!`, variant: "default"});
         } catch (error) { console.error("Error awarding claimer bonus:", error); }
       }
       handleClearWord();
@@ -604,34 +602,34 @@ export default function HomePage() {
         </p>
         
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6 max-w-3xl mx-auto mb-10 sm:mb-12 text-left">
-          <div className="flex items-start space-x-3 p-4 bg-card rounded-lg shadow-md">
+          <Card className="bg-card/70 p-4 rounded-lg shadow-md flex items-start space-x-3">
             <Clock className="h-8 w-8 text-accent mt-1 flex-shrink-0" />
             <div>
               <h3 className="font-semibold text-lg text-card-foreground">Daily 90s Blitz</h3>
               <p className="text-sm text-muted-foreground">A fresh, fast-paced word challenge every single day!</p>
             </div>
-          </div>
-          <div className="flex items-start space-x-3 p-4 bg-card rounded-lg shadow-md">
+          </Card>
+          <Card className="bg-card/70 p-4 rounded-lg shadow-md flex items-start space-x-3">
             <Key className="h-8 w-8 text-accent mt-1 flex-shrink-0" />
             <div>
               <h3 className="font-semibold text-lg text-card-foreground">Own Your Words</h3>
               <p className="text-sm text-muted-foreground">Be the first to find and "own" rare words. Earn points every time others guess them!</p>
             </div>
-          </div>
-          <div className="flex items-start space-x-3 p-4 bg-card rounded-lg shadow-md">
+          </Card>
+          <Card className="bg-card/70 p-4 rounded-lg shadow-md flex items-start space-x-3">
             <Star className="h-8 w-8 text-accent mt-1 flex-shrink-0" />
             <div>
               <h3 className="font-semibold text-lg text-card-foreground">Word of the Day Bonus</h3>
               <p className="text-sm text-muted-foreground">Find the special 6-9 letter word to DOUBLE your entire daily score!</p>
             </div>
-          </div>
-          <div className="flex items-start space-x-3 p-4 bg-card rounded-lg shadow-md">
+          </Card>
+          <Card className="bg-card/70 p-4 rounded-lg shadow-md flex items-start space-x-3">
             <UsersRound className="h-8 w-8 text-accent mt-1 flex-shrink-0" />
             <div>
               <h3 className="font-semibold text-lg text-card-foreground">Circle Up & Compete</h3>
               <p className="text-sm text-muted-foreground">Create or join Circles, combine scores with friends, and aim for weekly glory!</p>
             </div>
-          </div>
+          </Card>
         </div>
 
         <Button size="xl" className="text-lg font-semibold py-3 px-8 rounded-lg shadow-lg hover:shadow-xl transition-shadow duration-200" asChild>
@@ -639,6 +637,11 @@ export default function HomePage() {
             <Gift className="mr-2 h-6 w-6" /> Sign Up Free & Start Your Word Legacy!
           </Link>
         </Button>
+         <p className="mt-4">
+          <Button variant="link" asChild className="text-base">
+            <Link href="/auth/login">Already have an account? Log In</Link>
+          </Button>
+        </p>
         <p className="mt-6 text-sm text-muted-foreground">
           A new puzzle awaits every day at 00:00 GMT!
         </p>
