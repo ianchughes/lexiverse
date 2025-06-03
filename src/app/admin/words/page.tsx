@@ -15,7 +15,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Checkbox } from '@/components/ui/checkbox';
 import { useToast } from '@/hooks/use-toast';
 import { Input } from '@/components/ui/input';
-import { Loader2, RefreshCw, Star, CheckCircle, XCircle, ThumbsDown, ShieldAlert, Settings2, Send, UserMinus, MoreHorizontal, CheckIcon, AlertCircleIcon, BanIcon, BadgeCent, UsersSlash } from 'lucide-react'; 
+import { Loader2, RefreshCw, Star, CheckCircle, XCircle, ThumbsDown, ShieldAlert, Settings2, Send, UserMinus, MoreHorizontal, CheckIcon, AlertCircleIcon, BanIcon, BadgeCent, Unlink } from 'lucide-react'; 
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { format } from 'date-fns';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -582,7 +582,7 @@ export default function WordManagementPage() {
                 disabled={selectedWordsForBulkDisassociate.size === 0 || isProcessingBulkDisassociation}
                 variant="destructive"
             >
-                {isProcessingBulkDisassociation ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <UsersSlash className="mr-2 h-4 w-4" />}
+                {isProcessingBulkDisassociation ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Unlink className="mr-2 h-4 w-4" />}
                 Disassociate Selected ({selectedWordsForBulkDisassociate.size})
             </Button>
         </CardFooter>
@@ -674,3 +674,4 @@ export default function WordManagementPage() {
     </div>
   );
 }
+
