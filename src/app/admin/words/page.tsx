@@ -6,7 +6,7 @@ import { firestore } from '@/lib/firebase';
 import { collection, query, where, getDocs, doc, Timestamp, orderBy, limit, startAfter } from 'firebase/firestore';
 import type { WordSubmission, MasterWordType, RejectedWordType, RejectionType } from '@/types';
 import { useAuth } from '@/contexts/AuthContext'; 
-import { calculateWordScore } from '@/lib/scoring'; // Import the scoring function
+import { calculateWordScore } from '@/lib/scoring'; 
 
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -15,11 +15,11 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Checkbox } from '@/components/ui/checkbox';
 import { useToast } from '@/hooks/use-toast';
 import { Input } from '@/components/ui/input';
-import { Loader2, RefreshCw, Star, CheckCircle, XCircle, ThumbsDown, ShieldAlert, Settings2, Send, UserMinus, MoreHorizontal, CheckIcon, AlertCircleIcon, BanIcon, BadgeCent } from 'lucide-react'; // Added BadgeCent
+import { Loader2, RefreshCw, Star, CheckCircle, XCircle, ThumbsDown, ShieldAlert, Settings2, Send, UserMinus, MoreHorizontal, CheckIcon, AlertCircleIcon, BanIcon, BadgeCent, UsersSlash } from 'lucide-react'; 
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { format } from 'date-fns';
 import { Skeleton } from '@/components/ui/skeleton';
-import { adminBulkProcessWordSubmissionsAction, adminDisassociateWordOwnerAction } from './actions'; 
+import { adminBulkProcessWordSubmissionsAction, adminDisassociateWordOwnerAction, adminBulkDisassociateWordOwnersAction } from './actions'; 
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 
@@ -40,9 +40,6 @@ export default function WordManagementPage() {
   const [isLoadingMasterWords, setIsLoadingMasterWords] = useState(true);
   const [searchTermMasterWords, setSearchTermMasterWords] = useState('');
   
-  const [showWordsBySubmitterDialog, setShowWordsBySubmitterDialog] = useState(false);
-  const [selectedSubmitterUID, setSelectedSubmitterUID] = useState<string | null>(null);
-  const [wordsBySelectedSubmitter, setWordsBySelectedSubmitter] = useState<MasterWordType[]>([]);
   const [hasMounted, setHasMounted] = useState(false);
 
   const [submissionActions, setSubmissionActions] = useState<Record<string, WordAction>>({});
@@ -54,6 +51,10 @@ export default function WordManagementPage() {
   const [isDisassociateConfirmOpen, setIsDisassociateConfirmOpen] = useState(false);
   const [wordToDisassociate, setWordToDisassociate] = useState<MasterWordType | null>(null);
   const [isProcessingDisassociation, setIsProcessingDisassociation] = useState(false);
+
+  // State for bulk disassociation
+  const [selectedWordsForBulkDisassociate, setSelectedWordsForBulkDisassociate] = useState<Set<string>>(new Set());
+  const [isProcessingBulkDisassociation, setIsProcessingBulkDisassociation] = useState(false);
 
 
   useEffect(() => {
@@ -68,7 +69,7 @@ export default function WordManagementPage() {
     if (resetPagination) {
         setPendingSubmissions([]); 
         setCurrentPage(1); 
-        setSubmissionActions({}); // Reset actions when pagination resets
+        setSubmissionActions({}); 
     }
 
     try {
@@ -79,7 +80,7 @@ export default function WordManagementPage() {
         limit(itemsPerPage)
       );
 
-      if (localLastVisible && !resetPagination) { // Ensure localLastVisible is used only when not resetting
+      if (localLastVisible && !resetPagination) { 
         q = query(
             collection(firestore, WORD_SUBMISSIONS_QUEUE), 
             where("status", "==", "PendingModeratorReview"),
@@ -103,7 +104,7 @@ export default function WordManagementPage() {
       setSubmissionActions(prevActions => {
         const newActions = {...prevActions};
         submissions.forEach(s => {
-          if (s.id && !newActions[s.id]) { // Only add if not already set by a previous page load in the same view
+          if (s.id && !newActions[s.id]) { 
             newActions[s.id] = 'noAction';
           }
         });
@@ -116,13 +117,12 @@ export default function WordManagementPage() {
     } finally {
       setIsLoadingSubmissions(false);
     }
-  }, [toast, itemsPerPage, lastVisibleSubmission]); // Removed fetchPendingSubmissions from here
+  }, [toast, itemsPerPage, lastVisibleSubmission]); 
 
 
   const fetchMasterWords = useCallback(async () => {
     setIsLoadingMasterWords(true);
     try {
-      // Consider pagination for master words if the list becomes very large
       const q = query(collection(firestore, MASTER_WORDS_COLLECTION), orderBy("dateAdded", "desc"));
       const querySnapshot = await getDocs(q);
       const words: MasterWordType[] = [];
@@ -139,9 +139,8 @@ export default function WordManagementPage() {
   }, [toast]);
 
   useEffect(() => {
-    // This effect now ONLY runs when itemsPerPage changes, to reset and fetch the first page.
     fetchPendingSubmissions(true); 
-  }, [itemsPerPage]); // Only depends on itemsPerPage
+  }, [itemsPerPage]); 
 
    useEffect(() => {
     fetchMasterWords();
@@ -151,7 +150,7 @@ export default function WordManagementPage() {
   const handleLoadMoreSubmissions = () => {
     if (lastVisibleSubmission) {
         setCurrentPage(prev => prev + 1);
-        fetchPendingSubmissions(false); // Explicitly false for loading more
+        fetchPendingSubmissions(false); 
     } else {
         toast({ title: "No More Submissions", description: "All pending submissions have been loaded.", variant: "default"});
     }
@@ -161,10 +160,8 @@ export default function WordManagementPage() {
     setSubmissionActions(prev => {
       const newActions = { ...prev };
       if (isChecked) {
-        // If checking a box, set it as the action
         newActions[submissionId] = toggledAction;
       } else {
-        // If unchecking a box, and it was the current action, set to noAction
         if (newActions[submissionId] === toggledAction) {
           newActions[submissionId] = 'noAction';
         }
@@ -229,7 +226,7 @@ export default function WordManagementPage() {
          toast({ title: "Bulk Processing Error", description: `An error occurred during bulk processing. ${successCount} processed, ${errorCount} failed. Details: ${result.error || ''}`, variant: "destructive" });
       }
       
-      fetchPendingSubmissions(true); // Reset and fetch first page
+      fetchPendingSubmissions(true); 
       fetchMasterWords(); 
 
     } catch (error: any) {
@@ -239,10 +236,17 @@ export default function WordManagementPage() {
     }
   };
   
-  const filteredMasterWords = masterWordsList.filter(word => 
-    word.wordText.toLowerCase().includes(searchTermMasterWords.toLowerCase()) ||
-    (word.originalSubmitterUID && word.originalSubmitterUID.toLowerCase().includes(searchTermMasterWords.toLowerCase()))
-  );
+  const ownedMasterWords = useMemo(() => masterWordsList.filter(word => 
+    word.originalSubmitterUID && (
+      word.wordText.toLowerCase().includes(searchTermMasterWords.toLowerCase()) ||
+      word.originalSubmitterUID.toLowerCase().includes(searchTermMasterWords.toLowerCase())
+    )
+  ), [masterWordsList, searchTermMasterWords]);
+
+  const unclaimedMasterWords = useMemo(() => masterWordsList.filter(word => 
+    !word.originalSubmitterUID && word.wordText.toLowerCase().includes(searchTermMasterWords.toLowerCase())
+  ), [masterWordsList, searchTermMasterWords]);
+
 
   const formatDate = (timestamp: any) => {
     if (timestamp instanceof Timestamp) {
@@ -269,7 +273,7 @@ export default function WordManagementPage() {
       });
       if (result.success) {
         toast({ title: "Owner Disassociated", description: `Owner has been removed from "${wordToDisassociate.wordText}".` });
-        fetchMasterWords(); // Refresh the list
+        fetchMasterWords(); 
       } else {
         throw new Error(result.error || "Failed to disassociate owner.");
       }
@@ -283,6 +287,58 @@ export default function WordManagementPage() {
   };
   
   const itemsToProcessCount = Object.values(submissionActions).filter(action => action !== 'noAction').length;
+
+  // Bulk disassociation logic
+  const handleToggleWordForBulkDisassociate = (wordText: string) => {
+    setSelectedWordsForBulkDisassociate(prev => {
+      const newSet = new Set(prev);
+      if (newSet.has(wordText)) {
+        newSet.delete(wordText);
+      } else {
+        newSet.add(wordText);
+      }
+      return newSet;
+    });
+  };
+
+  const handleToggleSelectAllForBulkDisassociate = () => {
+    if (selectedWordsForBulkDisassociate.size === ownedMasterWords.length) {
+      setSelectedWordsForBulkDisassociate(new Set());
+    } else {
+      setSelectedWordsForBulkDisassociate(new Set(ownedMasterWords.map(w => w.wordText)));
+    }
+  };
+
+  const handleBulkDisassociate = async () => {
+    if (!currentUser || selectedWordsForBulkDisassociate.size === 0) {
+      toast({title: "No Words Selected", description: "Please select words to disassociate.", variant: "default"});
+      return;
+    }
+    setIsProcessingBulkDisassociation(true);
+    try {
+      const result = await adminBulkDisassociateWordOwnersAction({
+        wordTexts: Array.from(selectedWordsForBulkDisassociate),
+        actingAdminId: currentUser.uid,
+      });
+      
+      const disassociatedCount = result.results.filter(r => r.status === 'disassociated').length;
+      const errorCount = result.results.filter(r => r.status !== 'disassociated').length;
+
+      if (result.success) {
+        toast({ title: "Bulk Disassociation Complete", description: `${disassociatedCount} words disassociated. ${errorCount > 0 ? `${errorCount} failed.` : ''}` });
+      } else {
+        toast({ title: "Bulk Disassociation Error", description: result.error || "Some words could not be disassociated.", variant: "destructive" });
+      }
+      fetchMasterWords();
+      setSelectedWordsForBulkDisassociate(new Set());
+
+    } catch (error: any) {
+      toast({ title: "Bulk Disassociation Failed", description: error.message, variant: "destructive" });
+    } finally {
+      setIsProcessingBulkDisassociation(false);
+    }
+  };
+
 
   return (
     <div className="space-y-6">
@@ -423,9 +479,9 @@ export default function WordManagementPage() {
 
       <Card>
         <CardHeader>
-          <CardTitle>Master Game Dictionary</CardTitle>
-          <CardDescription>View all approved words and their original submitters. Admins can disassociate owners here.</CardDescription>
-          <div className="pt-4">
+          <CardTitle>Owned Words in Dictionary</CardTitle>
+          <CardDescription>View all approved words that currently have an original submitter. Admins can disassociate owners here.</CardDescription>
+          <div className="pt-4 flex items-center gap-2">
             {hasMounted ? (
                 <Input 
                 placeholder="Search by Word or Submitter UID..."
@@ -442,15 +498,24 @@ export default function WordManagementPage() {
           {isLoadingMasterWords ? (
              <div className="flex items-center justify-center py-8">
               <Loader2 className="h-8 w-8 animate-spin text-primary" />
-              <p className="ml-2 text-muted-foreground">Loading master dictionary...</p>
+              <p className="ml-2 text-muted-foreground">Loading owned words...</p>
             </div>
-          ) : filteredMasterWords.length === 0 ? (
-            <p className="text-sm text-muted-foreground">No words found in the master dictionary{searchTermMasterWords ? ' matching your search' : ''}.</p>
+          ) : ownedMasterWords.length === 0 ? (
+            <p className="text-sm text-muted-foreground text-center py-4">No owned words found{searchTermMasterWords ? ' matching your search' : ''}.</p>
           ) : (
             <ScrollArea className="h-[400px]">
               <Table>
                 <TableHeader>
                   <TableRow>
+                    <TableHead className="w-[50px]">
+                       <Checkbox
+                        checked={selectedWordsForBulkDisassociate.size > 0 && selectedWordsForBulkDisassociate.size === ownedMasterWords.filter(w => w.originalSubmitterUID).length}
+                        indeterminate={selectedWordsForBulkDisassociate.size > 0 && selectedWordsForBulkDisassociate.size < ownedMasterWords.filter(w => w.originalSubmitterUID).length}
+                        onCheckedChange={handleToggleSelectAllForBulkDisassociate}
+                        aria-label="Select all owned words for disassociation"
+                        disabled={isProcessingBulkDisassociation}
+                      />
+                    </TableHead>
                     <TableHead>Word</TableHead>
                     <TableHead>Definition</TableHead>
                     <TableHead className="text-center">Frequency</TableHead>
@@ -460,8 +525,16 @@ export default function WordManagementPage() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {filteredMasterWords.map((word) => (
-                    <TableRow key={word.wordText}>
+                  {ownedMasterWords.map((word) => (
+                    <TableRow key={word.wordText} data-state={selectedWordsForBulkDisassociate.has(word.wordText) ? "selected" : ""}>
+                       <TableCell>
+                        <Checkbox
+                          checked={selectedWordsForBulkDisassociate.has(word.wordText)}
+                          onCheckedChange={() => handleToggleWordForBulkDisassociate(word.wordText)}
+                          aria-label={`Select word ${word.wordText} for disassociation`}
+                          disabled={isProcessingBulkDisassociation}
+                        />
+                      </TableCell>
                       <TableCell className="font-medium">{word.wordText}</TableCell>
                       <TableCell className="max-w-xs truncate" title={word.definition}>{word.definition.substring(0,50)}...</TableCell>
                       <TableCell className="text-center">{word.frequency.toFixed(2)}</TableCell>
@@ -471,26 +544,25 @@ export default function WordManagementPage() {
                             {word.originalSubmitterUID.substring(0,10)}... <Star className="h-3 w-3 ml-1 fill-amber-400 text-amber-500 inline"/>
                           </span>
                         ) : (
-                          <span className="text-xs text-muted-foreground">N/A (System or Disassociated)</span>
+                          <span className="text-xs text-muted-foreground">N/A</span>
                         )}
                       </TableCell>
                       <TableCell>{formatDate(word.dateAdded)}</TableCell>
                       <TableCell className="text-right">
                         <DropdownMenu>
                           <DropdownMenuTrigger asChild>
-                            <Button variant="ghost" size="icon" disabled={isProcessingDisassociation && wordToDisassociate?.wordText === word.wordText}>
+                            <Button variant="ghost" size="icon" disabled={isProcessingDisassociation && wordToDisassociate?.wordText === word.wordText || isProcessingBulkDisassociation}>
                                 {isProcessingDisassociation && wordToDisassociate?.wordText === word.wordText ? <Loader2 className="h-4 w-4 animate-spin" /> : <MoreHorizontal className="h-4 w-4" />}
                             </Button>
                           </DropdownMenuTrigger>
                           <DropdownMenuContent align="end">
                             <DropdownMenuItem 
                               onClick={() => openDisassociateConfirm(word)} 
-                              disabled={!word.originalSubmitterUID || (isProcessingDisassociation && wordToDisassociate?.wordText === word.wordText)}
+                              disabled={!word.originalSubmitterUID || (isProcessingDisassociation && wordToDisassociate?.wordText === word.wordText) || isProcessingBulkDisassociation}
                               className={!word.originalSubmitterUID ? "text-muted-foreground" : "text-orange-600 focus:text-orange-600 focus:bg-orange-50"}
                             >
                               <UserMinus className="mr-2 h-4 w-4" /> Disassociate Owner
                             </DropdownMenuItem>
-                            {/* Add other actions like 'Edit Word Details' or 'Delete Word' here if needed */}
                           </DropdownMenuContent>
                         </DropdownMenu>
                       </TableCell>
@@ -501,12 +573,76 @@ export default function WordManagementPage() {
             </ScrollArea>
           )}
         </CardContent>
+        <CardFooter className="flex justify-between items-center border-t pt-4">
+            <p className="text-xs text-muted-foreground">
+              {ownedMasterWords.length} owned words. Selected for disassociation: {selectedWordsForBulkDisassociate.size}
+            </p>
+            <Button
+                onClick={handleBulkDisassociate}
+                disabled={selectedWordsForBulkDisassociate.size === 0 || isProcessingBulkDisassociation}
+                variant="destructive"
+            >
+                {isProcessingBulkDisassociation ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <UsersSlash className="mr-2 h-4 w-4" />}
+                Disassociate Selected ({selectedWordsForBulkDisassociate.size})
+            </Button>
+        </CardFooter>
+      </Card>
+
+      <Card>
+        <CardHeader>
+            <CardTitle>Unclaimed Words in Dictionary</CardTitle>
+            <CardDescription>These words are approved but currently have no owner. They can be claimed if a user submits them and an admin approves.</CardDescription>
+             <div className="pt-4">
+                 <Input 
+                    placeholder="Search unclaimed words..."
+                    value={searchTermMasterWords} // Uses the same search term as owned words for simplicity here
+                    onChange={(e) => setSearchTermMasterWords(e.target.value)}
+                    className="max-w-sm"
+                    disabled={isLoadingMasterWords}
+                />
+            </div>
+        </CardHeader>
+        <CardContent>
+             {isLoadingMasterWords ? (
+                 <div className="flex items-center justify-center py-8">
+                    <Loader2 className="h-8 w-8 animate-spin text-primary" />
+                    <p className="ml-2 text-muted-foreground">Loading unclaimed words...</p>
+                </div>
+            ) : unclaimedMasterWords.length === 0 ? (
+                <p className="text-sm text-muted-foreground text-center py-4">No unclaimed words found{searchTermMasterWords ? ' matching your search' : ''}.</p>
+            ) : (
+                <ScrollArea className="h-[300px]">
+                <Table>
+                    <TableHeader>
+                    <TableRow>
+                        <TableHead>Word</TableHead>
+                        <TableHead>Definition</TableHead>
+                        <TableHead className="text-center">Frequency</TableHead>
+                        <TableHead>Date Added/Modified</TableHead>
+                    </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                    {unclaimedMasterWords.map((word) => (
+                        <TableRow key={word.wordText}>
+                        <TableCell className="font-medium">{word.wordText}</TableCell>
+                        <TableCell className="max-w-xs truncate" title={word.definition}>{word.definition.substring(0,50)}...</TableCell>
+                        <TableCell className="text-center">{word.frequency.toFixed(2)}</TableCell>
+                        <TableCell>{formatDate(word.dateAdded)}</TableCell>
+                        </TableRow>
+                    ))}
+                    </TableBody>
+                </Table>
+                </ScrollArea>
+            )}
+        </CardContent>
         <CardFooter>
             <p className="text-xs text-muted-foreground">
-              Total words in dictionary: {masterWordsList.length}
+              Total unclaimed words: {unclaimedMasterWords.length}
             </p>
         </CardFooter>
       </Card>
+
+
        <p className="text-xs text-muted-foreground text-center">
             Word moderation actions update Firestore directly. Use the 'Action' column and 'Process Selected' button.
         </p>
@@ -538,4 +674,3 @@ export default function WordManagementPage() {
     </div>
   );
 }
-

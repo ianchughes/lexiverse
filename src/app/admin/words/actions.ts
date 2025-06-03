@@ -30,7 +30,7 @@ export async function adminApproveWordSubmissionAction(payload: { submissionId: 
             if (masterWordData.originalSubmitterUID && masterWordData.originalSubmitterUID !== submittedByUID) {
                 // Word exists and IS ALREADY OWNED by someone else. This submission is a duplicate.
                 await deleteDoc(submissionDocRef); 
-                return { success: true, error: `Word "${wordKey}" already exists and is owned by another user. Submission removed as duplicate.` };
+                return { success: true, message: `Word "${wordKey}" already exists and is owned by another user. Submission removed as duplicate.` };
             } else if (masterWordData.originalSubmitterUID && masterWordData.originalSubmitterUID === submittedByUID) {
                 // Word exists and is already owned by THIS submitter. Benign duplicate.
                 await deleteDoc(submissionDocRef);
@@ -139,7 +139,6 @@ export async function adminBulkProcessWordSubmissionsAction(payload: BulkProcess
     const batch = writeBatch(firestore);
     const results: Array<{id: string, status: string, error?: string}> = [];
 
-    // Pre-fetch all master words that might be relevant to avoid multiple reads of the same doc inside the loop
     const uniqueWordKeysInBatch = new Set(submissionsToProcess.filter(s => s.action === 'approve').map(s => s.wordText.toUpperCase()));
     const masterWordPreFetchPromises: Promise<[string, MasterWordType | null]>[] = [];
     uniqueWordKeysInBatch.forEach(key => {
@@ -166,15 +165,12 @@ export async function adminBulkProcessWordSubmissionsAction(payload: BulkProcess
 
                 if (existingMasterWordData) {
                     if (existingMasterWordData.originalSubmitterUID && existingMasterWordData.originalSubmitterUID !== item.submittedByUID) {
-                        // Word exists and is owned by SOMEONE ELSE.
                         batch.delete(submissionDocRef);
-                        results.push({ id: item.submissionId, status: 'rejected_duplicate_owned' });
+                        results.push({ id: item.submissionId, status: 'rejected_duplicate_owned', error: 'Word already owned by another user.' });
                     } else if (existingMasterWordData.originalSubmitterUID && existingMasterWordData.originalSubmitterUID === item.submittedByUID) {
-                        // Word exists and is already owned by THIS submitter.
                         batch.delete(submissionDocRef);
-                        results.push({ id: item.submissionId, status: 'rejected_duplicate_self_owned' });
+                        results.push({ id: item.submissionId, status: 'rejected_duplicate_self_owned', error: 'Word already owned by this submitter.' });
                     } else {
-                        // Word exists but is UNCLAIMED (originalSubmitterUID is null). This submission RECLAIMS it.
                         batch.update(masterWordDocRef, {
                             originalSubmitterUID: item.submittedByUID,
                             puzzleDateGMTOfSubmission: item.puzzleDateGMT,
@@ -187,16 +183,13 @@ export async function adminBulkProcessWordSubmissionsAction(payload: BulkProcess
                         });
                         batch.delete(submissionDocRef);
                         results.push({ id: item.submissionId, status: 'approved_reclaimed' });
-                        // Update our map for subsequent checks in the same batch, if any (though less critical now)
                         preFetchedMasterWordsMap.set(wordKey, {
                             ...existingMasterWordData,
                             originalSubmitterUID: item.submittedByUID,
                             addedByUID: actingAdminId,
-                            // dateAdded will be a server timestamp
                         });
                     }
                 } else {
-                    // Word does not exist - NEW word
                     const newMasterWord: MasterWordType = {
                         wordText: wordKey,
                         definition: item.definition || "No definition provided.",
@@ -210,7 +203,6 @@ export async function adminBulkProcessWordSubmissionsAction(payload: BulkProcess
                     batch.set(masterWordDocRef, newMasterWord);
                     batch.delete(submissionDocRef);
                     results.push({ id: item.submissionId, status: 'approved_new' });
-                     // Update map for subsequent checks
                     preFetchedMasterWordsMap.set(wordKey, newMasterWord);
                 }
             } else if (item.action === 'rejectGibberish' || item.action === 'rejectAdminDecision') {
@@ -228,14 +220,7 @@ export async function adminBulkProcessWordSubmissionsAction(payload: BulkProcess
 
                 if (item.action === 'rejectGibberish') {
                     const userDocRef = doc(firestore, USERS_COLLECTION, item.submittedByUID);
-                    // Note: Incrementing/decrementing user score in a batch like this for multiple items could lead to race conditions
-                    // if not handled carefully or if the user document is frequently updated.
-                    // A more robust way for score updates might be a separate cloud function triggered by rejection.
-                    // For now, this direct update is kept, but be mindful of potential Firestore limits on batched writes to the same doc.
-                    // Since `getFirestoreDoc` was used above (outside the batch), this is fine,
-                    // but ideally, score updates should be batched if possible or handled differently for high volume.
-                    // For this app's scale, it's likely okay.
-                     const userSnap = await getFirestoreDoc(userDocRef); // Read user doc to check existence
+                     const userSnap = await getFirestoreDoc(userDocRef);
                      if (userSnap.exists()) {
                        const deductionPoints = item.wordText.length;
                        batch.update(userDocRef, { overallPersistentScore: increment(-deductionPoints) });
@@ -285,15 +270,64 @@ export async function adminDisassociateWordOwnerAction(payload: AdminDisassociat
     await updateDoc(wordDocRef, {
       originalSubmitterUID: null,
       puzzleDateGMTOfSubmission: null,
-      pendingTransferId: null, // Also clear any pending transfer if disassociating
-      // Optionally log admin action here or update a 'lastModifiedByAdmin' field
-      // addedByUID: actingAdminId, // Could update to reflect admin made this unowned
-      // dateAdded: serverTimestamp(), // Could update to reflect when it became unowned
+      pendingTransferId: null, 
     });
 
     return { success: true };
   } catch (error: any) {
     console.error("Error disassociating word owner:", error);
     return { success: false, error: `Could not disassociate owner for "${wordText}": ${error.message}` };
+  }
+}
+
+interface AdminBulkDisassociateWordOwnersPayload {
+  wordTexts: string[];
+  actingAdminId: string;
+}
+
+export async function adminBulkDisassociateWordOwnersAction(payload: AdminBulkDisassociateWordOwnersPayload): Promise<{ success: boolean; results: Array<{ wordText: string, status: 'disassociated' | 'not_found' | 'error', error?: string }>; error?: string }> {
+  const { wordTexts, actingAdminId } = payload;
+  if (!actingAdminId) {
+    return { success: false, results: [], error: "Authentication Error: Admin ID is required." };
+  }
+
+  if (!wordTexts || wordTexts.length === 0) {
+    return { success: false, results: [], error: "No words selected for disassociation." };
+  }
+
+  const batch = writeBatch(firestore);
+  const results: Array<{ wordText: string, status: 'disassociated' | 'not_found' | 'error', error?: string }> = [];
+
+  for (const wordText of wordTexts) {
+    const wordKey = wordText.toUpperCase();
+    const wordDocRef = doc(firestore, MASTER_WORDS_COLLECTION, wordKey);
+    
+    // We might want to check if the word exists first, but for a bulk action,
+    // attempting the update and catching errors per item might be acceptable.
+    // For now, let's assume they exist from the client selection.
+    // A pre-fetch like in bulk process could be added for robustness.
+    batch.update(wordDocRef, {
+      originalSubmitterUID: null,
+      puzzleDateGMTOfSubmission: null,
+      pendingTransferId: null,
+    });
+    // We can't confirm success per item until batch.commit(), so we'll assume success for now
+    // and rely on the overall batch commit success/failure.
+    // A more granular result would require individual get/update or more complex transaction logic not suitable for a simple batch.
+  }
+
+  try {
+    await batch.commit();
+    wordTexts.forEach(wt => results.push({ wordText: wt, status: 'disassociated' }));
+    return { success: true, results };
+  } catch (error: any) {
+    console.error("Error committing bulk word disassociation batch:", error);
+    // Mark all as error if batch fails, as we don't know which one failed
+    wordTexts.forEach(wt => {
+        if (!results.find(r => r.wordText === wt)) {
+            results.push({ wordText: wt, status: 'error', error: error.message });
+        }
+    });
+    return { success: false, results, error: `Bulk disassociation failed: ${error.message}` };
   }
 }
