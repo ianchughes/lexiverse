@@ -20,7 +20,7 @@ const PuzzleSuggestionSchema = z.object({
 // This type is implicitly created by Zod infer, but we export a more specific one from /src/types/index.ts
 
 const GeneratePuzzleSuggestionsInputSchema = z.object({
-  quantity: z.number().int().min(1).max(10).describe('The number of puzzle suggestions to generate.'),
+  quantity: z.number().int().min(1).max(100).describe('The number of puzzle suggestions to generate (1-100).'),
 });
 export type GeneratePuzzleSuggestionsInput = z.infer<typeof GeneratePuzzleSuggestionsInputSchema>;
 

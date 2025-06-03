@@ -130,7 +130,7 @@ export default function DailyPuzzleManagementPage() {
   const [formabilityError, setFormabilityError] = useState<string>('');
 
   // State for AI puzzle generation
-  const [generationQuantity, setGenerationQuantity] = useState<number>(3);
+  const [generationQuantity, setGenerationQuantity] = useState<number>(5); // Default to 5 or a reasonable number
   const [isGeneratingSuggestions, setIsGeneratingSuggestions] = useState(false);
   const [puzzleSuggestions, setPuzzleSuggestions] = useState<ClientPuzzleSuggestion[]>([]);
   const [selectedSuggestionIds, setSelectedSuggestionIds] = useState<Set<string>>(new Set());
@@ -649,14 +649,14 @@ export default function DailyPuzzleManagementPage() {
         <CardContent className="space-y-4">
           <div className="flex items-end gap-2">
             <div className="flex-grow">
-              <Label htmlFor="generationQuantity">Number of Puzzles to Generate (1-10)</Label>
+              <Label htmlFor="generationQuantity">Number of Puzzles to Generate (1-100)</Label>
               <Input
                 id="generationQuantity"
                 type="number"
                 value={generationQuantity}
-                onChange={(e) => setGenerationQuantity(Math.max(1, Math.min(10, parseInt(e.target.value, 10) || 1)))}
+                onChange={(e) => setGenerationQuantity(Math.max(1, Math.min(100, parseInt(e.target.value, 10) || 1)))}
                 min="1"
-                max="10"
+                max="100"
                 disabled={isGeneratingSuggestions || isFillingGaps}
                 className="w-full"
               />
