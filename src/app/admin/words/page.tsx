@@ -6,6 +6,7 @@ import { firestore } from '@/lib/firebase';
 import { collection, query, where, getDocs, doc, Timestamp, orderBy, limit, startAfter } from 'firebase/firestore';
 import type { WordSubmission, MasterWordType, RejectedWordType, RejectionType } from '@/types';
 import { useAuth } from '@/contexts/AuthContext'; 
+import { calculateWordScore } from '@/lib/scoring'; // Import the scoring function
 
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -14,7 +15,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Checkbox } from '@/components/ui/checkbox';
 import { useToast } from '@/hooks/use-toast';
 import { Input } from '@/components/ui/input';
-import { Loader2, RefreshCw, Star, CheckCircle, XCircle, ThumbsDown, ShieldAlert, Settings2, Send, UserMinus, MoreHorizontal, CheckIcon, AlertCircleIcon, BanIcon } from 'lucide-react';
+import { Loader2, RefreshCw, Star, CheckCircle, XCircle, ThumbsDown, ShieldAlert, Settings2, Send, UserMinus, MoreHorizontal, CheckIcon, AlertCircleIcon, BanIcon, BadgeCent } from 'lucide-react'; // Added BadgeCent
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { format } from 'date-fns';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -78,7 +79,7 @@ export default function WordManagementPage() {
         limit(itemsPerPage)
       );
 
-      if (localLastVisible) { 
+      if (localLastVisible && !resetPagination) { // Ensure localLastVisible is used only when not resetting
         q = query(
             collection(firestore, WORD_SUBMISSIONS_QUEUE), 
             where("status", "==", "PendingModeratorReview"),
@@ -115,7 +116,7 @@ export default function WordManagementPage() {
     } finally {
       setIsLoadingSubmissions(false);
     }
-  }, [toast, itemsPerPage, lastVisibleSubmission]);
+  }, [toast, itemsPerPage, lastVisibleSubmission]); // Removed fetchPendingSubmissions from here
 
 
   const fetchMasterWords = useCallback(async () => {
@@ -138,8 +139,9 @@ export default function WordManagementPage() {
   }, [toast]);
 
   useEffect(() => {
+    // This effect now ONLY runs when itemsPerPage changes, to reset and fetch the first page.
     fetchPendingSubmissions(true); 
-  }, [itemsPerPage]); // Only re-fetch on itemsPerPage change
+  }, [itemsPerPage]); // Only depends on itemsPerPage
 
    useEffect(() => {
     fetchMasterWords();
@@ -149,7 +151,7 @@ export default function WordManagementPage() {
   const handleLoadMoreSubmissions = () => {
     if (lastVisibleSubmission) {
         setCurrentPage(prev => prev + 1);
-        fetchPendingSubmissions(false); 
+        fetchPendingSubmissions(false); // Explicitly false for loading more
     } else {
         toast({ title: "No More Submissions", description: "All pending submissions have been loaded.", variant: "default"});
     }
@@ -331,12 +333,14 @@ export default function WordManagementPage() {
                   <TableHead>Submitted By (UID)</TableHead>
                   <TableHead>Date</TableHead>
                   <TableHead>Definition</TableHead>
-                  <TableHead className="text-center">Frequency</TableHead>
+                  <TableHead className="text-center">Calculated Score</TableHead>
                   <TableHead className="w-[250px] text-center">Actions</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {pendingSubmissions.map((submission) => (
+                {pendingSubmissions.map((submission) => {
+                  const score = calculateWordScore(submission.wordText, submission.frequency || 1);
+                  return (
                   <TableRow key={submission.id}>
                     <TableCell className="font-medium">{submission.wordText}</TableCell>
                     <TableCell className="font-mono text-xs" title={submission.submittedByUID}>{submission.submittedByUID.substring(0,10)}...</TableCell>
@@ -345,7 +349,9 @@ export default function WordManagementPage() {
                       {submission.definition ? `${submission.definition.substring(0, 50)}...` : 'N/A'}
                     </TableCell>
                     <TableCell className="text-center">
-                      {submission.frequency !== undefined ? submission.frequency.toFixed(2) : 'N/A'}
+                      <div className="flex items-center justify-center">
+                        <BadgeCent className="h-4 w-4 mr-1 text-amber-500" /> {score}
+                      </div>
                     </TableCell>
                     <TableCell>
                        <div className="flex items-center justify-around gap-2">
@@ -385,7 +391,7 @@ export default function WordManagementPage() {
                        </div>
                     </TableCell>
                   </TableRow>
-                ))}
+                )})}
               </TableBody>
             </Table>
           )}
