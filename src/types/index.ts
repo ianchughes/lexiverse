@@ -92,9 +92,9 @@ export interface MasterWordType {
   status: 'Approved' | 'SystemInitial';
   addedByUID: string;
   dateAdded: Timestamp;
-  originalSubmitterUID?: string;
-  puzzleDateGMTOfSubmission?: string;
-  pendingTransferId?: string; // ID of an active WordTransfer document
+  originalSubmitterUID?: string | null; // Can be null if disassociated
+  puzzleDateGMTOfSubmission?: string | null; // Can be null if disassociated
+  pendingTransferId?: string | null; // ID of an active WordTransfer document
 }
 
 export type RejectionType = 'Gibberish' | 'AdminDecision';
@@ -110,6 +110,7 @@ export interface RejectedWordType {
 
 export interface SystemSettings {
   lastForcedResetTimestamp?: Timestamp;
+  uiTone?: number; // Scale from 1 (jovial) to 10 (obsequious/formal). Default can be 5 (neutral friendly).
   // Add other global settings here
 }
 
@@ -218,16 +219,16 @@ export interface CircleWithDetails extends Circle {
   currentUserRole?: CircleMemberRole; // Role of the viewing user in this circle
 }
 
-export type NotificationType = 
-  | 'CircleInvite' 
-  | 'CircleJoinConfirmation' 
-  | 'CircleAdminAction' 
-  | 'Achievement' 
+export type NotificationType =
+  | 'CircleInvite'
+  | 'CircleJoinConfirmation'
+  | 'CircleAdminAction'
+  | 'Achievement'
   | 'Generic'
   | 'WordTransferRequest' // New notification type
   | 'WordTransferResult'; // New notification type
 
-export interface AppNotification { 
+export interface AppNotification {
   id?: string;
   userId: string; // User to notify
   message: string;
@@ -263,3 +264,5 @@ export interface WordTransfer {
   expiresAt: Timestamp;
   respondedAt?: Timestamp;
 }
+
+    

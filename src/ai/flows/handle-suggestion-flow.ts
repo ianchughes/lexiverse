@@ -20,6 +20,7 @@ const HandleSuggestionInputSchema = z.object({
     role: z.enum(['user', 'model']),
     content: z.string(),
   })).optional().describe('Previous messages in the conversation, if any.'),
+  uiTone: z.number().min(1).max(10).optional().describe('The desired UI tone for the bot\'s response (1: jovial, 10: formal). Default is 5 (neutral).'),
 });
 export type HandleSuggestionInput = z.infer<typeof HandleSuggestionInputSchema>;
 
@@ -36,7 +37,13 @@ const suggestionPrompt = ai.definePrompt({
   name: 'handleSuggestionPrompt',
   input: {schema: HandleSuggestionInputSchema},
   output: {schema: HandleSuggestionOutputSchema},
-  prompt: `You are a friendly and helpful suggestions bot for a word puzzle game called LexiVerse.
+  prompt: `You are a suggestions bot for a word puzzle game called LexiVerse.
+Your personality should adapt based on the 'uiTone' parameter (a scale of 1-10, where 1 is very jovial/playful and 10 is very formal/obsequious).
+If uiTone is low (e.g., 1-3), be more playful and enthusiastic.
+If uiTone is high (e.g., 8-10), be more formal, polite, and use respectful language.
+If uiTone is mid-range (e.g., 4-7) or not provided, maintain a friendly, helpful, and encouraging tone.
+Your current UI Tone is: {{uiTone_description uiTone}}
+
 Your goal is to encourage users to provide feedback and make them feel heard.
 
 Conversation History (if any):
@@ -50,23 +57,35 @@ The user has just provided the following suggestion:
 User: {{{suggestionText}}}
 
 Your tasks:
-1. Acknowledge their suggestion positively.
+1. Acknowledge their suggestion positively, adapting your language to the specified 'uiTone'.
 2. If the suggestion is very short or unclear, you can ask a gentle, open-ended clarifying question (e.g., "Could you tell me a bit more about that?" or "That sounds interesting, what specifically did you have in mind?"). Do this sparingly.
-3. If the suggestion is reasonably clear, thank them for their input and assure them it will be considered.
-4. Keep your responses concise and friendly. Avoid making promises about implementing the suggestion.
+3. If the suggestion is reasonably clear, thank them for their input and assure them it will be considered by the team.
+4. Keep your responses concise and friendly (or formal, based on uiTone). Avoid making promises about implementing the suggestion.
 
-Examples:
+Examples (assuming neutral tone if uiTone not specified):
 User: "It would be cool to have themes for the letters."
 Bot: "Thanks for that idea! Themed letters sound like a fun addition. We'll definitely keep that in mind."
 
 User: "More colors."
 Bot: "More colors, got it! Could you tell me a bit more about where you'd like to see different colors?"
 
-User: "The timer is too fast."
-Bot: "Thanks for letting us know your thoughts on the timer speed! We appreciate the feedback."
-
 Respond to the user's suggestion: "{{{suggestionText}}}"
 Bot:`,
+  templateFormat: "handlebars",
+  model: {
+    helpers: {
+      uiTone_description: (tone?: number) => {
+        const t = tone || 5; // Default to neutral
+        if (t <= 1) return "1 (Extremely Playful/Jovial)";
+        if (t <= 3) return `${t} (Playful/Casual)`;
+        if (t <= 4) return `${t} (Friendly/Casual)`;
+        if (t <= 6) return `${t} (Neutral/Helpful)`;
+        if (t <= 7) return `${t} (Polite/Helpful)`;
+        if (t <= 9) return `${t} (Formal/Professional)`;
+        return `${t} (Extremely Formal/Obsequious)`;
+      }
+    }
+  }
 });
 
 const handleSuggestionFlow = ai.defineFlow(
@@ -76,7 +95,10 @@ const handleSuggestionFlow = ai.defineFlow(
     outputSchema: HandleSuggestionOutputSchema,
   },
   async (input) => {
-    const {output} = await suggestionPrompt(input);
+    // If uiTone is not provided, default to 5 (neutral friendly) for the prompt.
+    const effectiveInput = { ...input, uiTone: input.uiTone ?? 5 };
+    const {output} = await suggestionPrompt(effectiveInput);
+
     const botResponseText = output?.response || "Thanks for your suggestion! I'll make sure our team sees it.";
 
     try {
@@ -85,6 +107,7 @@ const handleSuggestionFlow = ai.defineFlow(
         botResponse: botResponseText,
         conversationHistory: input.conversationHistory || [],
         timestamp: serverTimestamp(),
+        uiToneUsed: effectiveInput.uiTone, // Log the tone used
       };
       if (input.userId) {
         suggestionLogData.userId = input.userId;
@@ -99,3 +122,4 @@ const handleSuggestionFlow = ai.defineFlow(
   }
 );
 
+    
