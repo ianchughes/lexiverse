@@ -17,8 +17,8 @@ import { AdminNavItems } from '@/components/admin/AdminNavItems';
 import { BookText, PanelLeft } from 'lucide-react';
 
 export const metadata: Metadata = {
-  title: 'Lexi Circles - Admin Panel',
-  description: 'Manage Lexi Circles game.',
+  title: 'Lexiverse - Admin Panel',
+  description: 'Manage Lexiverse game.',
 };
 
 export default function AdminLayout({
@@ -40,7 +40,7 @@ export default function AdminLayout({
           <AdminNavItems />
         </SidebarContent>
         <SidebarFooter className="p-2 group-data-[collapsible=icon]:hidden">
-          <p className="text-xs text-muted-foreground">Lexi Circles Admin v1.0</p>
+          <p className="text-xs text-muted-foreground">Lexiverse Admin v1.0</p>
         </SidebarFooter>
       </Sidebar>
       
@@ -57,7 +57,7 @@ export default function AdminLayout({
           <AdminNavItems />
         </SidebarContent>
          <SidebarFooter className="p-2">
-          <p className="text-xs text-muted-foreground">Lexi Circles Admin v1.0</p>
+          <p className="text-xs text-muted-foreground">Lexiverse Admin v1.0</p>
         </SidebarFooter>
       </Sidebar>
 
@@ -73,3 +73,4 @@ export default function AdminLayout({
     </SidebarProvider>
   );
 }
+

@@ -387,7 +387,7 @@ export default function HomePage() {
         if (approvedWordDetails.originalSubmitterUID && approvedWordDetails.originalSubmitterUID !== currentUser.uid) {
           try {
             const claimerProfileRef = doc(firestore, "Users", approvedWordDetails.originalSubmitterUID);
-            await updateDoc(claimerProfileRef, { overallPersistentScore: increment(wotdSessionPoints) });
+            await updateDoc(claimerProfileRef, { overallPersistentScore: increment(wotdSessionPoints) }); // Use wotdSessionPoints
             toast({ title: "Claimer Bonus!", description: `Original submitter of WotD "${wordText}" got a bonus of ${wotdSessionPoints} points!`, variant: "default"});
           } catch (error) { console.error("Error awarding WotD claimer bonus:", error); }
         }
@@ -413,7 +413,7 @@ export default function HomePage() {
       if (approvedWordDetails.originalSubmitterUID && approvedWordDetails.originalSubmitterUID !== currentUser.uid) {
          try {
           const claimerProfileRef = doc(firestore, "Users", approvedWordDetails.originalSubmitterUID);
-           await updateDoc(claimerProfileRef, { overallPersistentScore: increment(points) }); 
+           await updateDoc(claimerProfileRef, { overallPersistentScore: increment(points) }); // Use points
           toast({ title: "Claimer Bonus!", description: `Original submitter of "${wordText}" got a bonus of ${points} points!`, variant: "default"});
         } catch (error) { console.error("Error awarding claimer bonus:", error); }
       }
@@ -615,7 +615,7 @@ export default function HomePage() {
     return (
       <div className="flex flex-col items-center justify-center text-center h-full py-10 md:py-16 px-4">
         <h1 className="text-4xl sm:text-5xl md:text-6xl font-headline text-primary mb-4 sm:mb-6">
-          ⚡ LexiCircles: Your 90-Second Word Revolution! ⚡
+          ⚡ Lexiverse: Your 90-Second Word Revolution! ⚡
         </h1>
         <p className="text-lg sm:text-xl text-muted-foreground max-w-2xl mx-auto mb-8 sm:mb-10">
           Dive into a thrilling daily word puzzle where speed meets strategy! Uncover words from 9 daily letters, "mint" your unique discoveries to earn ongoing points, and team up with friends in Circles. Can you conquer the lexicon in just 90 seconds?

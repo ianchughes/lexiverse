@@ -149,20 +149,19 @@ export default function JoinCirclePage() {
       <div className="flex items-center justify-center min-h-screen py-12 bg-gradient-to-br from-background to-secondary/20">
         <Card className="w-full max-w-lg shadow-2xl text-center">
           <CardHeader className="pt-8">
-             {/* Using Handshake icon as a generic welcome/team icon */}
             <Handshake className="mx-auto h-16 w-16 text-primary mb-4" />
             <CardTitle className="text-3xl md:text-4xl font-headline text-primary">
-              🎉 Get Ready for LexiCircles! Your Friend Wants You on Their Team! 🎉
+              🎉 Get Ready for Lexiverse! Your Friend Wants You on Their Team! 🎉
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-6 px-6 md:px-8 pb-8">
             <p className="text-muted-foreground text-lg leading-relaxed">
-              Welcome! You've been invited to join a Circle in LexiCircles!
+              Welcome! You've been invited to join a Circle in Lexiverse!
             </p>
             
             <div className="text-left p-4 bg-muted/50 rounded-lg space-y-3">
-              <h3 className="text-xl font-semibold text-foreground text-center mb-3">What is LexiCircles?</h3>
-              <p><Info className="inline h-5 w-5 mr-2 text-accent" />LexiCircles is a daily word game where you get 9 letters and just 90 seconds to find as many words as you can. Discover the special "Word of the Day" to double your score, and even "own" rare words to earn points when others find them!</p>
+              <h3 className="text-xl font-semibold text-foreground text-center mb-3">What is Lexiverse?</h3>
+              <p><Info className="inline h-5 w-5 mr-2 text-accent" />Lexiverse is a daily word game where you get 9 letters and just 90 seconds to find as many words as you can. Discover the special "Word of the Day" to double your score, and even "own" rare words to earn points when others find them!</p>
               
               <h3 className="text-xl font-semibold text-foreground text-center mt-4 mb-3">Why join their Circle?</h3>
                 <p><UsersRound className="inline h-5 w-5 mr-2 text-accent" />Joining a Circle means you can team up with friends, combine your scores, and compete for weekly glory.</p>
@@ -199,3 +198,4 @@ export default function JoinCirclePage() {
     </Suspense>
   );
 }
+
