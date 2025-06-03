@@ -49,7 +49,7 @@ const puzzleGenerationPrompt = ai.definePrompt({
   name: 'puzzleGenerationPrompt',
   input: { schema: GeneratePuzzleSuggestionsInputSchema },
   output: { schema: GeneratePuzzleSuggestionsOutputSchemaRelaxedInternal }, // LLM uses relaxed schema
-  prompt: `You are tasked with generating {{quantity}} daily word puzzle suggestions for a game like Lexiverse.
+  prompt: `You are tasked with generating {{quantity}} daily word puzzle suggestions for a game like LexiVerse.
 Each suggestion needs a "Word of the Day" (WotD) and "Seeding Letters".
 
 Constraints for each suggestion:
@@ -60,7 +60,7 @@ Constraints for each suggestion:
 2.  **Seeding Letters (seedingLetters)**:
     *   Must be a string of EXACTLY 9 uppercase English letters. Double-check this length constraint.
     *   The Word of the Day *must* be formable using only the letters provided in Seeding Letters, respecting letter frequencies. For example, if WotD is "APPLE" and Seeding Letters is "APLEXYZQS", this is invalid because "APPLE" needs two 'P's but Seeding Letters only has one. If Seeding Letters is "APLEXPYZS", this is valid.
-    *   The seeding letters should ideally contain the WotD letters plus some distractor letters to make the puzzle challenging but fair.
+    *   The 9 seeding letters should be a good mix, containing the WotD letters plus a set of *randomized distractor letters* to make the puzzle challenging but fair. The overall set of 9 letters should appear randomized.
 
 Generate exactly {{quantity}} such suggestions. Ensure each generated WotD is indeed formable from its corresponding Seeding Letters.
 Return the output in the specified JSON format.

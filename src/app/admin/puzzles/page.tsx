@@ -13,7 +13,7 @@ import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, 
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Checkbox } from '@/components/ui/checkbox';
 import { useToast } from '@/hooks/use-toast';
-import { PlusCircle, Edit2, Trash2, Sparkles, Save, Loader2, RefreshCw, CalendarSync, Shuffle } from 'lucide-react'; // Added Shuffle
+import { PlusCircle, Edit2, Trash2, Sparkles, Save, Loader2, RefreshCw, CalendarSync, Shuffle, Dices } from 'lucide-react'; // Added Shuffle, Dices
 import type { DailyPuzzle, AdminPuzzleFormState, PuzzleSuggestion as ClientPuzzleSuggestion, GeneratePuzzleSuggestionsOutput } from '@/types';
 import { generatePuzzleSuggestions } from '@/ai/flows/generate-puzzle-suggestions';
 import { format, addDays, startOfTomorrow } from 'date-fns';
@@ -130,15 +130,19 @@ export default function DailyPuzzleManagementPage() {
   const [formabilityError, setFormabilityError] = useState<string>('');
 
   // State for AI puzzle generation
-  const [generationQuantity, setGenerationQuantity] = useState<number>(5); // Default to 5 or a reasonable number
+  const [generationQuantity, setGenerationQuantity] = useState<number>(5); 
   const [isGeneratingSuggestions, setIsGeneratingSuggestions] = useState(false);
   const [puzzleSuggestions, setPuzzleSuggestions] = useState<ClientPuzzleSuggestion[]>([]);
   const [selectedSuggestionIds, setSelectedSuggestionIds] = useState<Set<string>>(new Set());
-  const [isReRandomizing, setIsReRandomizing] = useState(false); // New state for re-randomize button
+  const [isReRandomizing, setIsReRandomizing] = useState(false); 
 
   // State for Fill Gaps feature
   const [isFillingGaps, setIsFillingGaps] = useState(false);
   const [isFillGapsConfirmOpen, setIsFillGapsConfirmOpen] = useState(false);
+
+  // State for Reseed All feature
+  const [isReseedingAll, setIsReseedingAll] = useState(false);
+  const [isReseedAllConfirmOpen, setIsReseedAllConfirmOpen] = useState(false);
 
 
   const fetchPuzzles = useCallback(async () => {
@@ -158,7 +162,7 @@ export default function DailyPuzzleManagementPage() {
     fetchPuzzles();
   }, [fetchPuzzles]);
 
-  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => { // Updated to include HTMLTextAreaElement
+  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => { 
     const { name, value } = e.target;
     setFormData(prev => ({ ...prev, [name]: name === 'wordOfTheDayPoints' ? parseInt(value,10) || 0 : value }));
     if (formErrors[name as keyof AdminPuzzleFormState]) {
@@ -301,8 +305,8 @@ export default function DailyPuzzleManagementPage() {
 
   // AI Puzzle Generation Functions
   const handleGenerateSuggestions = async () => {
-    if (generationQuantity < 1) {
-      toast({ title: "Invalid Quantity", description: "Please enter a quantity of 1 or more.", variant: "destructive" });
+    if (generationQuantity < 1 || generationQuantity > 100) {
+      toast({ title: "Invalid Quantity", description: "Please enter a quantity between 1 and 100.", variant: "destructive" });
       return;
     }
     setIsGeneratingSuggestions(true);
@@ -541,6 +545,57 @@ export default function DailyPuzzleManagementPage() {
     }
   };
 
+  // Helper function to generate new seeding letters
+  const generateNewSeedingLetters = (wotd: string): string => {
+    const wotdChars = wotd.toUpperCase().split('');
+    let currentLetters = [...wotdChars];
+    const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+
+    while (currentLetters.length < 9) {
+      const randomChar = alphabet[Math.floor(Math.random() * alphabet.length)];
+      currentLetters.push(randomChar);
+    }
+
+    // Fisher-Yates shuffle
+    for (let i = currentLetters.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [currentLetters[i], currentLetters[j]] = [currentLetters[j], currentLetters[i]];
+    }
+    return currentLetters.join('');
+  };
+
+
+  const handleReseedAllUpcomingPuzzles = async () => {
+    setIsReseedingAll(true);
+    const upcomingPuzzles = puzzles.filter(p => p.status === 'Upcoming');
+
+    if (upcomingPuzzles.length === 0) {
+      toast({ title: "No Upcoming Puzzles", description: "There are no 'Upcoming' puzzles to reseed.", variant: "default" });
+      setIsReseedingAll(false);
+      setIsReseedAllConfirmOpen(false);
+      return;
+    }
+
+    try {
+      const batch = writeBatch(firestore);
+      upcomingPuzzles.forEach(puzzle => {
+        const newSeedingLetters = generateNewSeedingLetters(puzzle.wordOfTheDayText);
+        const puzzleDocRef = doc(firestore, DAILY_PUZZLES_COLLECTION, puzzle.id);
+        batch.update(puzzleDocRef, { seedingLetters: newSeedingLetters });
+      });
+
+      await batch.commit();
+      toast({ title: "Puzzles Reseeded", description: `${upcomingPuzzles.length} upcoming puzzles have been reseeded successfully.` });
+      fetchPuzzles();
+    } catch (error: any) {
+      console.error("Error reseeding all puzzles:", error);
+      toast({ title: "Error Reseeding Puzzles", description: error.message || "Could not reseed puzzles.", variant: "destructive" });
+    } finally {
+      setIsReseedingAll(false);
+      setIsReseedAllConfirmOpen(false);
+    }
+  };
+
   
   return (
     <div className="space-y-6">
@@ -657,11 +712,11 @@ export default function DailyPuzzleManagementPage() {
                 onChange={(e) => setGenerationQuantity(Math.max(1, Math.min(100, parseInt(e.target.value, 10) || 1)))}
                 min="1"
                 max="100"
-                disabled={isGeneratingSuggestions || isFillingGaps}
+                disabled={isGeneratingSuggestions || isFillingGaps || isReseedingAll}
                 className="w-full"
               />
             </div>
-            <Button onClick={handleGenerateSuggestions} disabled={isGeneratingSuggestions || isLoading || isFillingGaps}>
+            <Button onClick={handleGenerateSuggestions} disabled={isGeneratingSuggestions || isLoading || isFillingGaps || isReseedingAll}>
               {isGeneratingSuggestions ? (
                 <Loader2 className="mr-2 h-4 w-4 animate-spin" />
               ) : (
@@ -696,7 +751,7 @@ export default function DailyPuzzleManagementPage() {
                   </Card>
                 ))}
               </div>
-              <Button onClick={handleSaveSelectedPuzzles} disabled={selectedSuggestionIds.size === 0 || isLoading || isGeneratingSuggestions || isFillingGaps} className="w-full mt-4">
+              <Button onClick={handleSaveSelectedPuzzles} disabled={selectedSuggestionIds.size === 0 || isLoading || isGeneratingSuggestions || isFillingGaps || isReseedingAll} className="w-full mt-4">
                 {isLoading && selectedSuggestionIds.size > 0 ? ( <Loader2 className="mr-2 h-4 w-4 animate-spin" /> ) : ( <Save className="mr-2 h-4 w-4" />) } 
                 Save Selected ({selectedSuggestionIds.size}) to Firebase
               </Button>
@@ -707,32 +762,61 @@ export default function DailyPuzzleManagementPage() {
               No suggestions generated, or all were filtered out. Try again, check AI flow logs, or ensure WordsAPI key is correctly configured.
             </p>
           )}
-          <div className="pt-4 border-t">
-            <h3 className="text-md font-semibold mb-2">Puzzle Schedule Maintenance</h3>
-             <AlertDialog open={isFillGapsConfirmOpen} onOpenChange={setIsFillGapsConfirmOpen}>
-                <AlertDialogTrigger asChild>
-                    <Button variant="outline" className="w-full" disabled={isLoading || isGeneratingSuggestions || isFillingGaps}>
-                        <CalendarSync className="mr-2 h-4 w-4" />
-                        Fill Date Gaps in Upcoming Puzzles
-                    </Button>
-                </AlertDialogTrigger>
-                <AlertDialogContent>
-                    <AlertDialogHeader>
-                    <AlertDialogTitle>Confirm Fill Gaps</AlertDialogTitle>
-                    <AlertDialogDescription>
-                        This will re-date 'Upcoming' puzzles to fill any gaps, starting from the day after the last Active/Expired puzzle (or tomorrow if none). Original 'Upcoming' puzzle entries will be deleted and re-created with new dates. This action cannot be easily undone. Are you sure?
-                    </AlertDialogDescription>
-                    </AlertDialogHeader>
-                    <AlertDialogFooter>
-                    <AlertDialogCancel disabled={isFillingGaps}>Cancel</AlertDialogCancel>
-                    <AlertDialogAction onClick={handleFillGaps} disabled={isFillingGaps}>
-                        {isFillingGaps ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
-                        Yes, Fill Gaps
-                    </AlertDialogAction>
-                    </AlertDialogFooter>
-                </AlertDialogContent>
-            </AlertDialog>
-            <p className="text-xs text-muted-foreground mt-1">Ensures 'Upcoming' puzzles are sequential without empty days.</p>
+          <div className="pt-4 border-t grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div>
+                <h3 className="text-md font-semibold mb-2">Puzzle Schedule Maintenance</h3>
+                <AlertDialog open={isFillGapsConfirmOpen} onOpenChange={setIsFillGapsConfirmOpen}>
+                    <AlertDialogTrigger asChild>
+                        <Button variant="outline" className="w-full" disabled={isLoading || isGeneratingSuggestions || isFillingGaps || isReseedingAll}>
+                            <CalendarSync className="mr-2 h-4 w-4" />
+                            Fill Date Gaps in Upcoming
+                        </Button>
+                    </AlertDialogTrigger>
+                    <AlertDialogContent>
+                        <AlertDialogHeader>
+                        <AlertDialogTitle>Confirm Fill Gaps</AlertDialogTitle>
+                        <AlertDialogDescription>
+                            This will re-date 'Upcoming' puzzles to fill any gaps, starting from the day after the last Active/Expired puzzle (or tomorrow if none). Original 'Upcoming' puzzle entries will be deleted and re-created with new dates. This action cannot be easily undone. Are you sure?
+                        </AlertDialogDescription>
+                        </AlertDialogHeader>
+                        <AlertDialogFooter>
+                        <AlertDialogCancel disabled={isFillingGaps}>Cancel</AlertDialogCancel>
+                        <AlertDialogAction onClick={handleFillGaps} disabled={isFillingGaps}>
+                            {isFillingGaps ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                            Yes, Fill Gaps
+                        </AlertDialogAction>
+                        </AlertDialogFooter>
+                    </AlertDialogContent>
+                </AlertDialog>
+                <p className="text-xs text-muted-foreground mt-1">Ensures 'Upcoming' puzzles are sequential without empty days.</p>
+            </div>
+            <div>
+                <h3 className="text-md font-semibold mb-2">Seeding Letter Maintenance</h3>
+                <AlertDialog open={isReseedAllConfirmOpen} onOpenChange={setIsReseedAllConfirmOpen}>
+                    <AlertDialogTrigger asChild>
+                        <Button variant="outline" className="w-full" disabled={isLoading || isGeneratingSuggestions || isFillingGaps || isReseedingAll}>
+                            <Dices className="mr-2 h-4 w-4" />
+                            Reseed All Upcoming Puzzles
+                        </Button>
+                    </AlertDialogTrigger>
+                    <AlertDialogContent>
+                        <AlertDialogHeader>
+                        <AlertDialogTitle>Confirm Reseed All</AlertDialogTitle>
+                        <AlertDialogDescription>
+                            This will regenerate and randomize the 9 seeding letters for ALL 'Upcoming' puzzles, ensuring their Word of the Day remains formable. This action cannot be easily undone. Are you sure?
+                        </AlertDialogDescription>
+                        </AlertDialogHeader>
+                        <AlertDialogFooter>
+                        <AlertDialogCancel disabled={isReseedingAll}>Cancel</AlertDialogCancel>
+                        <AlertDialogAction onClick={handleReseedAllUpcomingPuzzles} disabled={isReseedingAll}>
+                            {isReseedingAll ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                            Yes, Reseed All
+                        </AlertDialogAction>
+                        </AlertDialogFooter>
+                    </AlertDialogContent>
+                </AlertDialog>
+                <p className="text-xs text-muted-foreground mt-1">Randomizes seeding letters for all 'Upcoming' puzzles.</p>
+            </div>
           </div>
         </CardContent>
       </Card>
@@ -743,8 +827,8 @@ export default function DailyPuzzleManagementPage() {
             <CardTitle>Puzzle List</CardTitle>
             <CardDescription>View and manage all puzzles from Firestore.</CardDescription>
           </div>
-           <Button onClick={fetchPuzzles} variant="outline" size="icon" disabled={isLoading || isGeneratingSuggestions || isFillingGaps}>
-              <RefreshCw className={`h-4 w-4 ${isLoading && !isGeneratingSuggestions && !isFillingGaps ? 'animate-spin' : ''}`} />
+           <Button onClick={fetchPuzzles} variant="outline" size="icon" disabled={isLoading || isGeneratingSuggestions || isFillingGaps || isReseedingAll}>
+              <RefreshCw className={`h-4 w-4 ${isLoading && !isGeneratingSuggestions && !isFillingGaps && !isReseedingAll ? 'animate-spin' : ''}`} />
             </Button>
         </CardHeader>
         <CardContent>
@@ -784,12 +868,12 @@ export default function DailyPuzzleManagementPage() {
                           </span>
                       </TableCell>
                       <TableCell className="text-right space-x-1">
-                        <Button variant="ghost" size="icon" onClick={() => openEditForm(puzzle)} title="Edit" disabled={isLoading || isGeneratingSuggestions || isFillingGaps || isReRandomizing || isSubmittingForm}>
+                        <Button variant="ghost" size="icon" onClick={() => openEditForm(puzzle)} title="Edit" disabled={isLoading || isGeneratingSuggestions || isFillingGaps || isReseedingAll || isReRandomizing || isSubmittingForm}>
                           <Edit2 className="h-4 w-4" />
                         </Button>
                         <AlertDialog>
                           <AlertDialogTrigger asChild>
-                            <Button variant="ghost" size="icon" title="Delete" className="text-destructive hover:text-destructive" disabled={isLoading || isGeneratingSuggestions || isFillingGaps || isReRandomizing || isSubmittingForm}>
+                            <Button variant="ghost" size="icon" title="Delete" className="text-destructive hover:text-destructive" disabled={isLoading || isGeneratingSuggestions || isFillingGaps || isReseedingAll || isReRandomizing || isSubmittingForm}>
                               <Trash2 className="h-4 w-4" />
                             </Button>
                           </AlertDialogTrigger>
@@ -801,13 +885,13 @@ export default function DailyPuzzleManagementPage() {
                               </AlertDialogDescription>
                             </AlertDialogHeader>
                             <AlertDialogFooter>
-                              <AlertDialogCancel disabled={isLoading || isFillingGaps}>Cancel</AlertDialogCancel>
+                              <AlertDialogCancel disabled={isLoading || isFillingGaps || isReseedingAll}>Cancel</AlertDialogCancel>
                               <AlertDialogAction 
                                 onClick={() => handleDelete(puzzle.id, puzzle.puzzleDateGMT)} 
-                                disabled={isLoading || isFillingGaps} 
+                                disabled={isLoading || isFillingGaps || isReseedingAll} 
                                 className="bg-destructive hover:bg-destructive/90 text-destructive-foreground"
                               >
-                                {(isLoading || isFillingGaps) && editingPuzzleId === null ? <Loader2 className="mr-2 h-4 w-4 animate-spin"/> : "Yes, delete puzzle"}
+                                {(isLoading || isFillingGaps || isReseedingAll) && editingPuzzleId === null ? <Loader2 className="mr-2 h-4 w-4 animate-spin"/> : "Yes, delete puzzle"}
                               </AlertDialogAction>
                             </AlertDialogFooter>
                           </AlertDialogContent>
