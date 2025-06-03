@@ -3,7 +3,7 @@
 
 import { firestore } from '@/lib/firebase';
 import { collection, addDoc, serverTimestamp, doc, writeBatch, query, where, getDocs, updateDoc, deleteDoc, runTransaction, increment, getDoc, Timestamp } from 'firebase/firestore';
-import type { Circle, CircleMember, CircleInvite, UserProfile, CircleInviteStatus, CircleMemberRole } from '@/types';
+import type { Circle, CircleMember, CircleInvite, UserProfile, CircleInviteStatus, CircleMemberRole, AppNotification } from '@/types';
 import { customAlphabet } from 'nanoid';
 
 const nanoid = customAlphabet('0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz', 10);
@@ -139,9 +139,15 @@ export async function leaveCircleAction(payload: CircleActionPayload): Promise<{
             if (!memberSnap.exists()) throw new Error("You are not a member of this circle.");
             
             if (circleData.creatorUserID === payload.userId && circleData.memberCount <= 1) {
-                // TODO: Implement logic to promote another admin or require deletion
-                throw new Error("As the sole admin/creator, you must delete the circle or appoint another admin before leaving.");
+                // If the creator is the last member, they should delete the circle instead of leaving.
+                throw new Error("As the sole admin/creator, you must delete the circle instead of leaving.");
             }
+            if (circleData.creatorUserID === payload.userId && circleData.memberCount > 1) {
+                // If the creator tries to leave and there are other members, prevent it unless they appoint a new admin.
+                // For simplicity now, we'll prevent it. A more complex system could allow admin transfer.
+                 throw new Error("The circle creator cannot leave if other members exist. Please delete the circle or transfer ownership (feature not yet implemented).");
+            }
+
 
             transaction.delete(memberRef);
             transaction.update(circleRef, { memberCount: increment(-1) });
@@ -348,24 +354,25 @@ export async function respondToCircleInviteAction(payload: RespondToCircleInvite
     return await runTransaction(firestore, async (transaction) => {
       // --- START READ PHASE ---
       const inviteSnap = await transaction.get(inviteRef);
+      let circleSnap;
+      let inviterSnap; // Declare here to ensure it's in scope for the write phase if needed.
+
       if (!inviteSnap.exists()) {
         throw new Error("Invite not found or has expired.");
       }
       const inviteData = inviteSnap.data() as CircleInvite;
 
-      let circleSnap;
-      let inviterSnap;
       const circleRef = doc(firestore, 'Circles', inviteData.circleId);
       const inviterProfileRef = doc(firestore, 'Users', inviteData.inviterUserId);
       
-      // Read circle and inviter profile early, regardless of response type, to adhere to transaction rules
+      // Read all necessary documents before any writes
       if (payload.responseType === 'Accepted') {
         circleSnap = await transaction.get(circleRef);
         if (!circleSnap.exists()) {
           throw new Error("The circle no longer exists.");
         }
         inviterSnap = await transaction.get(inviterProfileRef);
-         // inviterSnap existence check is done before write
+        // inviterSnap existence check is done before write, if inviterSnap is used.
       }
       // --- END READ PHASE ---
 
@@ -386,6 +393,11 @@ export async function respondToCircleInviteAction(payload: RespondToCircleInvite
       });
 
       if (payload.responseType === 'Accepted') {
+        // Ensure circleSnap was read if we are here
+        if (!circleSnap || !circleSnap.exists()) { // Redundant if logic correct, but good safeguard.
+             throw new Error("Circle data inconsistency during transaction.");
+        }
+
         const newMemberData: Omit<CircleMember, 'id'> = {
           circleId: inviteData.circleId,
           userId: payload.inviteeUserId,
@@ -397,7 +409,7 @@ export async function respondToCircleInviteAction(payload: RespondToCircleInvite
         transaction.set(memberDocRef, newMemberData);
         transaction.update(circleRef, { memberCount: increment(1) });
 
-        if (inviterSnap && inviterSnap.exists()) { // Check inviterSnap from read phase
+        if (inviterSnap && inviterSnap.exists()) { // Check inviterSnap from read phase if it was read
             transaction.update(inviterProfileRef, { overallPersistentScore: increment(10) });
         }
         return { success: true, circleId: inviteData.circleId };
@@ -627,9 +639,10 @@ export async function updateMemberRoleAction(payload: UpdateMemberRolePayload): 
     await updateDoc(targetMemberRef, { role: newRole });
 
     // Optional: Send a notification to the target user about their role change
+    const circleData = (await getDoc(doc(firestore, 'Circles', circleId))).data();
     const notificationPayload: Omit<AppNotification, 'id' | 'dateCreated'> = {
       userId: targetUserId,
-      message: `Your role in circle "${requesterMemberSnap.data()?.circleName || circleId}" has been changed to ${newRole}.`,
+      message: `Your role in circle "${circleData?.circleName || circleId}" has been changed to ${newRole}.`,
       type: 'CircleAdminAction',
       relatedEntityId: circleId,
       isRead: false,
@@ -643,5 +656,70 @@ export async function updateMemberRoleAction(payload: UpdateMemberRolePayload): 
   } catch (error: any) {
     console.error("Error in updateMemberRoleAction:", error);
     return { success: false, error: error.message || "Failed to update member role." };
+  }
+}
+
+interface RemoveCircleMemberPayload {
+  circleId: string;
+  requestingUserId: string; // Admin performing the action
+  targetUserId: string;     // Member to be removed
+}
+
+export async function removeCircleMemberAction(payload: RemoveCircleMemberPayload): Promise<{ success: boolean; error?: string }> {
+  try {
+    const { circleId, requestingUserId, targetUserId } = payload;
+
+    if (requestingUserId === targetUserId) {
+      return { success: false, error: "You cannot remove yourself from the circle. Use 'Leave Circle' instead." };
+    }
+
+    const circleRef = doc(firestore, 'Circles', circleId);
+    const requesterMemberRef = doc(firestore, 'CircleMembers', `${circleId}_${requestingUserId}`);
+    const targetMemberRef = doc(firestore, 'CircleMembers', `${circleId}_${targetUserId}`);
+
+    return await runTransaction(firestore, async (transaction) => {
+      const circleSnap = await transaction.get(circleRef);
+      if (!circleSnap.exists()) throw new Error("Circle not found.");
+      const circleData = circleSnap.data() as Circle;
+
+      const requesterMemberSnap = await transaction.get(requesterMemberRef);
+      if (!requesterMemberSnap.exists() || requesterMemberSnap.data()?.role !== 'Admin') {
+        throw new Error("You do not have permission to remove members from this circle.");
+      }
+
+      const targetMemberSnap = await transaction.get(targetMemberRef);
+      if (!targetMemberSnap.exists()) {
+        throw new Error("Target user is not a member of this circle.");
+      }
+      const targetMemberData = targetMemberSnap.data() as CircleMember;
+
+      if (targetMemberData.role === 'Admin') {
+        // This typically means they are the creator.
+        // Admins (creators) cannot be removed by other admins (if multi-admin was a feature).
+        // For now, an Admin (creator) can't be removed by this action.
+        throw new Error("The Circle Admin (creator) cannot be removed by this action.");
+      }
+      
+      transaction.delete(targetMemberRef);
+      transaction.update(circleRef, { memberCount: increment(-1) });
+      
+      // Optional: Send a notification to the removed user
+      const notificationPayload: Omit<AppNotification, 'id' | 'dateCreated'> = {
+        userId: targetUserId,
+        message: `You have been removed from the circle "${circleData.circleName}" by an admin.`,
+        type: 'CircleAdminAction',
+        relatedEntityId: circleId,
+        isRead: false,
+        link: `/circles`, // Link to general circles page as they are no longer part of this one
+      };
+      const notificationDocRef = doc(collection(firestore, 'Notifications')); // Auto-generate ID
+      transaction.set(notificationDocRef, { ...notificationPayload, dateCreated: serverTimestamp() });
+
+      return { success: true };
+    });
+
+  } catch (error: any) {
+    console.error("Error in removeCircleMemberAction:", error);
+    return { success: false, error: error.message || "Failed to remove member." };
   }
 }

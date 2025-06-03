@@ -11,7 +11,7 @@ import type { Circle, CircleMember, CircleMemberRole } from '@/types';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
-import { amendCircleDetailsAction, updateMemberRoleAction } from '@/app/circles/actions';
+import { amendCircleDetailsAction, updateMemberRoleAction, removeCircleMemberAction } from '@/app/circles/actions';
 
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -20,8 +20,9 @@ import { Textarea } from '@/components/ui/textarea';
 import { Switch } from '@/components/ui/switch';
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage, FormDescription } from '@/components/ui/form';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from '@/components/ui/card';
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
 import { useToast } from '@/hooks/use-toast';
-import { Loader2, Save, AlertTriangle, ArrowLeft, Users, ShieldCheck, Crown, UserCheck, TrendingUp } from 'lucide-react';
+import { Loader2, Save, AlertTriangle, ArrowLeft, Users, ShieldCheck, Crown, UserCheck, TrendingUp, UserX } from 'lucide-react';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Separator } from '@/components/ui/separator';
@@ -54,6 +55,9 @@ export default function EditCirclePage() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [processingMemberRole, setProcessingMemberRole] = useState<string | null>(null);
+  const [processingMemberRemoval, setProcessingMemberRemoval] = useState<string | null>(null);
+  const [memberToRemove, setMemberToRemove] = useState<CircleMember | null>(null);
+  const [isRemoveConfirmOpen, setIsRemoveConfirmOpen] = useState(false);
 
 
   const form = useForm<EditCircleFormValues>({
@@ -193,6 +197,34 @@ export default function EditCirclePage() {
     return <UserCheck className="h-4 w-4 text-muted-foreground" />;
   };
 
+  const openRemoveConfirmDialog = (member: CircleMember) => {
+    setMemberToRemove(member);
+    setIsRemoveConfirmOpen(true);
+  };
+
+  const handleConfirmRemoveMember = async () => {
+    if (!currentUser || !circleId || !memberToRemove) return;
+    setProcessingMemberRemoval(memberToRemove.userId);
+    try {
+      const result = await removeCircleMemberAction({
+        circleId,
+        requestingUserId: currentUser.uid,
+        targetUserId: memberToRemove.userId,
+      });
+      if (result.success) {
+        toast({ title: "Member Removed", description: `${memberToRemove.username} has been removed from the circle.` });
+        fetchCircleAndMembersData(); // Refresh member list
+      } else {
+        throw new Error(result.error || "Failed to remove member.");
+      }
+    } catch (error: any) {
+      toast({ title: "Removal Failed", description: error.message, variant: "destructive" });
+    } finally {
+      setProcessingMemberRemoval(null);
+      setIsRemoveConfirmOpen(false);
+      setMemberToRemove(null);
+    }
+  };
 
   if (isLoadingAuth || isLoadingPage) {
     return <div className="flex justify-center items-center h-64"><Loader2 className="h-12 w-12 animate-spin text-primary" /></div>;
@@ -314,7 +346,7 @@ export default function EditCirclePage() {
       <Card className="shadow-lg">
         <CardHeader>
           <CardTitle className="flex items-center"><Users className="mr-2" /> Manage Members</CardTitle>
-          <CardDescription>Promote members to 'Influencer' to allow them to invite others, or demote them.</CardDescription>
+          <CardDescription>Promote members to 'Influencer', demote them, or remove them from the circle.</CardDescription>
         </CardHeader>
         <CardContent>
           {members.length === 0 ? (
@@ -335,34 +367,68 @@ export default function EditCirclePage() {
                       </div>
                     </div>
                   </div>
-                  {member.role !== 'Admin' && ( // Prevent changing Admin role here
-                    <Select
-                      value={member.role}
-                      onValueChange={(newRole: 'Member' | 'Influencer') => handleRoleChange(member.userId, newRole)}
-                      disabled={processingMemberRole === member.userId}
-                    >
-                      <SelectTrigger className="w-full sm:w-[180px]">
-                        <SelectValue placeholder="Change role" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="Member">Member</SelectItem>
-                        <SelectItem value="Influencer">Influencer</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  )}
-                  {member.role === 'Admin' && (
-                    <Badge variant="secondary">Admin (Creator)</Badge>
-                  )}
-                  {processingMemberRole === member.userId && <Loader2 className="h-5 w-5 animate-spin" />}
+                  <div className="flex flex-col sm:flex-row gap-2 w-full sm:w-auto">
+                    {member.role !== 'Admin' && ( 
+                      <Select
+                        value={member.role}
+                        onValueChange={(newRole: 'Member' | 'Influencer') => handleRoleChange(member.userId, newRole)}
+                        disabled={processingMemberRole === member.userId || processingMemberRemoval === member.userId}
+                      >
+                        <SelectTrigger className="w-full sm:w-[150px]">
+                          <SelectValue placeholder="Change role" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="Member">Member</SelectItem>
+                          <SelectItem value="Influencer">Influencer</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    )}
+                    {member.role === 'Admin' && (
+                      <Badge variant="secondary" className="w-full sm:w-[150px] py-2 justify-center">Admin (Creator)</Badge>
+                    )}
+                     {member.role !== 'Admin' && (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="w-full sm:w-auto text-destructive border-destructive hover:bg-destructive/10 hover:text-destructive"
+                        onClick={() => openRemoveConfirmDialog(member)}
+                        disabled={processingMemberRemoval === member.userId || processingMemberRole === member.userId}
+                      >
+                        {processingMemberRemoval === member.userId ? <Loader2 className="h-4 w-4 animate-spin" /> : <UserX className="h-4 w-4" />}
+                        <span className="ml-2">Remove</span>
+                      </Button>
+                    )}
+                  </div>
+                  {(processingMemberRole === member.userId || processingMemberRemoval === member.userId) && <Loader2 className="h-5 w-5 animate-spin" />}
                 </div>
               ))}
             </div>
           )}
         </CardContent>
         <CardFooter>
-            <p className="text-xs text-muted-foreground">Admins (circle creators) cannot have their role changed here.</p>
+            <p className="text-xs text-muted-foreground">Admins (circle creators) cannot have their role changed or be removed here.</p>
         </CardFooter>
       </Card>
+
+      {memberToRemove && (
+        <AlertDialog open={isRemoveConfirmOpen} onOpenChange={setIsRemoveConfirmOpen}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Confirm Removal</AlertDialogTitle>
+              <AlertDialogDescription>
+                Are you sure you want to remove {memberToRemove.username} from "{circle?.circleName}"? 
+                This action cannot be undone, and they will need a new invite to rejoin.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel disabled={processingMemberRemoval === memberToRemove.userId} onClick={() => setIsRemoveConfirmOpen(false)}>Cancel</AlertDialogCancel>
+              <AlertDialogAction onClick={handleConfirmRemoveMember} disabled={processingMemberRemoval === memberToRemove.userId} className="bg-destructive hover:bg-destructive/90 text-destructive-foreground">
+                {processingMemberRemoval === memberToRemove.userId ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null} Confirm Removal
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+      )}
 
     </div>
   );

@@ -153,7 +153,7 @@ export interface Circle {
 }
 
 export interface CircleMember {
-  id?: string; // Firestore Document ID (e.g., CircleID_UserID for root collection)
+  id?: string; // Firestore Document ID (e.g., CircleID_UserID for root collection, or use auto-ID if preferred and query)
   circleId: string;
   userId: string;
   username: string; // Denormalized for display
