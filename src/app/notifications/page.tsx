@@ -34,10 +34,10 @@ export default function NotificationsPage() {
     setError(null);
     try {
       // Fetch AppNotifications (generic notifications, word transfer results)
+      // Simplified query: removed the 'not-in' filter for type
       const genericNotifsQuery = query(
         collection(firestore, 'Notifications'),
         where('userId', '==', currentUser.uid),
-        where('type', 'not-in', ['CircleInvite', 'WordTransferRequest']), // Exclude actionable types handled separately
         orderBy('dateCreated', 'desc')
       );
       const genericNotifsSnap = await getDocs(genericNotifsQuery);
@@ -87,7 +87,13 @@ export default function NotificationsPage() {
         };
       });
 
-      const combinedNotifications = [...fetchedGenericNotifs, ...fetchedCircleInvitesAsNotifs, ...fetchedWordTransfersAsNotifs];
+      // Filter out any notifications from fetchedGenericNotifs that are actually handled by the specific queries
+      // This prevents duplicates if, for some reason, a CircleInvite or WordTransferRequest was also in the Notifications collection
+      const filteredGenericNotifs = fetchedGenericNotifs.filter(notif =>
+        notif.type !== 'CircleInvite' && notif.type !== 'WordTransferRequest'
+      );
+
+      const combinedNotifications = [...filteredGenericNotifs, ...fetchedCircleInvitesAsNotifs, ...fetchedWordTransfersAsNotifs];
       combinedNotifications.sort((a,b) => b.dateCreated.toMillis() - a.dateCreated.toMillis());
 
       setNotifications(combinedNotifications);
