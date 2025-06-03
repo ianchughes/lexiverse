@@ -1,13 +1,13 @@
 
 'use client';
 
-import { Suspense, useState } from 'react'; // useState is used in JoinCircleFormContent
+import { Suspense, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
 import { useAuth } from '@/contexts/AuthContext';
-import { joinCircleWithInviteCodeAction } from '@/app/circles/actions'; 
+import { joinCircleWithInviteCodeAction } from '@/app/circles/actions';
 
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -27,9 +27,9 @@ function JoinCircleFormContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const { toast } = useToast();
-  const { currentUser, userProfile, isLoadingAuth } = useAuth(); 
+  const { currentUser, userProfile, isLoadingAuth } = useAuth();
   const [isSubmitting, setIsSubmitting] = useState(false);
-  
+
   const inviteCodeFromUrl = searchParams.get('code');
 
   const form = useForm<JoinCircleFormValues>({
@@ -72,14 +72,59 @@ function JoinCircleFormContent() {
       setIsSubmitting(false);
     }
   }
- 
-  if (isLoadingAuth && currentUser) { 
-    return <div className="flex justify-center items-center h-64"><Loader2 className="h-12 w-12 animate-spin text-primary" /></div>;
+
+  if (isLoadingAuth) {
+    return <div className="flex justify-center items-center h-screen"><Loader2 className="h-16 w-16 animate-spin text-primary" /></div>;
   }
 
-  if (!userProfile && currentUser && !isLoadingAuth) {
+  if (!currentUser) {
+    const inviteCode = searchParams.get('code') || '';
+    return (
+      <div className="flex items-center justify-center min-h-screen py-12 bg-gradient-to-br from-background to-secondary/20 px-4">
+        <Card className="w-full max-w-lg shadow-2xl text-center">
+          <CardHeader className="pt-8">
+            <Handshake className="mx-auto h-16 w-16 text-primary mb-4" />
+            <CardTitle className="text-3xl md:text-4xl font-headline text-primary">
+              🎉 Get Ready for LexiVerse! Your Friend Wants You on Their Team! 🎉
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-6 px-6 md:px-8 pb-8">
+            <p className="text-muted-foreground text-lg leading-relaxed">
+              Welcome! You've been invited to join a Circle in LexiVerse!
+            </p>
+            <div className="text-left p-4 bg-muted/50 rounded-lg space-y-3">
+              <h3 className="text-xl font-semibold text-foreground text-center mb-3">What is LexiVerse?</h3>
+              <p><Info className="inline h-5 w-5 mr-2 text-accent" />LexiVerse is a daily word game where you get 9 letters and just 90 seconds to find as many words as you can. Discover the special "Word of the Day" to double your score, and even "own" rare words to earn points when others find them!</p>
+              <h3 className="text-xl font-semibold text-foreground text-center mt-4 mb-3">Why join their Circle?</h3>
+              <p><UsersRound className="inline h-5 w-5 mr-2 text-accent" />Joining a Circle means you can team up with friends, combine your scores, and compete for weekly glory.</p>
+            </div>
+            <p className="text-lg font-medium text-foreground">
+              To get started and accept your Circle invitation:<br />
+              Please Log In to your existing account.<br />
+              Or, if you're new, Create a Free Account – it's quick and easy!
+            </p>
+            <div className="flex flex-col sm:flex-row gap-4 justify-center pt-4">
+              <Button size="lg" className="w-full sm:w-auto font-semibold text-lg" asChild>
+                <Link href={`/auth/login?inviteCode=${inviteCode}`}>
+                  <LogIn className="mr-2 h-5 w-5" /> Log In to Join
+                </Link>
+              </Button>
+              <Button size="lg" variant="secondary" className="w-full sm:w-auto font-semibold text-lg" asChild>
+                <Link href={`/auth/register?inviteCode=${inviteCode}`}>
+                  <UserPlus className="mr-2 h-5 w-5" /> Sign Up & Team Up!
+                </Link>
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+  
+  // This case implies currentUser is truthy, but userProfile might still be loading or null
+  if (!userProfile && !isLoadingAuth) { // Check !isLoadingAuth to avoid premature rendering of this state
      return (
-      <div className="text-center py-10">
+      <div className="flex flex-col items-center justify-center text-center py-10">
         <AlertTriangle className="mx-auto h-12 w-12 text-destructive mb-4" />
         <h2 className="text-2xl font-semibold mb-2">Profile Loading Error</h2>
         <p className="text-muted-foreground mb-4">Could not load your user profile. Please try refreshing or logging in again.</p>
@@ -87,9 +132,10 @@ function JoinCircleFormContent() {
       </div>
     );
   }
-
+  
+  // If currentUser and userProfile are available, render the form
   return (
-    <div className="max-w-md w-full"> {/* Ensure form content takes available width */}
+    <div className="max-w-md w-full">
       <Card className="shadow-lg">
         <CardHeader>
           <CardTitle className="text-3xl font-headline flex items-center">
@@ -131,64 +177,8 @@ function JoinCircleFormContent() {
 }
 
 export default function JoinCirclePage() {
-  const { currentUser, isLoadingAuth } = useAuth();
-  const searchParams = useSearchParams(); 
-
-  if (isLoadingAuth) {
-    return <div className="flex justify-center items-center h-screen"><Loader2 className="h-16 w-16 animate-spin text-primary" /></div>;
-  }
-
-  if (!currentUser) {
-    const inviteCode = searchParams.get('code') || '';
-    return (
-      <div className="flex items-center justify-center min-h-screen py-12 bg-gradient-to-br from-background to-secondary/20 px-4"> {/* Added px-4 for small screen padding */}
-        <Card className="w-full max-w-lg shadow-2xl text-center">
-          <CardHeader className="pt-8">
-            <Handshake className="mx-auto h-16 w-16 text-primary mb-4" />
-            <CardTitle className="text-3xl md:text-4xl font-headline text-primary">
-              🎉 Get Ready for LexiVerse! Your Friend Wants You on Their Team! 🎉
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-6 px-6 md:px-8 pb-8">
-            <p className="text-muted-foreground text-lg leading-relaxed">
-              Welcome! You've been invited to join a Circle in LexiVerse!
-            </p>
-            
-            <div className="text-left p-4 bg-muted/50 rounded-lg space-y-3">
-              <h3 className="text-xl font-semibold text-foreground text-center mb-3">What is LexiVerse?</h3>
-              <p><Info className="inline h-5 w-5 mr-2 text-accent" />LexiVerse is a daily word game where you get 9 letters and just 90 seconds to find as many words as you can. Discover the special "Word of the Day" to double your score, and even "own" rare words to earn points when others find them!</p>
-              
-              <h3 className="text-xl font-semibold text-foreground text-center mt-4 mb-3">Why join their Circle?</h3>
-                <p><UsersRound className="inline h-5 w-5 mr-2 text-accent" />Joining a Circle means you can team up with friends, combine your scores, and compete for weekly glory.</p>
-            </div>
-
-            <p className="text-lg font-medium text-foreground">
-              To get started and accept your Circle invitation:<br/>
-              Please Log In to your existing account.<br/>
-              Or, if you're new, Create a Free Account – it's quick and easy!
-            </p>
-
-            <div className="flex flex-col sm:flex-row gap-4 justify-center pt-4">
-              <Button size="lg" className="w-full sm:w-auto font-semibold text-lg" asChild>
-                <Link href={`/auth/login?inviteCode=${inviteCode}`}>
-                  <LogIn className="mr-2 h-5 w-5" /> Log In to Join
-                </Link>
-              </Button>
-              <Button size="lg" variant="secondary" className="w-full sm:w-auto font-semibold text-lg" asChild>
-                <Link href={`/auth/register?inviteCode=${inviteCode}`}>
-                  <UserPlus className="mr-2 h-5 w-5" /> Sign Up & Team Up!
-                </Link>
-              </Button>
-            </div>
-          </CardContent>
-        </Card>
-      </div>
-    );
-  }
-
-  // If user is logged in, show the form to enter the code, wrapped in Suspense
   return (
-    <div className="flex flex-col items-center justify-center min-h-screen py-8 px-4"> {/* Wrapper for centering auth'd view */}
+    <div className="flex flex-col items-center justify-center min-h-screen py-8 px-4">
       <Suspense fallback={
         <div className="flex flex-col items-center justify-center h-full">
           <Loader2 className="h-16 w-16 animate-spin text-primary" />
