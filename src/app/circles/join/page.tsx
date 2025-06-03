@@ -14,7 +14,7 @@ import { Input } from '@/components/ui/input';
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from '@/components/ui/form';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { useToast } from '@/hooks/use-toast';
-import { Loader2, LogIn, UserPlus, AlertTriangle, Handshake, Info, CheckCircle, UsersRound } from 'lucide-react'; // Added CheckCircle, UsersRound for list items
+import { Loader2, LogIn, UserPlus, AlertTriangle, Handshake, Info, UsersRound } from 'lucide-react';
 import Link from 'next/link';
 
 const joinCircleFormSchema = z.object({
@@ -73,11 +73,14 @@ function JoinCircleFormContent() {
     }
   }
 
-  if (isLoadingAuth) {
+  // This loading state is for when the user IS logged in, but profile might still be loading
+  if (isLoadingAuth && currentUser) { 
     return <div className="flex justify-center items-center h-64"><Loader2 className="h-12 w-12 animate-spin text-primary" /></div>;
   }
 
-  if (!currentUser) {
+  // This specific check within JoinCircleFormContent is a fallback.
+  // The primary check should happen in JoinCirclePage.
+  if (!currentUser && !isLoadingAuth) {
      return (
       <div className="text-center py-10">
         <AlertTriangle className="mx-auto h-12 w-12 text-destructive mb-4" />
@@ -85,15 +88,27 @@ function JoinCircleFormContent() {
         <p className="text-muted-foreground mb-4">Please log in or register to join a circle.</p>
         <div className="flex gap-4 justify-center">
           <Button asChild>
-            <Link href="/auth/login">Login</Link>
+            <Link href={`/auth/login?inviteCode=${inviteCodeFromUrl || ''}`}>Login</Link>
           </Button>
            <Button asChild variant="outline">
-            <Link href="/auth/register">Register</Link>
+            <Link href={`/auth/register?inviteCode=${inviteCodeFromUrl || ''}`}>Register</Link>
           </Button>
         </div>
       </div>
     );
   }
+  
+  if (!userProfile && currentUser && !isLoadingAuth) {
+     return (
+      <div className="text-center py-10">
+        <AlertTriangle className="mx-auto h-12 w-12 text-destructive mb-4" />
+        <h2 className="text-2xl font-semibold mb-2">Profile Loading Error</h2>
+        <p className="text-muted-foreground mb-4">Could not load your user profile. Please try refreshing or logging in again.</p>
+         <Button onClick={() => router.push('/auth/login')} >Go to Login</Button>
+      </div>
+    );
+  }
+
 
   return (
     <div className="max-w-md mx-auto">
@@ -139,12 +154,14 @@ function JoinCircleFormContent() {
 
 export default function JoinCirclePage() {
   const { currentUser, isLoadingAuth } = useAuth();
+  const searchParams = useSearchParams(); // Safe to use here as page is 'use client'
 
   if (isLoadingAuth) {
     return <div className="flex justify-center items-center h-screen"><Loader2 className="h-16 w-16 animate-spin text-primary" /></div>;
   }
 
   if (!currentUser) {
+    const inviteCode = searchParams.get('code') || '';
     return (
       <div className="flex items-center justify-center min-h-screen py-12 bg-gradient-to-br from-background to-secondary/20">
         <Card className="w-full max-w-lg shadow-2xl text-center">
@@ -175,12 +192,12 @@ export default function JoinCirclePage() {
 
             <div className="flex flex-col sm:flex-row gap-4 justify-center pt-4">
               <Button size="lg" className="w-full sm:w-auto font-semibold text-lg" asChild>
-                <Link href="/auth/login">
+                <Link href={`/auth/login?inviteCode=${inviteCode}`}>
                   <LogIn className="mr-2 h-5 w-5" /> Log In to Join
                 </Link>
               </Button>
               <Button size="lg" variant="secondary" className="w-full sm:w-auto font-semibold text-lg" asChild>
-                <Link href="/auth/register">
+                <Link href={`/auth/register?inviteCode=${inviteCode}`}>
                   <UserPlus className="mr-2 h-5 w-5" /> Sign Up & Team Up!
                 </Link>
               </Button>
@@ -191,7 +208,7 @@ export default function JoinCirclePage() {
     );
   }
 
-  // If user is logged in, show the form to enter the code
+  // If user is logged in, show the form to enter the code, wrapped in Suspense
   return (
     <Suspense fallback={<div className="flex justify-center items-center h-screen"><Loader2 className="h-16 w-16 animate-spin text-primary" /></div>}>
       <JoinCircleFormContent />
