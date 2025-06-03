@@ -1,7 +1,7 @@
 
 'use client';
 
-import { Suspense, useState } from 'react';
+import { Suspense, useState } from 'react'; // useState is used in JoinCircleFormContent
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -27,7 +27,7 @@ function JoinCircleFormContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const { toast } = useToast();
-  const { currentUser, userProfile, isLoadingAuth } = useAuth();
+  const { currentUser, userProfile, isLoadingAuth } = useAuth(); 
   const [isSubmitting, setIsSubmitting] = useState(false);
   
   const inviteCodeFromUrl = searchParams.get('code');
@@ -72,32 +72,11 @@ function JoinCircleFormContent() {
       setIsSubmitting(false);
     }
   }
-
-  // This loading state is for when the user IS logged in, but profile might still be loading
+ 
   if (isLoadingAuth && currentUser) { 
     return <div className="flex justify-center items-center h-64"><Loader2 className="h-12 w-12 animate-spin text-primary" /></div>;
   }
 
-  // This specific check within JoinCircleFormContent is a fallback.
-  // The primary check should happen in JoinCirclePage.
-  if (!currentUser && !isLoadingAuth) {
-     return (
-      <div className="text-center py-10">
-        <AlertTriangle className="mx-auto h-12 w-12 text-destructive mb-4" />
-        <h2 className="text-2xl font-semibold mb-2">Authentication Required</h2>
-        <p className="text-muted-foreground mb-4">Please log in or register to join a circle.</p>
-        <div className="flex gap-4 justify-center">
-          <Button asChild>
-            <Link href={`/auth/login?inviteCode=${inviteCodeFromUrl || ''}`}>Login</Link>
-          </Button>
-           <Button asChild variant="outline">
-            <Link href={`/auth/register?inviteCode=${inviteCodeFromUrl || ''}`}>Register</Link>
-          </Button>
-        </div>
-      </div>
-    );
-  }
-  
   if (!userProfile && currentUser && !isLoadingAuth) {
      return (
       <div className="text-center py-10">
@@ -109,9 +88,8 @@ function JoinCircleFormContent() {
     );
   }
 
-
   return (
-    <div className="max-w-md mx-auto">
+    <div className="max-w-md w-full"> {/* Ensure form content takes available width */}
       <Card className="shadow-lg">
         <CardHeader>
           <CardTitle className="text-3xl font-headline flex items-center">
@@ -154,7 +132,7 @@ function JoinCircleFormContent() {
 
 export default function JoinCirclePage() {
   const { currentUser, isLoadingAuth } = useAuth();
-  const searchParams = useSearchParams(); // Safe to use here as page is 'use client'
+  const searchParams = useSearchParams(); 
 
   if (isLoadingAuth) {
     return <div className="flex justify-center items-center h-screen"><Loader2 className="h-16 w-16 animate-spin text-primary" /></div>;
@@ -163,7 +141,7 @@ export default function JoinCirclePage() {
   if (!currentUser) {
     const inviteCode = searchParams.get('code') || '';
     return (
-      <div className="flex items-center justify-center min-h-screen py-12 bg-gradient-to-br from-background to-secondary/20">
+      <div className="flex items-center justify-center min-h-screen py-12 bg-gradient-to-br from-background to-secondary/20 px-4"> {/* Added px-4 for small screen padding */}
         <Card className="w-full max-w-lg shadow-2xl text-center">
           <CardHeader className="pt-8">
             <Handshake className="mx-auto h-16 w-16 text-primary mb-4" />
@@ -210,9 +188,15 @@ export default function JoinCirclePage() {
 
   // If user is logged in, show the form to enter the code, wrapped in Suspense
   return (
-    <Suspense fallback={<div className="flex justify-center items-center h-screen"><Loader2 className="h-16 w-16 animate-spin text-primary" /></div>}>
-      <JoinCircleFormContent />
-    </Suspense>
+    <div className="flex flex-col items-center justify-center min-h-screen py-8 px-4"> {/* Wrapper for centering auth'd view */}
+      <Suspense fallback={
+        <div className="flex flex-col items-center justify-center h-full">
+          <Loader2 className="h-16 w-16 animate-spin text-primary" />
+          <p className="mt-4 text-muted-foreground">Loading join form...</p>
+        </div>
+      }>
+        <JoinCircleFormContent />
+      </Suspense>
+    </div>
   );
 }
-
