@@ -28,30 +28,42 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       setIsLoadingAuth(true);
       setCurrentUser(user);
       if (user) {
-        // Fetch UserProfile and listen for real-time updates
         const userDocRef = doc(firestore, 'Users', user.uid);
-        // Listen for real-time updates to userProfile
+        
         const unsubscribeProfile = onSnapshot(userDocRef, (docSnap) => {
           if (docSnap.exists()) {
-            setUserProfile(docSnap.data() as UserProfile);
+            const data = docSnap.data();
+            // Validate essential fields before setting userProfile
+            if (data && data.username && data.email && data.registrationCountry && data.accountStatus && data.dateCreated) {
+              setUserProfile(data as UserProfile);
+            } else {
+              console.warn("UserProfile data from Firestore is incomplete or missing essential fields for UID:", user.uid, data);
+              setUserProfile(null); 
+            }
           } else {
+            console.warn("UserProfile document does not exist for UID:", user.uid);
             setUserProfile(null);
           }
         }, (error) => {
-          console.error("Error fetching user profile:", error);
+          console.error("Error fetching user profile snapshot:", error);
           setUserProfile(null);
         });
         
-        // Fetch UserRole (from admin_users collection) - this typically doesn't need real-time updates
         const adminRoleDocRef = doc(firestore, 'admin_users', user.uid);
-        const adminRoleDocSnap = await getDoc(adminRoleDocRef);
-        if (adminRoleDocSnap.exists()) {
-          setUserRole(adminRoleDocSnap.data()?.role as UserRole);
-        } else {
-          setUserRole('user');
+        try {
+            const adminRoleDocSnap = await getDoc(adminRoleDocRef);
+            if (adminRoleDocSnap.exists()) {
+              setUserRole(adminRoleDocSnap.data()?.role as UserRole);
+            } else {
+              setUserRole('user');
+            }
+        } catch (roleError) {
+            console.error("Error fetching user role:", roleError);
+            setUserRole('user'); // Default to 'user' on error
         }
-        setIsLoadingAuth(false); // Set loading to false after initial fetch
-        return () => unsubscribeProfile(); // Cleanup profile listener on user change or unmount
+        
+        setIsLoadingAuth(false);
+        return () => unsubscribeProfile(); 
       } else {
         setUserProfile(null);
         setUserRole(null);
@@ -59,7 +71,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       }
     });
 
-    return () => unsubscribeAuth(); // Cleanup auth listener on component unmount
+    return () => unsubscribeAuth();
   }, []);
 
   return (
