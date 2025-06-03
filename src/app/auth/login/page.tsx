@@ -3,11 +3,12 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
+import Link from 'next/link'; // Added Link
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
 import { signInWithEmailAndPassword } from 'firebase/auth';
-import { auth } from '@/lib/firebase'; // Ensure this path is correct
+import { auth } from '@/lib/firebase'; 
 
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -46,10 +47,9 @@ export default function LoginPage() {
         title: "Login Successful!",
         description: "Welcome back to LexiVerse!",
       });
-      router.push('/'); // Navigate to homepage or dashboard
+      router.push('/'); 
     } catch (error: any) {
       let errorMessage = "An unexpected error occurred. Please try again.";
-      // Default to logging, but skip for common auth issues handled by toast.
       let shouldLogError = true;
 
       if (error.code) {
@@ -58,29 +58,25 @@ export default function LoginPage() {
           case 'auth/wrong-password':
           case 'auth/invalid-credential':
             errorMessage = "Invalid email or password. Please check your credentials.";
-            shouldLogError = false; // User error, already handled by toast
+            shouldLogError = false; 
             break;
           case 'auth/invalid-email':
             errorMessage = "The email address format is invalid.";
-            shouldLogError = false; // User error
+            shouldLogError = false; 
             break;
           case 'auth/user-disabled':
             errorMessage = "This account has been disabled.";
-            shouldLogError = false; // User status, handled by toast
+            shouldLogError = false; 
             break;
           default:
-            // For any other Firebase error or unexpected error, keep the generic message and log it.
             errorMessage = `Login failed: ${error.message || "Please try again."}`;
-            // shouldLogError remains true
         }
       } else {
-        // Non-Firebase error, or Firebase error without a code. Log it.
         errorMessage = `Login failed: ${error.message || "An unexpected error occurred. Please try again."}`;
-        // shouldLogError remains true
       }
 
       if (shouldLogError) {
-        console.error("Login error:", error); // Log only unexpected errors
+        console.error("Login error:", error); 
       }
       
       toast({
@@ -124,7 +120,12 @@ export default function LoginPage() {
                 name="password"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Password</FormLabel>
+                    <div className="flex items-center justify-between">
+                      <FormLabel>Password</FormLabel>
+                      <Button variant="link" size="sm" asChild className="p-0 h-auto text-xs">
+                        <Link href="/auth/forgot-password">Forgot Password?</Link>
+                      </Button>
+                    </div>
                     <FormControl>
                       <div className="relative">
                         <Input type={showPassword ? "text" : "password"} placeholder="••••••••" {...field} />
