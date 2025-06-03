@@ -14,11 +14,14 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Checkbox } from '@/components/ui/checkbox';
 import { useToast } from '@/hooks/use-toast';
 import { Input } from '@/components/ui/input';
-import { Loader2, RefreshCw, Star, CheckCircle, XCircle, ThumbsDown, ShieldAlert, Settings2, Send } from 'lucide-react';
+import { Loader2, RefreshCw, Star, CheckCircle, XCircle, ThumbsDown, ShieldAlert, Settings2, Send, UserMinus, MoreHorizontal } from 'lucide-react';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { format } from 'date-fns';
 import { Skeleton } from '@/components/ui/skeleton';
-import { adminBulkProcessWordSubmissionsAction } from './actions'; 
+import { adminBulkProcessWordSubmissionsAction, adminDisassociateWordOwnerAction } from './actions'; 
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
+
 
 const WORD_SUBMISSIONS_QUEUE = "WordSubmissionsQueue";
 const MASTER_WORDS_COLLECTION = "Words";
@@ -44,9 +47,13 @@ export default function WordManagementPage() {
   const [submissionActions, setSubmissionActions] = useState<Record<string, WordAction>>({});
   const [selectedRowIds, setSelectedRowIds] = useState<Set<string>>(new Set());
   const [itemsPerPage, setItemsPerPage] = useState(25);
-  const [currentPage, setCurrentPage] = useState(1); // For UI indication, actual query uses lastVisible
+  const [currentPage, setCurrentPage] = useState(1); 
   const [isProcessingBulk, setIsProcessingBulk] = useState(false);
   const [lastVisibleSubmission, setLastVisibleSubmission] = useState<any>(null);
+
+  const [isDisassociateConfirmOpen, setIsDisassociateConfirmOpen] = useState(false);
+  const [wordToDisassociate, setWordToDisassociate] = useState<MasterWordType | null>(null);
+  const [isProcessingDisassociation, setIsProcessingDisassociation] = useState(false);
 
 
   useEffect(() => {
@@ -59,9 +66,8 @@ export default function WordManagementPage() {
     const localLastVisible = resetPagination ? null : lastVisibleSubmission;
 
     if (resetPagination) {
-        setPendingSubmissions([]); // Clear existing submissions immediately for a reset
-        setCurrentPage(1); // Reset page number for UI
-        // lastVisibleSubmission is effectively reset by localLastVisible being null for the query
+        setPendingSubmissions([]); 
+        setCurrentPage(1); 
     }
 
     try {
@@ -72,7 +78,7 @@ export default function WordManagementPage() {
         limit(itemsPerPage)
       );
 
-      if (localLastVisible) { // This implies !resetPagination
+      if (localLastVisible) { 
         q = query(
             collection(firestore, WORD_SUBMISSIONS_QUEUE), 
             where("status", "==", "PendingModeratorReview"),
@@ -113,13 +119,13 @@ export default function WordManagementPage() {
     } finally {
       setIsLoadingSubmissions(false);
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [toast, itemsPerPage, lastVisibleSubmission]); // lastVisibleSubmission is needed here for the "load more" logic to correctly use it.
+  }, [toast, itemsPerPage, lastVisibleSubmission]);
 
 
   const fetchMasterWords = useCallback(async () => {
     setIsLoadingMasterWords(true);
     try {
+      // Consider pagination for master words if the list becomes very large
       const q = query(collection(firestore, MASTER_WORDS_COLLECTION), orderBy("dateAdded", "desc"));
       const querySnapshot = await getDocs(q);
       const words: MasterWordType[] = [];
@@ -136,11 +142,8 @@ export default function WordManagementPage() {
   }, [toast]);
 
   useEffect(() => {
-    // This effect handles initial load and changes to itemsPerPage
     fetchPendingSubmissions(true); 
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [itemsPerPage]); // fetchPendingSubmissions is omitted here to prevent loops.
-                      // The function called will use the latest itemsPerPage from its closure.
+  }, [itemsPerPage]); 
 
    useEffect(() => {
     fetchMasterWords();
@@ -244,6 +247,7 @@ export default function WordManagementPage() {
       
       fetchPendingSubmissions(true); 
       setSelectedRowIds(new Set());
+      setSubmissionActions({});
       fetchMasterWords(); 
 
     } catch (error: any) {
@@ -266,6 +270,34 @@ export default function WordManagementPage() {
       return format(new Date(timestamp.seconds * 1000), 'PP p');
     }
     return 'N/A';
+  };
+
+  const openDisassociateConfirm = (word: MasterWordType) => {
+    setWordToDisassociate(word);
+    setIsDisassociateConfirmOpen(true);
+  };
+
+  const handleConfirmDisassociate = async () => {
+    if (!wordToDisassociate || !currentUser) return;
+    setIsProcessingDisassociation(true);
+    try {
+      const result = await adminDisassociateWordOwnerAction({
+        wordText: wordToDisassociate.wordText,
+        actingAdminId: currentUser.uid,
+      });
+      if (result.success) {
+        toast({ title: "Owner Disassociated", description: `Owner has been removed from "${wordToDisassociate.wordText}".` });
+        fetchMasterWords(); // Refresh the list
+      } else {
+        throw new Error(result.error || "Failed to disassociate owner.");
+      }
+    } catch (error: any) {
+      toast({ title: "Error", description: error.message, variant: "destructive" });
+    } finally {
+      setIsProcessingDisassociation(false);
+      setIsDisassociateConfirmOpen(false);
+      setWordToDisassociate(null);
+    }
   };
 
   const isAllOnPageSelected = pendingSubmissions.length > 0 && pendingSubmissions.every(s => s.id && selectedRowIds.has(s.id));
@@ -402,7 +434,7 @@ export default function WordManagementPage() {
       <Card>
         <CardHeader>
           <CardTitle>Master Game Dictionary</CardTitle>
-          <CardDescription>View all approved words and their original submitters.</CardDescription>
+          <CardDescription>View all approved words and their original submitters. Admins can disassociate owners here.</CardDescription>
           <div className="pt-4">
             {hasMounted ? (
                 <Input 
@@ -434,6 +466,7 @@ export default function WordManagementPage() {
                     <TableHead className="text-center">Frequency</TableHead>
                     <TableHead>Original Submitter (UID)</TableHead>
                     <TableHead>Date Added</TableHead>
+                    <TableHead className="text-right">Actions</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -444,14 +477,33 @@ export default function WordManagementPage() {
                       <TableCell className="text-center">{word.frequency.toFixed(2)}</TableCell>
                       <TableCell>
                         {word.originalSubmitterUID ? (
-                          <Button variant="link" className="p-0 h-auto text-primary font-mono text-xs" onClick={() => { setSelectedSubmitterUID(word.originalSubmitterUID!); setShowWordsBySubmitterDialog(true); }} title={word.originalSubmitterUID}>
+                          <span className="font-mono text-xs" title={word.originalSubmitterUID}>
                             {word.originalSubmitterUID.substring(0,10)}... <Star className="h-3 w-3 ml-1 fill-amber-400 text-amber-500 inline"/>
-                          </Button>
+                          </span>
                         ) : (
-                          <span className="text-xs text-muted-foreground">N/A (System)</span>
+                          <span className="text-xs text-muted-foreground">N/A (System or Disassociated)</span>
                         )}
                       </TableCell>
                       <TableCell>{formatDate(word.dateAdded)}</TableCell>
+                      <TableCell className="text-right">
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <Button variant="ghost" size="icon" disabled={isProcessingDisassociation && wordToDisassociate?.wordText === word.wordText}>
+                                {isProcessingDisassociation && wordToDisassociate?.wordText === word.wordText ? <Loader2 className="h-4 w-4 animate-spin" /> : <MoreHorizontal className="h-4 w-4" />}
+                            </Button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end">
+                            <DropdownMenuItem 
+                              onClick={() => openDisassociateConfirm(word)} 
+                              disabled={!word.originalSubmitterUID || (isProcessingDisassociation && wordToDisassociate?.wordText === word.wordText)}
+                              className={!word.originalSubmitterUID ? "text-muted-foreground" : "text-orange-600 focus:text-orange-600 focus:bg-orange-50"}
+                            >
+                              <UserMinus className="mr-2 h-4 w-4" /> Disassociate Owner
+                            </DropdownMenuItem>
+                            {/* Add other actions like 'Edit Word Details' or 'Delete Word' here if needed */}
+                          </DropdownMenuContent>
+                        </DropdownMenu>
+                      </TableCell>
                     </TableRow>
                   ))}
                 </TableBody>
@@ -468,7 +520,31 @@ export default function WordManagementPage() {
        <p className="text-xs text-muted-foreground text-center">
             Word moderation actions update Firestore directly. Use the 'Action' column and 'Process Selected' button.
         </p>
+
+      {wordToDisassociate && (
+        <AlertDialog open={isDisassociateConfirmOpen} onOpenChange={setIsDisassociateConfirmOpen}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Confirm Disassociation</AlertDialogTitle>
+              <AlertDialogDescription>
+                Are you sure you want to remove the original submitter from the word "{wordToDisassociate.wordText}"?
+                This means the original submitter will no longer receive claimer bonuses for this word. This action cannot be easily undone.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel disabled={isProcessingDisassociation} onClick={() => setIsDisassociateConfirmOpen(false)}>Cancel</AlertDialogCancel>
+              <AlertDialogAction 
+                onClick={handleConfirmDisassociate} 
+                disabled={isProcessingDisassociation}
+                className="bg-orange-500 hover:bg-orange-600 text-white"
+              >
+                {isProcessingDisassociation ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null} Confirm Disassociate
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+      )}
+
     </div>
   );
 }
-

@@ -107,7 +107,7 @@ interface BulkSubmissionItem {
 }
 
 interface BulkProcessPayload {
-  actingAdminId: string; // Added actingAdminId
+  actingAdminId: string;
   submissionsToProcess: BulkSubmissionItem[];
 }
 
@@ -143,7 +143,7 @@ export async function adminBulkProcessWordSubmissionsAction(payload: BulkProcess
                         definition: item.definition || "No definition provided.",
                         frequency: item.frequency || 1,
                         status: 'Approved',
-                        addedByUID: actingAdminId, // Use actingAdminId
+                        addedByUID: actingAdminId, 
                         dateAdded: serverTimestamp() as Timestamp,
                         originalSubmitterUID: item.submittedByUID,
                         puzzleDateGMTOfSubmission: item.puzzleDateGMT,
@@ -157,7 +157,7 @@ export async function adminBulkProcessWordSubmissionsAction(payload: BulkProcess
                 const newRejectedWord: RejectedWordType = {
                     wordText: wordKey,
                     rejectionType: item.action === 'rejectGibberish' ? 'Gibberish' : 'AdminDecision',
-                    rejectedByUID: actingAdminId, // Use actingAdminId
+                    rejectedByUID: actingAdminId, 
                     dateRejected: serverTimestamp() as Timestamp,
                     originalSubmitterUID: item.submittedByUID,
                 };
@@ -169,7 +169,7 @@ export async function adminBulkProcessWordSubmissionsAction(payload: BulkProcess
                     const userSnap = await getFirestoreDoc(userDocRef);
                     if (userSnap.exists()) {
                        const deductionPoints = item.wordText.length;
-                       // This update is outside the batch.
+                       // This update is outside the batch. Consider implications or if it should be batched.
                        await updateDoc(userDocRef, { overallPersistentScore: increment(-deductionPoints) });
                     }
                 }
@@ -192,4 +192,41 @@ export async function adminBulkProcessWordSubmissionsAction(payload: BulkProcess
         });
         return { success: false, results, error: `Batch commit failed: ${error.message}` };
     }
+}
+
+
+interface AdminDisassociateWordOwnerPayload {
+  wordText: string; // Document ID of the word
+  actingAdminId: string;
+}
+
+export async function adminDisassociateWordOwnerAction(payload: AdminDisassociateWordOwnerPayload): Promise<{ success: boolean; error?: string }> {
+  const { wordText, actingAdminId } = payload;
+
+  if (!actingAdminId) {
+    return { success: false, error: "Authentication Error: Admin ID is required." };
+  }
+
+  const wordDocRef = doc(firestore, MASTER_WORDS_COLLECTION, wordText.toUpperCase());
+
+  try {
+    const wordSnap = await getFirestoreDoc(wordDocRef);
+    if (!wordSnap.exists()) {
+      return { success: false, error: "Word not found in Master Dictionary." };
+    }
+
+    // Update the word document to remove/nullify owner-related fields
+    // Using `updateDoc` with specific fields to be nulled or potentially deleted (if Firestore supported field deletion directly in updateDoc easily)
+    // We set to null as a clear indication.
+    await updateDoc(wordDocRef, {
+      originalSubmitterUID: null,
+      puzzleDateGMTOfSubmission: null,
+      // Optionally log admin action here or update a 'lastModifiedByAdmin' field
+    });
+
+    return { success: true };
+  } catch (error: any) {
+    console.error("Error disassociating word owner:", error);
+    return { success: false, error: `Could not disassociate owner: ${error.message}` };
+  }
 }
