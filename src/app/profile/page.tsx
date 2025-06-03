@@ -1,13 +1,18 @@
 
 'use client';
 
+import { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
 import Link from 'next/link';
-import { Loader2, AlertTriangle, UserCircle, Edit3 } from 'lucide-react';
+import { Loader2, AlertTriangle, UserCircle, Edit3, FileText } from 'lucide-react';
 import { format } from 'date-fns';
+import { firestore } from '@/lib/firebase';
+import { collection, query, where, getDocs, Timestamp } from 'firebase/firestore';
+import type { MasterWordType } from '@/types';
+import { ScrollArea } from '@/components/ui/scroll-area';
 
 // Helper function to get initials
 const getInitials = (name?: string) => {
@@ -15,8 +20,41 @@ const getInitials = (name?: string) => {
   return name.split(' ').map(n => n[0]).join('').toUpperCase().substring(0, 2);
 };
 
+const MASTER_WORDS_COLLECTION = "Words";
+
 export default function ProfilePage() {
   const { currentUser, userProfile, isLoadingAuth } = useAuth();
+  const [ownedWords, setOwnedWords] = useState<MasterWordType[]>([]);
+  const [isLoadingOwnedWords, setIsLoadingOwnedWords] = useState(true);
+
+  const fetchOwnedWords = useCallback(async () => {
+    if (!currentUser) {
+      setIsLoadingOwnedWords(false);
+      return;
+    }
+    setIsLoadingOwnedWords(true);
+    try {
+      const q = query(collection(firestore, MASTER_WORDS_COLLECTION), where("originalSubmitterUID", "==", currentUser.uid));
+      const querySnapshot = await getDocs(q);
+      const words: MasterWordType[] = [];
+      querySnapshot.forEach((doc) => {
+        words.push({ wordText: doc.id, ...doc.data() } as MasterWordType);
+      });
+      setOwnedWords(words.sort((a,b) => a.wordText.localeCompare(b.wordText))); // Sort alphabetically
+    } catch (error) {
+      console.error("Error fetching owned words:", error);
+      // Optionally set an error state here to display to the user
+    } finally {
+      setIsLoadingOwnedWords(false);
+    }
+  }, [currentUser]);
+
+  useEffect(() => {
+    if (!isLoadingAuth) {
+        fetchOwnedWords();
+    }
+  }, [isLoadingAuth, fetchOwnedWords]);
+
 
   if (isLoadingAuth) {
     return (
@@ -68,7 +106,11 @@ export default function ProfilePage() {
             </div>
             <div className="p-3 bg-muted/50 rounded-md">
               <p className="font-semibold text-muted-foreground">Joined</p>
-              <p className="text-xl text-foreground">{format(userProfile.dateCreated.toDate(), 'PPP')}</p>
+              <p className="text-xl text-foreground">
+                {userProfile.dateCreated instanceof Timestamp 
+                  ? format(userProfile.dateCreated.toDate(), 'PPP')
+                  : 'N/A'}
+              </p>
             </div>
              <div className="p-3 bg-muted/50 rounded-md md:col-span-2">
               <p className="font-semibold text-muted-foreground">Account Status</p>
@@ -82,6 +124,45 @@ export default function ProfilePage() {
            </div>
         </CardContent>
       </Card>
+
+      <Card className="shadow-xl">
+        <CardHeader>
+          <CardTitle className="flex items-center">
+            <FileText className="mr-2 h-6 w-6 text-primary" />
+            Words You Own ({ownedWords.length})
+          </CardTitle>
+          <CardDescription>
+            Words you were the first to submit and are now part of Lexiverse!
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          {isLoadingOwnedWords ? (
+            <div className="flex justify-center items-center py-6">
+              <Loader2 className="h-8 w-8 animate-spin text-primary" />
+              <p className="ml-2 text-muted-foreground">Loading your words...</p>
+            </div>
+          ) : ownedWords.length === 0 ? (
+            <p className="text-muted-foreground text-center py-6">
+              You haven't claimed any words yet. Find new words in the daily puzzle!
+            </p>
+          ) : (
+            <ScrollArea className="h-60 border rounded-md">
+              <ul className="p-4 space-y-2">
+                {ownedWords.map((word) => (
+                  <li key={word.wordText} className="p-2 bg-muted/30 rounded-md hover:bg-muted/60 transition-colors">
+                    <p className="font-semibold text-foreground">{word.wordText}</p>
+                    <p className="text-xs text-muted-foreground truncate" title={word.definition}>{word.definition}</p>
+                    <p className="text-xs text-muted-foreground">
+                        Added: {word.dateAdded instanceof Timestamp ? format(word.dateAdded.toDate(), 'PP') : 'N/A'}
+                    </p>
+                  </li>
+                ))}
+              </ul>
+            </ScrollArea>
+          )}
+        </CardContent>
+      </Card>
+
       <p className="text-xs text-muted-foreground text-center">
         More profile settings and customization options will be available here in the future.
       </p>
