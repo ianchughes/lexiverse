@@ -94,6 +94,7 @@ export interface MasterWordType {
   dateAdded: Timestamp;
   originalSubmitterUID?: string;
   puzzleDateGMTOfSubmission?: string;
+  pendingTransferId?: string; // ID of an active WordTransfer document
 }
 
 export type RejectionType = 'Gibberish' | 'AdminDecision';
@@ -217,12 +218,21 @@ export interface CircleWithDetails extends Circle {
   currentUserRole?: CircleMemberRole; // Role of the viewing user in this circle
 }
 
-export interface AppNotification { // Basic notification structure
+export type NotificationType = 
+  | 'CircleInvite' 
+  | 'CircleJoinConfirmation' 
+  | 'CircleAdminAction' 
+  | 'Achievement' 
+  | 'Generic'
+  | 'WordTransferRequest' // New notification type
+  | 'WordTransferResult'; // New notification type
+
+export interface AppNotification { 
   id?: string;
   userId: string; // User to notify
   message: string;
-  type: 'CircleInvite' | 'CircleJoinConfirmation' | 'CircleAdminAction' | 'Achievement' | 'Generic';
-  relatedEntityId?: string; // e.g., CircleID, UserID
+  type: NotificationType;
+  relatedEntityId?: string; // e.g., CircleID, UserID, WordTransferID
   isRead: boolean;
   dateCreated: Timestamp;
   link?: string; // Optional link for the notification
@@ -236,4 +246,20 @@ export interface UserSuggestionLog {
   botResponse: string;
   conversationHistory?: Array<{ role: 'user' | 'model'; content: string }>;
   timestamp: Timestamp;
+}
+
+// Word Transfer Types
+export type WordTransferStatus = 'PendingRecipient' | 'Accepted' | 'Declined' | 'Expired' | 'CancelledBySender';
+
+export interface WordTransfer {
+  id?: string; // Firestore Document ID
+  wordText: string;
+  senderUserId: string;
+  senderUsername: string;
+  recipientUserId: string;
+  recipientUsername: string;
+  status: WordTransferStatus;
+  initiatedAt: Timestamp;
+  expiresAt: Timestamp;
+  respondedAt?: Timestamp;
 }

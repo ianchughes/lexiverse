@@ -5,13 +5,14 @@ import { useState, useEffect, useCallback } from 'react';
 import Link from 'next/link';
 import { useAuth } from '@/contexts/AuthContext';
 import { firestore } from '@/lib/firebase';
-import { collection, query, where, orderBy, getDocs, doc, updateDoc } from 'firebase/firestore';
-import type { AppNotification, CircleInvite } from '@/types';
+import { collection, query, where, orderBy, getDocs, doc, updateDoc, Timestamp } from 'firebase/firestore'; // Added Timestamp
+import type { AppNotification, CircleInvite, WordTransfer } from '@/types'; // Added WordTransfer
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
-import { Loader2, BellRing, Check, X, AlertTriangle } from 'lucide-react';
+import { Loader2, BellRing, Check, X, AlertTriangle, SendHorizontal, Gift } from 'lucide-react'; // Added SendHorizontal, Gift
 import { formatDistanceToNowStrict } from 'date-fns';
 import { respondToCircleInviteAction } from '@/app/circles/actions';
+import { respondToWordTransferAction } from '@/app/word-actions'; // Import new action
 import { useToast } from '@/hooks/use-toast';
 
 export default function NotificationsPage() {
@@ -21,6 +22,7 @@ export default function NotificationsPage() {
   const [isLoadingNotifications, setIsLoadingNotifications] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [processingInviteId, setProcessingInviteId] = useState<string | null>(null);
+  const [processingTransferId, setProcessingTransferId] = useState<string | null>(null); // For word transfers
 
 
   const fetchNotifications = useCallback(async () => {
@@ -31,10 +33,11 @@ export default function NotificationsPage() {
     setIsLoadingNotifications(true);
     setError(null);
     try {
-      // Fetch AppNotifications (generic notifications)
+      // Fetch AppNotifications (generic notifications, word transfer results)
       const genericNotifsQuery = query(
         collection(firestore, 'Notifications'),
         where('userId', '==', currentUser.uid),
+        where('type', 'not-in', ['CircleInvite', 'WordTransferRequest']), // Exclude actionable types handled separately
         orderBy('dateCreated', 'desc')
       );
       const genericNotifsSnap = await getDocs(genericNotifsQuery);
@@ -44,33 +47,52 @@ export default function NotificationsPage() {
       const circleInvitesQuery = query(
         collection(firestore, 'CircleInvites'),
         where('inviteeUserId', '==', currentUser.uid),
-        where('status', '==', 'Sent'), // Only show pending invites
+        where('status', '==', 'Sent'), 
         orderBy('dateSent', 'desc')
       );
       const circleInvitesSnap = await getDocs(circleInvitesQuery);
       const fetchedCircleInvitesAsNotifs: AppNotification[] = circleInvitesSnap.docs.map(d => {
         const invite = d.data() as CircleInvite;
         return {
-          id: d.id, // Use invite ID as notification ID
-          userId: invite.inviteeUserId,
-          message: `${invite.inviterUsername} invited you to join "${invite.circleName}".`,
+          id: d.id,
+          userId: invite.inviteeUserId!,
+          message: `${invite.inviterUsername} invited you to join circle "${invite.circleName}".`,
           type: 'CircleInvite',
-          relatedEntityId: invite.circleId, // Store circleId for linking
-          isRead: false, // Invites are actionable, not just "read"
+          relatedEntityId: invite.circleId,
+          isRead: false, 
           dateCreated: invite.dateSent,
-          link: `/circles/${invite.circleId}` // Optional link to view circle before accepting
+          link: `/circles/${invite.circleId}`
+        };
+      });
+      
+      // Fetch WordTransferRequests
+      const wordTransferRequestsQuery = query(
+        collection(firestore, 'WordTransfers'),
+        where('recipientUserId', '==', currentUser.uid),
+        where('status', '==', 'PendingRecipient'),
+        orderBy('initiatedAt', 'desc')
+      );
+      const wordTransferRequestsSnap = await getDocs(wordTransferRequestsQuery);
+      const fetchedWordTransfersAsNotifs: AppNotification[] = wordTransferRequestsSnap.docs.map(d => {
+        const transfer = d.data() as WordTransfer;
+        return {
+          id: d.id,
+          userId: transfer.recipientUserId,
+          message: `${transfer.senderUsername} wants to transfer ownership of the word "${transfer.wordText}" to you.`,
+          type: 'WordTransferRequest',
+          relatedEntityId: d.id, // Transfer ID
+          isRead: false,
+          dateCreated: transfer.initiatedAt,
+          // No direct link for now, actions are on the notification itself
         };
       });
 
-      // Combine and sort (if necessary, though separate queries are ordered)
-      // For now, just prepend invites
-      const combinedNotifications = [...fetchedCircleInvitesAsNotifs, ...fetchedGenericNotifs];
-      // Simple sort by date again after combining if types are mixed up.
+      const combinedNotifications = [...fetchedGenericNotifs, ...fetchedCircleInvitesAsNotifs, ...fetchedWordTransfersAsNotifs];
       combinedNotifications.sort((a,b) => b.dateCreated.toMillis() - a.dateCreated.toMillis());
 
       setNotifications(combinedNotifications);
 
-    } catch (err) {
+    } catch (err: any) {
       console.error("Error fetching notifications:", err);
       setError("Could not load notifications. Please try again later.");
     } finally {
@@ -82,7 +104,7 @@ export default function NotificationsPage() {
     fetchNotifications();
   }, [fetchNotifications]);
 
-  const handleInviteResponse = async (inviteId: string, response: 'Accepted' | 'Declined') => {
+  const handleCircleInviteResponse = async (inviteId: string, response: 'Accepted' | 'Declined') => {
     if (!currentUser || !userProfile) return;
     setProcessingInviteId(inviteId);
     try {
@@ -93,10 +115,10 @@ export default function NotificationsPage() {
         responseType: response,
       });
       if (result.success) {
-        toast({ title: `Invite ${response}`, description: `You have ${response.toLowerCase()} the invitation.` });
-        fetchNotifications(); // Re-fetch to remove/update the invite
+        toast({ title: `Circle Invite ${response}`, description: `You have ${response.toLowerCase()} the circle invitation.` });
+        fetchNotifications(); 
       } else {
-        throw new Error(result.error || `Failed to ${response.toLowerCase()} invite.`);
+        throw new Error(result.error || `Failed to ${response.toLowerCase()} circle invite.`);
       }
     } catch (err: any) {
       toast({ title: "Error", description: err.message, variant: "destructive" });
@@ -104,9 +126,32 @@ export default function NotificationsPage() {
       setProcessingInviteId(null);
     }
   };
+
+  const handleWordTransferResponse = async (transferId: string, response: 'Accepted' | 'Declined') => {
+    if (!currentUser) return;
+    setProcessingTransferId(transferId);
+    try {
+      const result = await respondToWordTransferAction({
+        transferId: transferId,
+        respondingUserId: currentUser.uid,
+        response: response,
+      });
+      if (result.success) {
+        toast({ title: `Word Transfer ${response}`, description: `You have ${response.toLowerCase()} the word transfer.` });
+        fetchNotifications(); 
+      } else {
+        throw new Error(result.error || `Failed to ${response.toLowerCase()} word transfer.`);
+      }
+    } catch (err: any) {
+      toast({ title: "Error", description: err.message, variant: "destructive" });
+    } finally {
+      setProcessingTransferId(null);
+    }
+  };
   
-  const markAsRead = async (notificationId: string) => {
-    // For generic notifications, mark as read
+  const markAsRead = async (notificationId: string, type: AppNotification['type']) => {
+    if (type === 'CircleInvite' || type === 'WordTransferRequest') return; // These are actioned, not marked read
+
     const notifRef = doc(firestore, "Notifications", notificationId);
     try {
       await updateDoc(notifRef, { isRead: true });
@@ -155,47 +200,73 @@ export default function NotificationsPage() {
         </Card>
       ) : (
         notifications.map(notif => (
-          <Card key={notif.id} className={`transition-opacity ${notif.isRead && notif.type !== 'CircleInvite' ? 'opacity-60' : ''}`}>
+          <Card key={notif.id} className={`transition-opacity ${notif.isRead && notif.type !== 'CircleInvite' && notif.type !== 'WordTransferRequest' ? 'opacity-60' : ''}`}>
             <CardContent className="p-4 flex items-start justify-between gap-4">
               <div className="flex-grow">
                 <p className="text-sm font-medium">{notif.message}</p>
                 <p className="text-xs text-muted-foreground mt-1">
                   {formatDistanceToNowStrict(notif.dateCreated.toDate())} ago
+                   {notif.type === 'WordTransferRequest' && (
+                    <span className="text-accent"> (Expires in ~24 hours)</span>
+                  )}
                 </p>
-                {notif.link && notif.type !== 'CircleInvite' && (
+                {notif.link && notif.type !== 'CircleInvite' && notif.type !== 'WordTransferRequest' && (
                   <Button variant="link" size="sm" asChild className="p-0 h-auto mt-1">
                     <Link href={notif.link}>View Details</Link>
                   </Button>
                 )}
               </div>
               <div className="flex flex-col sm:flex-row gap-2 items-end sm:items-center shrink-0">
-                {notif.type === 'CircleInvite' ? (
+                {notif.type === 'CircleInvite' && notif.id && (
                   <>
                     <Button 
                       size="sm" 
                       variant="outline"
-                      onClick={() => handleInviteResponse(notif.id!, 'Declined')}
+                      onClick={() => handleCircleInviteResponse(notif.id!, 'Declined')}
                       disabled={processingInviteId === notif.id}
                       className="text-destructive border-destructive hover:bg-destructive/10 hover:text-destructive"
                     >
                       {processingInviteId === notif.id && <Loader2 className="mr-1 h-3 w-3 animate-spin" />}
-                      <X className="mr-1 h-3 w-3" /> Decline
+                      <X className="mr-1 h-3 w-3" /> Decline Circle
                     </Button>
                     <Button 
                       size="sm" 
-                      onClick={() => handleInviteResponse(notif.id!, 'Accepted')}
+                      onClick={() => handleCircleInviteResponse(notif.id!, 'Accepted')}
                       disabled={processingInviteId === notif.id}
                       className="bg-green-600 hover:bg-green-700 text-white"
                     >
                       {processingInviteId === notif.id && <Loader2 className="mr-1 h-3 w-3 animate-spin" />}
-                      <Check className="mr-1 h-3 w-3" /> Accept
+                      <Check className="mr-1 h-3 w-3" /> Accept Circle
                     </Button>
                   </>
-                ) : (
-                  !notif.isRead && (
-                     <Button variant="ghost" size="sm" onClick={() => markAsRead(notif.id!)}>Mark as Read</Button>
-                  )
                 )}
+                {notif.type === 'WordTransferRequest' && notif.id && (
+                  <>
+                    <Button 
+                      size="sm" 
+                      variant="outline"
+                      onClick={() => handleWordTransferResponse(notif.id!, 'Declined')}
+                      disabled={processingTransferId === notif.id}
+                      className="text-destructive border-destructive hover:bg-destructive/10 hover:text-destructive"
+                    >
+                      {processingTransferId === notif.id && <Loader2 className="mr-1 h-3 w-3 animate-spin" />}
+                      <X className="mr-1 h-3 w-3" /> Decline Word
+                    </Button>
+                    <Button 
+                      size="sm" 
+                      onClick={() => handleWordTransferResponse(notif.id!, 'Accepted')}
+                      disabled={processingTransferId === notif.id}
+                      className="bg-accent hover:bg-accent/90 text-accent-foreground"
+                    >
+                      {processingTransferId === notif.id && <Loader2 className="mr-1 h-3 w-3 animate-spin" />}
+                      <Gift className="mr-1 h-3 w-3" /> Accept Word
+                    </Button>
+                  </>
+                )}
+                {notif.type !== 'CircleInvite' && notif.type !== 'WordTransferRequest' && !notif.isRead && (
+                     <Button variant="ghost" size="sm" onClick={() => markAsRead(notif.id!, notif.type)}>Mark as Read</Button>
+                  )
+                }
               </div>
             </CardContent>
           </Card>

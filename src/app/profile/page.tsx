@@ -7,16 +7,28 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
 import Link from 'next/link';
-import { Loader2, AlertTriangle, UserCircle, Edit3, FileText, UploadCloud } from 'lucide-react';
+import { Loader2, AlertTriangle, UserCircle, Edit3, FileText, UploadCloud, SendHorizontal, Info } from 'lucide-react';
 import { format } from 'date-fns';
-import { firestore, storage, auth } from '@/lib/firebase'; // Import storage and auth
-import { collection, query, where, getDocs, Timestamp, doc, updateDoc } from 'firebase/firestore'; // Import doc, updateDoc
+import { firestore, storage, auth } from '@/lib/firebase';
+import { collection, query, where, getDocs, Timestamp, doc, updateDoc } from 'firebase/firestore';
 import type { MasterWordType } from '@/types';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { ref as storageRef, uploadBytesResumable, getDownloadURL } from 'firebase/storage'; // Storage functions
-import { updateProfile } from 'firebase/auth'; // Auth function
+import { ref as storageRef, uploadBytesResumable, getDownloadURL } from 'firebase/storage';
+import { updateProfile } from 'firebase/auth';
 import { useToast } from '@/hooks/use-toast';
 import { Input } from '@/components/ui/input';
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+  DialogFooter,
+  DialogTrigger,
+  DialogClose,
+} from '@/components/ui/dialog';
+import { Label } from '@/components/ui/label';
+import { initiateWordTransferAction } from '@/app/word-actions';
 
 
 // Helper function to get initials
@@ -28,13 +40,20 @@ const getInitials = (name?: string) => {
 const MASTER_WORDS_COLLECTION = "Words";
 
 export default function ProfilePage() {
-  const { currentUser, userProfile, isLoadingAuth, setUserProfile } = useAuth(); // Get setUserProfile from context
+  const { currentUser, userProfile, isLoadingAuth, setUserProfile } = useAuth();
   const { toast } = useToast();
   const [ownedWords, setOwnedWords] = useState<MasterWordType[]>([]);
   const [isLoadingOwnedWords, setIsLoadingOwnedWords] = useState(true);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [isUploading, setIsUploading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // State for word transfer dialog
+  const [isTransferDialogOpen, setIsTransferDialogOpen] = useState(false);
+  const [wordToTransfer, setWordToTransfer] = useState<MasterWordType | null>(null);
+  const [recipientUsername, setRecipientUsername] = useState('');
+  const [isInitiatingTransfer, setIsInitiatingTransfer] = useState(false);
+
 
   const fetchOwnedWords = useCallback(async () => {
     if (!currentUser) {
@@ -46,8 +65,8 @@ export default function ProfilePage() {
       const q = query(collection(firestore, MASTER_WORDS_COLLECTION), where("originalSubmitterUID", "==", currentUser.uid));
       const querySnapshot = await getDocs(q);
       const words: MasterWordType[] = [];
-      querySnapshot.forEach((doc) => {
-        words.push({ wordText: doc.id, ...doc.data() } as MasterWordType);
+      querySnapshot.forEach((docSnap) => { // Renamed doc to docSnap to avoid conflict
+        words.push({ wordText: docSnap.id, ...docSnap.data() } as MasterWordType);
       });
       setOwnedWords(words.sort((a,b) => a.wordText.localeCompare(b.wordText)));
     } catch (error) {
@@ -72,7 +91,6 @@ export default function ProfilePage() {
           return;
       }
       setSelectedFile(file);
-      // Automatically trigger upload once a file is selected
       handleUpload(file);
     }
   };
@@ -90,11 +108,7 @@ export default function ProfilePage() {
       const uploadTask = uploadBytesResumable(fileStorageRef, fileToUpload);
 
       uploadTask.on('state_changed',
-        (snapshot) => {
-          // Optional: Handle progress
-          // const progress = (snapshot.bytesTransferred / snapshot.totalBytes) * 100;
-          // console.log('Upload is ' + progress + '% done');
-        },
+        (snapshot) => {},
         (error) => {
           console.error("Upload failed:", error);
           toast({ title: "Upload Failed", description: error.message, variant: "destructive" });
@@ -103,23 +117,19 @@ export default function ProfilePage() {
         async () => {
           const downloadURL = await getDownloadURL(uploadTask.snapshot.ref);
           
-          // Update Firebase Auth user profile
           if (auth.currentUser) {
             await updateProfile(auth.currentUser, { photoURL: downloadURL });
           }
 
-          // Update Firestore user profile document
           const userDocRef = doc(firestore, "Users", currentUser.uid);
           await updateDoc(userDocRef, { photoURL: downloadURL });
 
-          // Update local userProfile state in context if setUserProfile is available
           if (setUserProfile && userProfile) {
              setUserProfile({ ...userProfile, photoURL: downloadURL });
           }
 
-
           toast({ title: "Profile Photo Updated!", description: "Your new photo is now active." });
-          setSelectedFile(null); // Clear selected file
+          setSelectedFile(null); 
           setIsUploading(false);
         }
       );
@@ -127,6 +137,40 @@ export default function ProfilePage() {
       console.error("Upload error:", error);
       toast({ title: "Upload Error", description: error.message, variant: "destructive" });
       setIsUploading(false);
+    }
+  };
+
+  const openTransferDialog = (word: MasterWordType) => {
+    setWordToTransfer(word);
+    setRecipientUsername('');
+    setIsTransferDialogOpen(true);
+  };
+
+  const handleInitiateTransfer = async () => {
+    if (!wordToTransfer || !currentUser || !userProfile || !recipientUsername.trim()) {
+      toast({title: "Missing Information", description: "Please select a word and enter a recipient username.", variant: "destructive"});
+      return;
+    }
+    setIsInitiatingTransfer(true);
+    try {
+      const result = await initiateWordTransferAction({
+        wordText: wordToTransfer.wordText,
+        senderUserId: currentUser.uid,
+        senderUsername: userProfile.username,
+        recipientUsername: recipientUsername.trim(),
+      });
+
+      if (result.success) {
+        toast({ title: "Transfer Initiated!", description: `Request to transfer "${wordToTransfer.wordText}" to ${recipientUsername.trim()} sent. They have 24 hours to respond.` });
+        fetchOwnedWords(); // Refresh owned words to show pending status
+        setIsTransferDialogOpen(false);
+      } else {
+        throw new Error(result.error || "Failed to initiate transfer.");
+      }
+    } catch (error: any) {
+      toast({ title: "Transfer Error", description: error.message, variant: "destructive" });
+    } finally {
+      setIsInitiatingTransfer(false);
     }
   };
 
@@ -154,7 +198,6 @@ export default function ProfilePage() {
     );
   }
   
-  // Use userProfile.photoURL for display, fallback to currentUser.photoURL if context is slower to update
   const displayPhotoURL = userProfile.photoURL || currentUser.photoURL || undefined;
 
   return (
@@ -215,7 +258,6 @@ export default function ProfilePage() {
               <p className="text-xl text-foreground">{userProfile.accountStatus}</p>
             </div>
           </div>
-           {/* Remove the "Edit Profile (Coming Soon)" button, photo upload is the edit action for now */}
         </CardContent>
       </Card>
 
@@ -226,7 +268,7 @@ export default function ProfilePage() {
             Words You Own ({ownedWords.length})
           </CardTitle>
           <CardDescription>
-            Words you were the first to submit and are now part of Lexiverse!
+            Words you were the first to submit and are now part of Lexiverse! You can transfer ownership to another user.
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -241,14 +283,31 @@ export default function ProfilePage() {
             </p>
           ) : (
             <ScrollArea className="h-60 border rounded-md">
-              <ul className="p-4 space-y-2">
+              <ul className="p-2 space-y-2">
                 {ownedWords.map((word) => (
-                  <li key={word.wordText} className="p-2 bg-muted/30 rounded-md hover:bg-muted/60 transition-colors">
-                    <p className="font-semibold text-foreground">{word.wordText}</p>
-                    <p className="text-xs text-muted-foreground truncate" title={word.definition}>{word.definition}</p>
-                    <p className="text-xs text-muted-foreground">
-                        Added: {word.dateAdded instanceof Timestamp ? format(word.dateAdded.toDate(), 'PP') : 'N/A'}
-                    </p>
+                  <li key={word.wordText} className="p-3 bg-muted/30 rounded-md hover:bg-muted/60 transition-colors flex justify-between items-center">
+                    <div>
+                      <p className="font-semibold text-foreground">{word.wordText}</p>
+                      <p className="text-xs text-muted-foreground truncate" title={word.definition}>{word.definition}</p>
+                      <p className="text-xs text-muted-foreground">
+                          Added: {word.dateAdded instanceof Timestamp ? format(word.dateAdded.toDate(), 'PP') : 'N/A'}
+                      </p>
+                      {word.pendingTransferId && (
+                        <p className="text-xs text-accent mt-1 flex items-center">
+                          <Info className="h-3 w-3 mr-1"/> Pending Transfer
+                        </p>
+                      )}
+                    </div>
+                    <Button 
+                        variant="outline" 
+                        size="sm" 
+                        onClick={() => openTransferDialog(word)}
+                        disabled={!!word.pendingTransferId || isInitiatingTransfer}
+                        className="shrink-0"
+                    >
+                      <SendHorizontal className="h-4 w-4 mr-1" />
+                      Transfer
+                    </Button>
                   </li>
                 ))}
               </ul>
@@ -256,6 +315,51 @@ export default function ProfilePage() {
           )}
         </CardContent>
       </Card>
+
+      {/* Word Transfer Dialog */}
+      <Dialog open={isTransferDialogOpen} onOpenChange={(open) => {
+        setIsTransferDialogOpen(open);
+        if (!open) {
+            setWordToTransfer(null);
+            setRecipientUsername('');
+        }
+      }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Transfer Word: {wordToTransfer?.wordText}</DialogTitle>
+            <DialogDescription>
+              Enter the username of the player you want to transfer this word to.
+              They will have 24 hours to accept the transfer.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="py-4 space-y-3">
+            <div>
+              <Label htmlFor="recipientUsername">Recipient's Username</Label>
+              <Input 
+                id="recipientUsername" 
+                value={recipientUsername} 
+                onChange={(e) => setRecipientUsername(e.target.value)} 
+                placeholder="Enter exact username"
+                disabled={isInitiatingTransfer}
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <DialogClose asChild>
+              <Button type="button" variant="outline" disabled={isInitiatingTransfer}>Cancel</Button>
+            </DialogClose>
+            <Button 
+              type="button" 
+              onClick={handleInitiateTransfer} 
+              disabled={isInitiatingTransfer || !recipientUsername.trim()}
+            >
+              {isInitiatingTransfer ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <SendHorizontal className="mr-2 h-4 w-4" />}
+              Initiate Transfer
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
 
       <p className="text-xs text-muted-foreground text-center">
         Profile photo updates are handled directly. More settings coming soon.
