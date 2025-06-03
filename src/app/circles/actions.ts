@@ -334,17 +334,38 @@ export async function respondToCircleInviteAction(payload: RespondToCircleInvite
   const inviteRef = doc(firestore, 'CircleInvites', payload.inviteId);
   try {
     return await runTransaction(firestore, async (transaction) => {
+      // --- START READ PHASE ---
       const inviteSnap = await transaction.get(inviteRef);
-      if (!inviteSnap.exists()) throw new Error("Invite not found or has expired.");
-      
+      if (!inviteSnap.exists()) {
+        throw new Error("Invite not found or has expired.");
+      }
       const inviteData = inviteSnap.data() as CircleInvite;
+
+      let circleSnap;
+      let inviterSnap;
+      const circleRef = doc(firestore, 'Circles', inviteData.circleId);
+      const inviterProfileRef = doc(firestore, 'Users', inviteData.inviterUserId);
+
+      if (payload.responseType === 'Accepted') {
+        circleSnap = await transaction.get(circleRef);
+        if (!circleSnap.exists()) {
+          throw new Error("The circle no longer exists.");
+        }
+        inviterSnap = await transaction.get(inviterProfileRef);
+        // inviterSnap existence check is done before write
+      }
+      // --- END READ PHASE ---
+
+      // --- START VALIDATION AND LOGIC (based on reads) ---
       if (inviteData.inviteeUserId && inviteData.inviteeUserId !== payload.inviteeUserId) {
         throw new Error("This invite is not for you.");
       }
       if (inviteData.status !== 'Sent' && inviteData.status !== 'SentToEmail') {
-          throw new Error("This invite has already been responded to or is no longer valid.");
+        throw new Error("This invite has already been responded to or is no longer valid.");
       }
+      // --- END VALIDATION ---
 
+      // --- START WRITE PHASE ---
       transaction.update(inviteRef, { 
         status: payload.responseType,
         dateResponded: serverTimestamp(),
@@ -352,10 +373,6 @@ export async function respondToCircleInviteAction(payload: RespondToCircleInvite
       });
 
       if (payload.responseType === 'Accepted') {
-        const circleRef = doc(firestore, 'Circles', inviteData.circleId);
-        const circleSnap = await transaction.get(circleRef);
-        if(!circleSnap.exists()) throw new Error("The circle no longer exists.");
-
         const newMemberData: Omit<CircleMember, 'id'> = {
           circleId: inviteData.circleId,
           userId: payload.inviteeUserId,
@@ -367,15 +384,12 @@ export async function respondToCircleInviteAction(payload: RespondToCircleInvite
         transaction.set(memberDocRef, newMemberData);
         transaction.update(circleRef, { memberCount: increment(1) });
 
-        const inviterProfileRef = doc(firestore, 'Users', inviteData.inviterUserId);
-        // Award points only if inviterProfileRef exists (it should)
-        const inviterSnap = await transaction.get(inviterProfileRef);
-        if(inviterSnap.exists()){
+        if (inviterSnap && inviterSnap.exists()) { // Check inviterSnap from read phase
             transaction.update(inviterProfileRef, { overallPersistentScore: increment(10) });
         }
-
         return { success: true, circleId: inviteData.circleId };
       }
+      // --- END WRITE PHASE ---
       return { success: true };
     });
   } catch (error: any) {
@@ -561,5 +575,3 @@ export async function userResendCircleInviteAction(payload: UserManageInvitePayl
     return { success: false, error: error.message || "Failed to resend invite." };
   }
 }
-
-    
