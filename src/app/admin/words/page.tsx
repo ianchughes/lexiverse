@@ -117,7 +117,7 @@ export default function WordManagementPage() {
     } finally {
       setIsLoadingSubmissions(false);
     }
-  }, [toast, itemsPerPage, lastVisibleSubmission]); 
+  }, [toast, itemsPerPage, setIsLoadingSubmissions, setPendingSubmissions, setCurrentPage, setSubmissionActions, setLastVisibleSubmission]); 
 
 
   const fetchMasterWords = useCallback(async () => {
@@ -140,7 +140,7 @@ export default function WordManagementPage() {
 
   useEffect(() => {
     fetchPendingSubmissions(true); 
-  }, [itemsPerPage, fetchPendingSubmissions]); // Added fetchPendingSubmissions to dependencies
+  }, [itemsPerPage, fetchPendingSubmissions]); 
 
    useEffect(() => {
     fetchMasterWords();
