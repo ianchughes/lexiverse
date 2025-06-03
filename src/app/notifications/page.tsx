@@ -5,14 +5,14 @@ import { useState, useEffect, useCallback } from 'react';
 import Link from 'next/link';
 import { useAuth } from '@/contexts/AuthContext';
 import { firestore } from '@/lib/firebase';
-import { collection, query, where, orderBy, getDocs, doc, updateDoc, Timestamp } from 'firebase/firestore'; // Added Timestamp
-import type { AppNotification, CircleInvite, WordTransfer } from '@/types'; // Added WordTransfer
+import { collection, query, where, orderBy, getDocs, doc, updateDoc, Timestamp } from 'firebase/firestore';
+import type { AppNotification, CircleInvite, WordTransfer } from '@/types';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
-import { Loader2, BellRing, Check, X, AlertTriangle, SendHorizontal, Gift } from 'lucide-react'; // Added SendHorizontal, Gift
+import { Loader2, BellRing, Check, X, AlertTriangle, SendHorizontal, Gift } from 'lucide-react';
 import { formatDistanceToNowStrict } from 'date-fns';
 import { respondToCircleInviteAction } from '@/app/circles/actions';
-import { respondToWordTransferAction } from '@/app/word-actions'; // Import new action
+import { respondToWordTransferAction } from '@/app/word-actions';
 import { useToast } from '@/hooks/use-toast';
 
 export default function NotificationsPage() {
@@ -22,7 +22,7 @@ export default function NotificationsPage() {
   const [isLoadingNotifications, setIsLoadingNotifications] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [processingInviteId, setProcessingInviteId] = useState<string | null>(null);
-  const [processingTransferId, setProcessingTransferId] = useState<string | null>(null); // For word transfers
+  const [processingTransferId, setProcessingTransferId] = useState<string | null>(null);
 
 
   const fetchNotifications = useCallback(async () => {
@@ -32,26 +32,37 @@ export default function NotificationsPage() {
     }
     setIsLoadingNotifications(true);
     setError(null);
+
+    let fetchedGenericNotifs: AppNotification[] = [];
+    let fetchedCircleInvitesAsNotifs: AppNotification[] = [];
+    let fetchedWordTransfersAsNotifs: AppNotification[] = [];
+    let anErrorOccurred = false;
+
+    // Fetch Generic Notifications
     try {
-      // Fetch AppNotifications (generic notifications, word transfer results)
-      // Simplified query: removed the 'not-in' filter for type
       const genericNotifsQuery = query(
         collection(firestore, 'Notifications'),
         where('userId', '==', currentUser.uid),
         orderBy('dateCreated', 'desc')
       );
       const genericNotifsSnap = await getDocs(genericNotifsQuery);
-      const fetchedGenericNotifs = genericNotifsSnap.docs.map(d => ({ ...d.data(), id: d.id } as AppNotification));
-      
-      // Fetch CircleInvites and transform them into AppNotification format for display
+      fetchedGenericNotifs = genericNotifsSnap.docs.map(d => ({ ...d.data(), id: d.id } as AppNotification))
+        .filter(notif => notif.type !== 'CircleInvite' && notif.type !== 'WordTransferRequest');
+    } catch (err: any) {
+      console.error("Error fetching generic notifications:", err);
+      anErrorOccurred = true;
+    }
+
+    // Fetch Circle Invites
+    try {
       const circleInvitesQuery = query(
         collection(firestore, 'CircleInvites'),
         where('inviteeUserId', '==', currentUser.uid),
-        where('status', '==', 'Sent'), 
+        where('status', '==', 'Sent'),
         orderBy('dateSent', 'desc')
       );
       const circleInvitesSnap = await getDocs(circleInvitesQuery);
-      const fetchedCircleInvitesAsNotifs: AppNotification[] = circleInvitesSnap.docs.map(d => {
+      fetchedCircleInvitesAsNotifs = circleInvitesSnap.docs.map(d => {
         const invite = d.data() as CircleInvite;
         return {
           id: d.id,
@@ -59,13 +70,18 @@ export default function NotificationsPage() {
           message: `${invite.inviterUsername} invited you to join circle "${invite.circleName}".`,
           type: 'CircleInvite',
           relatedEntityId: invite.circleId,
-          isRead: false, 
+          isRead: false,
           dateCreated: invite.dateSent,
           link: `/circles/${invite.circleId}`
         };
       });
-      
-      // Fetch WordTransferRequests
+    } catch (err: any) {
+      console.error("Error fetching circle invites:", err);
+      anErrorOccurred = true;
+    }
+
+    // Fetch Word Transfer Requests
+    try {
       const wordTransferRequestsQuery = query(
         collection(firestore, 'WordTransfers'),
         where('recipientUserId', '==', currentUser.uid),
@@ -73,38 +89,45 @@ export default function NotificationsPage() {
         orderBy('initiatedAt', 'desc')
       );
       const wordTransferRequestsSnap = await getDocs(wordTransferRequestsQuery);
-      const fetchedWordTransfersAsNotifs: AppNotification[] = wordTransferRequestsSnap.docs.map(d => {
+      fetchedWordTransfersAsNotifs = wordTransferRequestsSnap.docs.map(d => {
         const transfer = d.data() as WordTransfer;
         return {
           id: d.id,
           userId: transfer.recipientUserId,
           message: `${transfer.senderUsername} wants to transfer ownership of the word "${transfer.wordText}" to you.`,
           type: 'WordTransferRequest',
-          relatedEntityId: d.id, // Transfer ID
+          relatedEntityId: d.id,
           isRead: false,
           dateCreated: transfer.initiatedAt,
-          // No direct link for now, actions are on the notification itself
         };
       });
-
-      // Filter out any notifications from fetchedGenericNotifs that are actually handled by the specific queries
-      // This prevents duplicates if, for some reason, a CircleInvite or WordTransferRequest was also in the Notifications collection
-      const filteredGenericNotifs = fetchedGenericNotifs.filter(notif =>
-        notif.type !== 'CircleInvite' && notif.type !== 'WordTransferRequest'
-      );
-
-      const combinedNotifications = [...filteredGenericNotifs, ...fetchedCircleInvitesAsNotifs, ...fetchedWordTransfersAsNotifs];
-      combinedNotifications.sort((a,b) => b.dateCreated.toMillis() - a.dateCreated.toMillis());
-
-      setNotifications(combinedNotifications);
-
     } catch (err: any) {
-      console.error("Error fetching notifications:", err);
-      setError("Could not load notifications. Please try again later.");
-    } finally {
-      setIsLoadingNotifications(false);
+      console.error("Error fetching word transfer requests:", err);
+      anErrorOccurred = true;
     }
-  }, [currentUser, isLoadingAuth]);
+
+    const combinedNotifications = [...fetchedGenericNotifs, ...fetchedCircleInvitesAsNotifs, ...fetchedWordTransfersAsNotifs];
+    
+    if (anErrorOccurred && combinedNotifications.length === 0) {
+      setError("Could not load notifications. Please try again later.");
+    } else if (anErrorOccurred) {
+        toast({
+            title: "Partial Notifications",
+            description: "Some notifications might be missing. Displaying what we could fetch.",
+            variant: "default"
+        });
+    }
+
+    combinedNotifications.sort((a, b) => {
+        const timeA = a.dateCreated?.toMillis() || 0;
+        const timeB = b.dateCreated?.toMillis() || 0;
+        return timeB - timeA;
+    });
+
+    setNotifications(combinedNotifications);
+    setIsLoadingNotifications(false);
+
+  }, [currentUser, isLoadingAuth, toast]);
 
   useEffect(() => {
     fetchNotifications();
@@ -156,7 +179,7 @@ export default function NotificationsPage() {
   };
   
   const markAsRead = async (notificationId: string, type: AppNotification['type']) => {
-    if (type === 'CircleInvite' || type === 'WordTransferRequest') return; // These are actioned, not marked read
+    if (type === 'CircleInvite' || type === 'WordTransferRequest') return; 
 
     const notifRef = doc(firestore, "Notifications", notificationId);
     try {
@@ -186,7 +209,7 @@ export default function NotificationsPage() {
     );
   }
 
-  if (error) {
+  if (error && notifications.length === 0) { // Only show full error if nothing loaded
     return <p className="text-center text-destructive py-10">{error}</p>;
   }
 
@@ -195,7 +218,7 @@ export default function NotificationsPage() {
       <h1 className="text-3xl font-bold tracking-tight flex items-center">
         <BellRing className="mr-3 h-8 w-8 text-primary" /> Notifications
       </h1>
-      {notifications.length === 0 ? (
+      {notifications.length === 0 && !error ? ( // Added !error here
         <Card className="text-center py-10">
           <CardHeader>
             <CardTitle className="text-xl">No New Notifications</CardTitle>
@@ -211,7 +234,7 @@ export default function NotificationsPage() {
               <div className="flex-grow">
                 <p className="text-sm font-medium">{notif.message}</p>
                 <p className="text-xs text-muted-foreground mt-1">
-                  {formatDistanceToNowStrict(notif.dateCreated.toDate())} ago
+                  {notif.dateCreated ? formatDistanceToNowStrict(notif.dateCreated.toDate()) : 'Recently'} ago
                    {notif.type === 'WordTransferRequest' && (
                     <span className="text-accent"> (Expires in ~24 hours)</span>
                   )}
