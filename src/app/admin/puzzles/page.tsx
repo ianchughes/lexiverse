@@ -6,14 +6,14 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter }
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Textarea } from '@/components/ui/textarea'; // Import Textarea
+import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { DatePicker } from '@/components/ui/date-picker';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Checkbox } from '@/components/ui/checkbox';
 import { useToast } from '@/hooks/use-toast';
-import { PlusCircle, Edit2, Trash2, Sparkles, Save, Loader2, RefreshCw, CalendarSync } from 'lucide-react';
+import { PlusCircle, Edit2, Trash2, Sparkles, Save, Loader2, RefreshCw, CalendarSync, Shuffle } from 'lucide-react'; // Added Shuffle
 import type { DailyPuzzle, AdminPuzzleFormState, PuzzleSuggestion as ClientPuzzleSuggestion, GeneratePuzzleSuggestionsOutput } from '@/types';
 import { generatePuzzleSuggestions } from '@/ai/flows/generate-puzzle-suggestions';
 import { format, addDays, startOfTomorrow } from 'date-fns';
@@ -134,6 +134,7 @@ export default function DailyPuzzleManagementPage() {
   const [isGeneratingSuggestions, setIsGeneratingSuggestions] = useState(false);
   const [puzzleSuggestions, setPuzzleSuggestions] = useState<ClientPuzzleSuggestion[]>([]);
   const [selectedSuggestionIds, setSelectedSuggestionIds] = useState<Set<string>>(new Set());
+  const [isReRandomizing, setIsReRandomizing] = useState(false); // New state for re-randomize button
 
   // State for Fill Gaps feature
   const [isFillingGaps, setIsFillingGaps] = useState(false);
@@ -324,6 +325,31 @@ export default function DailyPuzzleManagementPage() {
       toast({ title: "Generation Failed", description: error.message || "Could not generate puzzle suggestions.", variant: "destructive" });
     } finally {
       setIsGeneratingSuggestions(false);
+    }
+  };
+
+  const handleReRandomizeWords = async () => {
+    setIsReRandomizing(true);
+    try {
+      const result: GeneratePuzzleSuggestionsOutput = await generatePuzzleSuggestions({ quantity: 1 });
+      if (result.suggestions && result.suggestions.length > 0) {
+        const suggestion = result.suggestions[0];
+        setFormData(prev => ({
+          ...prev,
+          wordOfTheDayText: suggestion.wordOfTheDayText,
+          seedingLetters: suggestion.seedingLetters,
+          wordOfTheDayDefinition: suggestion.wordOfTheDayDefinition,
+          wordOfTheDayPoints: suggestion.wordOfTheDayText.length * 10, // Auto-calculate points
+        }));
+        toast({ title: "Words Re-randomized", description: "New WotD, Seeding Letters, and Definition populated." });
+      } else {
+        toast({ title: "Re-randomization Failed", description: "The AI didn't return a valid suggestion. Please try again.", variant: "default" });
+      }
+    } catch (error: any) {
+      console.error("Error re-randomizing words:", error);
+      toast({ title: "Error", description: error.message || "Could not re-randomize words.", variant: "destructive" });
+    } finally {
+      setIsReRandomizing(false);
     }
   };
 
@@ -531,10 +557,20 @@ export default function DailyPuzzleManagementPage() {
       {showForm && (
         <Card>
           <CardHeader>
-            <CardTitle>{editingPuzzleId ? 'Edit Puzzle' : 'Create New Puzzle'}</CardTitle>
-            <CardDescription>
-              {editingPuzzleId ? `Editing puzzle for ${format(formData.puzzleDateGMT || new Date(), 'PPP')}` : 'Define a new daily challenge for players.'}
-            </CardDescription>
+            <div className="flex justify-between items-center">
+              <div>
+                <CardTitle>{editingPuzzleId ? 'Edit Puzzle' : 'Create New Puzzle'}</CardTitle>
+                <CardDescription>
+                  {editingPuzzleId ? `Editing puzzle for ${format(formData.puzzleDateGMT || new Date(), 'PPP')}` : 'Define a new daily challenge for players.'}
+                </CardDescription>
+              </div>
+              {editingPuzzleId && (
+                <Button variant="outline" onClick={handleReRandomizeWords} disabled={isReRandomizing || isSubmittingForm}>
+                  {isReRandomizing ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Shuffle className="mr-2 h-4 w-4" />}
+                  Re-randomize Words
+                </Button>
+              )}
+            </div>
           </CardHeader>
           <form onSubmit={handleFormSubmit}>
             <CardContent className="space-y-4">
@@ -593,8 +629,8 @@ export default function DailyPuzzleManagementPage() {
                </p>
             </CardContent>
             <CardFooter className="flex justify-end space-x-2">
-              <Button type="button" variant="outline" onClick={() => { setShowForm(false); setEditingPuzzleId(null); }} disabled={isSubmittingForm}>Cancel</Button>
-              <Button type="submit" disabled={!!formabilityError || isSubmittingForm}>
+              <Button type="button" variant="outline" onClick={() => { setShowForm(false); setEditingPuzzleId(null); }} disabled={isSubmittingForm || isReRandomizing}>Cancel</Button>
+              <Button type="submit" disabled={!!formabilityError || isSubmittingForm || isReRandomizing}>
                 {isSubmittingForm ? <Loader2 className="mr-2 h-4 w-4 animate-spin"/> : (editingPuzzleId ? 'Update Puzzle' : 'Create Puzzle')}
               </Button>
             </CardFooter>
@@ -748,12 +784,12 @@ export default function DailyPuzzleManagementPage() {
                           </span>
                       </TableCell>
                       <TableCell className="text-right space-x-1">
-                        <Button variant="ghost" size="icon" onClick={() => openEditForm(puzzle)} title="Edit" disabled={isLoading || isGeneratingSuggestions || isFillingGaps}>
+                        <Button variant="ghost" size="icon" onClick={() => openEditForm(puzzle)} title="Edit" disabled={isLoading || isGeneratingSuggestions || isFillingGaps || isReRandomizing || isSubmittingForm}>
                           <Edit2 className="h-4 w-4" />
                         </Button>
                         <AlertDialog>
                           <AlertDialogTrigger asChild>
-                            <Button variant="ghost" size="icon" title="Delete" className="text-destructive hover:text-destructive" disabled={isLoading || isGeneratingSuggestions || isFillingGaps}>
+                            <Button variant="ghost" size="icon" title="Delete" className="text-destructive hover:text-destructive" disabled={isLoading || isGeneratingSuggestions || isFillingGaps || isReRandomizing || isSubmittingForm}>
                               <Trash2 className="h-4 w-4" />
                             </Button>
                           </AlertDialogTrigger>
