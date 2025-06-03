@@ -137,26 +137,39 @@ function RegisterFormContent() {
       }
 
     } catch (error: any) {
-      console.error("Registration error:", error);
       let errorMessage = "An unexpected error occurred. Please try again.";
+      let shouldLogError = true; // Flag to control console logging
+
       if (error.code) {
         switch (error.code) {
           case 'auth/email-already-in-use':
             errorMessage = "This email address is already registered. Please try logging in or use a different email.";
             form.setError("email", { type: "manual", message: errorMessage });
+            shouldLogError = false; // Common, handled error
             break;
           case 'auth/weak-password':
             errorMessage = "Password is too weak. Please ensure it meets the requirements.";
              form.setError("password", { type: "manual", message: "Password is too weak. It must be at least 8 characters and include uppercase, lowercase, number, and special character." });
+            shouldLogError = false; // Common, handled error
             break;
           case 'auth/invalid-email':
             errorMessage = "The email address format is invalid.";
             form.setError("email", { type: "manual", message: errorMessage });
+            shouldLogError = false; // Common, handled error
             break;
           default:
-            errorMessage = `Registration failed: ${error.message}`;
+            errorMessage = `Registration failed: ${error.message || "An unexpected error occurred."}`;
+            // shouldLogError remains true for other Firebase errors
         }
+      } else {
+         errorMessage = `Registration failed: ${error.message || "An unexpected error occurred. Please try again."}`;
+         // shouldLogError remains true for non-Firebase errors
       }
+
+      if (shouldLogError) {
+        console.error("Registration error:", error); // Log only unexpected errors
+      }
+
       toast({
         title: "Registration Failed",
         description: errorMessage,
