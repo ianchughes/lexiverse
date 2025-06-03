@@ -13,7 +13,7 @@ import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, 
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Checkbox } from '@/components/ui/checkbox';
 import { useToast } from '@/hooks/use-toast';
-import { PlusCircle, Edit2, Trash2, Sparkles, Save, Loader2, RefreshCw, CalendarSync, Shuffle, Dices } from 'lucide-react'; // Added Shuffle, Dices
+import { PlusCircle, Edit2, Trash2, Sparkles, Save, Loader2, RefreshCw, CalendarSync, Shuffle, Dices } from 'lucide-react';
 import type { DailyPuzzle, AdminPuzzleFormState, PuzzleSuggestion as ClientPuzzleSuggestion, GeneratePuzzleSuggestionsOutput } from '@/types';
 import { generatePuzzleSuggestions } from '@/ai/flows/generate-puzzle-suggestions';
 import { format, addDays, startOfTomorrow } from 'date-fns';
@@ -24,7 +24,6 @@ const DAILY_PUZZLES_COLLECTION = "DailyPuzzles";
 
 async function fetchPuzzlesFromFirestore(): Promise<DailyPuzzle[]> {
   const puzzlesCollectionRef = collection(firestore, DAILY_PUZZLES_COLLECTION);
-  // Order by ID (which is YYYY-MM-DD date string) to get chronological order
   const q = query(puzzlesCollectionRef, orderBy("id")); 
   const querySnapshot = await getDocs(q);
   const firestorePuzzles: DailyPuzzle[] = [];
@@ -37,10 +36,9 @@ async function fetchPuzzlesFromFirestore(): Promise<DailyPuzzle[]> {
       wordOfTheDayPoints: data.wordOfTheDayPoints,
       seedingLetters: data.seedingLetters,
       status: data.status,
-      wordOfTheDayDefinition: data.wordOfTheDayDefinition || '', // Add definition
+      wordOfTheDayDefinition: data.wordOfTheDayDefinition || '',
     });
   });
-  // Already sorted by ID by Firestore query
   return firestorePuzzles;
 }
 
@@ -57,14 +55,16 @@ async function createDailyPuzzleInFirestore(puzzleData: AdminPuzzleFormState): P
     throw new Error(`A puzzle already exists for ${docId}. Please edit the existing one or choose a different date.`);
   }
 
+  // WotD uniqueness check is now primarily in the form validation before this function is called
+
   const newPuzzleForFirestore = {
-    id: docId, // Add id field explicitly
+    id: docId,
     wordOfTheDayText: puzzleData.wordOfTheDayText.toUpperCase(),
     wordOfTheDayPoints: puzzleData.wordOfTheDayPoints,
     seedingLetters: puzzleData.seedingLetters.toUpperCase(),
     status: puzzleData.status,
     puzzleDateGMT: Timestamp.fromDate(puzzleData.puzzleDateGMT), 
-    wordOfTheDayDefinition: puzzleData.wordOfTheDayDefinition || "No definition provided by admin.", // Add definition
+    wordOfTheDayDefinition: puzzleData.wordOfTheDayDefinition || "No definition provided by admin.",
   };
 
   await setDoc(puzzleDocRef, newPuzzleForFirestore);
@@ -80,22 +80,24 @@ async function createDailyPuzzleInFirestore(puzzleData: AdminPuzzleFormState): P
 }
 
 async function updateDailyPuzzleInFirestore(puzzleId: string, puzzleData: AdminPuzzleFormState): Promise<DailyPuzzle> {
-  if (!puzzleData.puzzleDateGMT) { // Should not happen as date is disabled for edit
+  if (!puzzleData.puzzleDateGMT) { 
     throw new Error("Puzzle date is required for update.");
   }
+  // WotD uniqueness check is now primarily in the form validation before this function is called
+
   const puzzleDocRef = doc(firestore, DAILY_PUZZLES_COLLECTION, puzzleId);
-  const dataToUpdate: Partial<DailyPuzzle> & { wordOfTheDayDefinition?: string } = { // Ensure type compatibility
+  const dataToUpdate: Partial<DailyPuzzle> & { wordOfTheDayDefinition?: string } = { 
     wordOfTheDayText: puzzleData.wordOfTheDayText.toUpperCase(),
     wordOfTheDayPoints: puzzleData.wordOfTheDayPoints,
     seedingLetters: puzzleData.seedingLetters.toUpperCase(),
     status: puzzleData.status,
-    wordOfTheDayDefinition: puzzleData.wordOfTheDayDefinition || "No definition provided by admin.", // Add definition
+    wordOfTheDayDefinition: puzzleData.wordOfTheDayDefinition || "No definition provided by admin.",
   };
   await updateDoc(puzzleDocRef, dataToUpdate);
   return { 
     id: puzzleId, 
     ...puzzleData, 
-    puzzleDateGMT: puzzleData.puzzleDateGMT, // Keep as Date object client-side
+    puzzleDateGMT: puzzleData.puzzleDateGMT,
     wordOfTheDayText: puzzleData.wordOfTheDayText.toUpperCase(),
     seedingLetters: puzzleData.seedingLetters.toUpperCase(),
     wordOfTheDayDefinition: dataToUpdate.wordOfTheDayDefinition,
@@ -114,7 +116,7 @@ const initialFormState: AdminPuzzleFormState = {
   wordOfTheDayPoints: 0,
   seedingLetters: '',
   status: 'Upcoming',
-  wordOfTheDayDefinition: '', // Add definition
+  wordOfTheDayDefinition: '',
 };
 
 
@@ -125,22 +127,20 @@ export default function DailyPuzzleManagementPage() {
   const [isSubmittingForm, setIsSubmittingForm] = useState(false);
   const [showForm, setShowForm] = useState(false);
   const [editingPuzzleId, setEditingPuzzleId] = useState<string | null>(null);
+  const [originalEditingWotD, setOriginalEditingWotD] = useState<string | null>(null); // Store original WotD for edit checks
   const [formData, setFormData] = useState<AdminPuzzleFormState>(initialFormState);
   const [formErrors, setFormErrors] = useState<Partial<Record<keyof AdminPuzzleFormState, string>>>({});
   const [formabilityError, setFormabilityError] = useState<string>('');
 
-  // State for AI puzzle generation
   const [generationQuantity, setGenerationQuantity] = useState<number>(5); 
   const [isGeneratingSuggestions, setIsGeneratingSuggestions] = useState(false);
   const [puzzleSuggestions, setPuzzleSuggestions] = useState<ClientPuzzleSuggestion[]>([]);
   const [selectedSuggestionIds, setSelectedSuggestionIds] = useState<Set<string>>(new Set());
   const [isReRandomizing, setIsReRandomizing] = useState(false); 
 
-  // State for Fill Gaps feature
   const [isFillingGaps, setIsFillingGaps] = useState(false);
   const [isFillGapsConfirmOpen, setIsFillGapsConfirmOpen] = useState(false);
 
-  // State for Reseed All feature
   const [isReseedingAll, setIsReseedingAll] = useState(false);
   const [isReseedAllConfirmOpen, setIsReseedAllConfirmOpen] = useState(false);
 
@@ -220,21 +220,42 @@ export default function DailyPuzzleManagementPage() {
   const validateForm = () => {
     const errors: Partial<Record<keyof AdminPuzzleFormState, string>> = {};
     if (!formData.puzzleDateGMT) errors.puzzleDateGMT = "Puzzle date is required.";
-    if (!formData.wordOfTheDayText.trim()) errors.wordOfTheDayText = "Word of the Day is required.";
-    else if (formData.wordOfTheDayText.length < 6 || formData.wordOfTheDayText.length > 9) {
+    
+    const wotdTrimmed = formData.wordOfTheDayText.trim();
+    if (!wotdTrimmed) errors.wordOfTheDayText = "Word of the Day is required.";
+    else if (wotdTrimmed.length < 6 || wotdTrimmed.length > 9) {
       errors.wordOfTheDayText = "Word of the Day must be 6-9 characters.";
-    } else if (!/^[A-Z]+$/i.test(formData.wordOfTheDayText)) {
+    } else if (!/^[A-Z]+$/i.test(wotdTrimmed)) {
        errors.wordOfTheDayText = "Word of the Day must contain only English letters.";
+    } else {
+        // WotD Uniqueness Check (only if other WotD validations passed)
+        const wotdToCheck = wotdTrimmed.toUpperCase();
+        const wotdChangedDuringEdit = editingPuzzleId && originalEditingWotD && wotdToCheck !== originalEditingWotD.toUpperCase();
+        
+        if (!editingPuzzleId || wotdChangedDuringEdit) { // Check on create, or on edit if WotD changed
+            const isWotDAlreadyUsed = puzzles.some(p => 
+                p.wordOfTheDayText.toUpperCase() === wotdToCheck &&
+                (!editingPuzzleId || p.id !== editingPuzzleId) 
+            );
+            if (isWotDAlreadyUsed) {
+                errors.wordOfTheDayText = (errors.wordOfTheDayText ? errors.wordOfTheDayText + " " : "") + "This Word of the Day is already used in another puzzle.";
+            }
+        }
     }
+
     if (formData.wordOfTheDayPoints <= 0) errors.wordOfTheDayPoints = "Points must be greater than 0.";
-    if (!formData.seedingLetters.trim()) errors.seedingLetters = "Seeding letters are required.";
-    else if (formData.seedingLetters.length !== 9) errors.seedingLetters = "Exactly 9 seeding letters are required.";
-     else if (!/^[A-Z]+$/i.test(formData.seedingLetters)) {
+    
+    const seedingLettersTrimmed = formData.seedingLetters.trim();
+    if (!seedingLettersTrimmed) errors.seedingLetters = "Seeding letters are required.";
+    else if (seedingLettersTrimmed.length !== 9) errors.seedingLetters = "Exactly 9 seeding letters are required.";
+     else if (!/^[A-Z]+$/i.test(seedingLettersTrimmed)) {
        errors.seedingLetters = "Seeding letters must contain only English letters.";
     }
-    if (!formData.wordOfTheDayDefinition || formData.wordOfTheDayDefinition.trim().length === 0) {
+
+    const definitionTrimmed = formData.wordOfTheDayDefinition?.trim() ?? '';
+    if (!definitionTrimmed) {
         errors.wordOfTheDayDefinition = "Word of the Day definition is required.";
-    } else if (formData.wordOfTheDayDefinition.trim().length > 250) {
+    } else if (definitionTrimmed.length > 250) {
         errors.wordOfTheDayDefinition = "Definition cannot exceed 250 characters.";
     }
     
@@ -244,7 +265,7 @@ export default function DailyPuzzleManagementPage() {
 
   const handleFormSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!validateForm()) return;
+    if (!validateForm()) return; // validateForm now includes WotD uniqueness
     if (!checkFormability()) return;
 
     setIsSubmittingForm(true);
@@ -258,6 +279,7 @@ export default function DailyPuzzleManagementPage() {
       }
       setShowForm(false);
       setEditingPuzzleId(null);
+      setOriginalEditingWotD(null);
       setFormData(initialFormState);
       fetchPuzzles(); 
     } catch (error: any) {
@@ -272,18 +294,20 @@ export default function DailyPuzzleManagementPage() {
     setFormErrors({});
     setFormabilityError('');
     setEditingPuzzleId(null);
+    setOriginalEditingWotD(null);
     setShowForm(true);
   };
 
   const openEditForm = (puzzle: DailyPuzzle) => {
     setFormData({
-      puzzleDateGMT: puzzle.puzzleDateGMT, // Already a Date object from fetch
+      puzzleDateGMT: puzzle.puzzleDateGMT,
       wordOfTheDayText: puzzle.wordOfTheDayText,
       wordOfTheDayPoints: puzzle.wordOfTheDayPoints,
       seedingLetters: puzzle.seedingLetters,
-      status: puzzle.status === 'Expired' ? 'Upcoming' : puzzle.status, // Don't allow editing to 'Expired'
-      wordOfTheDayDefinition: puzzle.wordOfTheDayDefinition || '', // Add definition
+      status: puzzle.status === 'Expired' ? 'Upcoming' : puzzle.status,
+      wordOfTheDayDefinition: puzzle.wordOfTheDayDefinition || '',
     });
+    setOriginalEditingWotD(puzzle.wordOfTheDayText); // Store original WotD
     setFormErrors({});
     setFormabilityError('');
     setEditingPuzzleId(puzzle.id);
@@ -291,7 +315,7 @@ export default function DailyPuzzleManagementPage() {
   };
 
   const handleDelete = async (id: string, puzzleDate: Date) => {
-    setIsLoading(true); // Indicate general loading for delete action
+    setIsLoading(true);
     try {
       await deleteDailyPuzzleFromFirestore(id);
       toast({ title: "Puzzle Deleted", description: `Puzzle for ${format(puzzleDate, 'PPP')} has been deleted from Firestore.` });
@@ -303,7 +327,6 @@ export default function DailyPuzzleManagementPage() {
     }
   };
 
-  // AI Puzzle Generation Functions
   const handleGenerateSuggestions = async () => {
     if (generationQuantity < 1 || generationQuantity > 100) {
       toast({ title: "Invalid Quantity", description: "Please enter a quantity between 1 and 100.", variant: "destructive" });
@@ -322,7 +345,7 @@ export default function DailyPuzzleManagementPage() {
         })));
         toast({ title: "Suggestions Generated", description: `${result.suggestions.length} puzzle suggestions have been generated with definitions.` });
       } else {
-        toast({ title: "No Suggestions", description: "The AI didn't return any valid suggestions with definitions. Check WordsAPI key or AI flow logs.", variant: "default" });
+        toast({ title: "No Suggestions", description: "The AI didn't return any valid suggestions with definitions (possibly due to duplicates or API issues). Check WordsAPI key or AI flow logs.", variant: "default" });
       }
     } catch (error: any) {
       console.error("Error generating puzzle suggestions:", error);
@@ -343,7 +366,7 @@ export default function DailyPuzzleManagementPage() {
           wordOfTheDayText: suggestion.wordOfTheDayText,
           seedingLetters: suggestion.seedingLetters,
           wordOfTheDayDefinition: suggestion.wordOfTheDayDefinition,
-          wordOfTheDayPoints: suggestion.wordOfTheDayText.length * 10, // Auto-calculate points
+          wordOfTheDayPoints: suggestion.wordOfTheDayText.length * 10,
         }));
         toast({ title: "Words Re-randomized", description: "New WotD, Seeding Letters, and Definition populated." });
       } else {
@@ -379,7 +402,7 @@ export default function DailyPuzzleManagementPage() {
       seedingLetters: puzzleData.seedingLetters.toUpperCase(),
       status: puzzleData.status,
       puzzleDateGMT: Timestamp.fromDate(puzzleData.puzzleDateGMT),
-      wordOfTheDayDefinition: puzzleData.wordOfTheDayDefinition || "Definition from AI suggestion.", // Add definition
+      wordOfTheDayDefinition: puzzleData.wordOfTheDayDefinition || "Definition from AI suggestion.",
     };
     await setDoc(puzzleDocRef, newPuzzleForFirestore);
     return { id: docId, ...puzzleData, wordOfTheDayDefinition: newPuzzleForFirestore.wordOfTheDayDefinition };
@@ -423,7 +446,7 @@ export default function DailyPuzzleManagementPage() {
             wordOfTheDayPoints: suggestion.wordOfTheDayText.length * 10, 
             seedingLetters: suggestion.seedingLetters,
             status: 'Upcoming',
-            wordOfTheDayDefinition: suggestion.wordOfTheDayDefinition, // Use definition from suggestion
+            wordOfTheDayDefinition: suggestion.wordOfTheDayDefinition,
           };
           try {
             await saveSingleGeneratedPuzzleToFirestore(newPuzzleData);
@@ -490,7 +513,7 @@ export default function DailyPuzzleManagementPage() {
       const currentPuzzlesById = new Map(allPuzzlesFromFirestore.map(p => [p.id, p]));
 
       for (const puzzleToMove of upcomingPuzzlesToReDate) {
-        const originalPuzzleDateStr = puzzleToMove.id; // puzzle.id is already 'yyyy-MM-dd'
+        const originalPuzzleDateStr = puzzleToMove.id;
         let targetDateForThisPuzzle = new Date(currentDateToFill.getTime());
         let targetDateStr = format(targetDateForThisPuzzle, 'yyyy-MM-dd');
 
@@ -510,7 +533,7 @@ export default function DailyPuzzleManagementPage() {
             seedingLetters: puzzleToMove.seedingLetters.toUpperCase(),
             status: 'Upcoming' as const,
             puzzleDateGMT: Timestamp.fromDate(targetDateForThisPuzzle),
-            wordOfTheDayDefinition: puzzleToMove.wordOfTheDayDefinition || "No definition provided.", // Carry over definition
+            wordOfTheDayDefinition: puzzleToMove.wordOfTheDayDefinition || "No definition provided.",
           };
 
           batchCommiter.delete(oldDocRef);
@@ -545,7 +568,6 @@ export default function DailyPuzzleManagementPage() {
     }
   };
 
-  // Helper function to generate new seeding letters
   const generateNewSeedingLetters = (wotd: string): string => {
     const wotdChars = wotd.toUpperCase().split('');
     let currentLetters = [...wotdChars];
@@ -556,7 +578,6 @@ export default function DailyPuzzleManagementPage() {
       currentLetters.push(randomChar);
     }
 
-    // Fisher-Yates shuffle
     for (let i = currentLetters.length - 1; i > 0; i--) {
       const j = Math.floor(Math.random() * (i + 1));
       [currentLetters[i], currentLetters[j]] = [currentLetters[j], currentLetters[i]];
@@ -636,7 +657,7 @@ export default function DailyPuzzleManagementPage() {
                     date={formData.puzzleDateGMT} 
                     setDate={handleDateChange} 
                     disabled={(date) => 
-                      editingPuzzleId ? true : // Disable date picker if editing
+                      editingPuzzleId ? true : 
                       puzzles.some(p => 
                         format(p.puzzleDateGMT, 'yyyy-MM-dd') === format(date, 'yyyy-MM-dd')
                       )
@@ -680,11 +701,11 @@ export default function DailyPuzzleManagementPage() {
               </div>
               {formabilityError && <p className="text-sm text-destructive mt-1">{formabilityError}</p>}
                <p className="text-xs text-muted-foreground">
-                 Note: WotD existence in Master Dictionary and point accuracy should be verified. Formability from seeding letters is checked client-side.
+                 Note: WotD existence in Master Dictionary and point accuracy should be verified. Formability from seeding letters is checked client-side. Duplicate WotD check also performed.
                </p>
             </CardContent>
             <CardFooter className="flex justify-end space-x-2">
-              <Button type="button" variant="outline" onClick={() => { setShowForm(false); setEditingPuzzleId(null); }} disabled={isSubmittingForm || isReRandomizing}>Cancel</Button>
+              <Button type="button" variant="outline" onClick={() => { setShowForm(false); setEditingPuzzleId(null); setOriginalEditingWotD(null); }} disabled={isSubmittingForm || isReRandomizing}>Cancel</Button>
               <Button type="submit" disabled={!!formabilityError || isSubmittingForm || isReRandomizing}>
                 {isSubmittingForm ? <Loader2 className="mr-2 h-4 w-4 animate-spin"/> : (editingPuzzleId ? 'Update Puzzle' : 'Create Puzzle')}
               </Button>
@@ -698,7 +719,7 @@ export default function DailyPuzzleManagementPage() {
           <CardTitle>Generate Puzzle Suggestions (AI)</CardTitle>
           <CardDescription>
             Let AI generate new Word of the Day (with definitions from WordsAPI) and Seeding Letter combinations.
-            Selected puzzles will be scheduled for the next available future dates in Firestore.
+            Selected puzzles will be scheduled for the next available future dates in Firestore. AI will attempt to avoid duplicate Words of the Day.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">

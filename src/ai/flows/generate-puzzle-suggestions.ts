@@ -10,6 +10,9 @@
 
 import {ai} from '@/ai/genkit';
 import {z} from 'genkit';
+import { firestore } from '@/lib/firebase'; // Added Firestore import
+import { collection, getDocs } from 'firebase/firestore'; // Added Firestore functions
+import type { DailyPuzzle } from '@/types'; // Added DailyPuzzle type import
 
 // Strict schema for the flow's final output and for external types
 const PuzzleSuggestionSchema = z.object({
@@ -57,6 +60,7 @@ Constraints for each suggestion:
     *   Must be a common English word.
     *   Must be between 6 and 9 letters long (inclusive).
     *   Must contain only uppercase English letters.
+    *   **Critically, try to ensure the 'Word of the Day' you generate is not a common word that might have already been used for a previous puzzle. Aim for fresh, interesting words.**
 2.  **Seeding Letters (seedingLetters)**:
     *   Must be a string of EXACTLY 9 uppercase English letters. Double-check this length constraint.
     *   The Word of the Day *must* be formable using only the letters provided in Seeding Letters, respecting letter frequencies. For example, if WotD is "APPLE" and Seeding Letters is "APLEXYZQS", this is invalid because "APPLE" needs two 'P's but Seeding Letters only has one. If Seeding Letters is "APLEXPYZS", this is valid.
@@ -81,6 +85,16 @@ const generatePuzzleSuggestionsFlow = ai.defineFlow(
     outputSchema: GeneratePuzzleSuggestionsOutputSchema, // Flow's final output MUST be strict (including definition)
   },
   async (input) => {
+    // Fetch existing Word of the Day texts from Firestore to avoid duplicates
+    const existingPuzzlesSnap = await getDocs(collection(firestore, 'DailyPuzzles'));
+    const existingWotDs = new Set<string>();
+    existingPuzzlesSnap.forEach(doc => {
+      const puzzle = doc.data() as Partial<DailyPuzzle>;
+      if (puzzle.wordOfTheDayText) {
+        existingWotDs.add(puzzle.wordOfTheDayText.toUpperCase());
+      }
+    });
+
     const {output: rawOutputFromPrompt} = await puzzleGenerationPrompt(input); 
 
     if (!rawOutputFromPrompt || !rawOutputFromPrompt.suggestions) {
@@ -92,13 +106,17 @@ const generatePuzzleSuggestionsFlow = ai.defineFlow(
 
     if (!apiKey || apiKey === "YOUR_WORDSAPI_KEY_PLACEHOLDER" || apiKey.length < 10) {
       console.warn("WordsAPI key not configured or is placeholder. Cannot fetch definitions. No suggestions will be returned.");
-      // Early exit if API key is not usable, as definitions are now a required part of the output schema.
       return { suggestions: [] };
     }
 
     for (const rawSuggestion of rawOutputFromPrompt.suggestions) {
       const wordOfTheDayText = rawSuggestion.wordOfTheDayText.toUpperCase().trim();
       const seedingLetters = rawSuggestion.seedingLetters.toUpperCase().trim();
+
+      if (existingWotDs.has(wordOfTheDayText)) {
+        console.warn(`AI suggested WotD '${wordOfTheDayText}' which already exists in DailyPuzzles. Filtering out.`);
+        continue;
+      }
 
       if (!/^[A-Z]{6,9}$/.test(wordOfTheDayText)) {
         console.warn(`AI returned WotD '${wordOfTheDayText}' with invalid format/length. Filtering out.`);
@@ -128,10 +146,8 @@ const generatePuzzleSuggestionsFlow = ai.defineFlow(
           continue;
       }
       
-      // Fetch definition from WordsAPI
       let wordOfTheDayDefinition = "";
       try {
-        // Using /definitions endpoint as it's more direct for getting just definitions.
         const response = await fetch(`https://wordsapiv1.p.rapidapi.com/words/${wordOfTheDayText.toLowerCase()}/definitions`, {
           method: 'GET',
           headers: {
@@ -142,7 +158,6 @@ const generatePuzzleSuggestionsFlow = ai.defineFlow(
 
         if (response.ok) {
           const data = await response.json();
-          // WordsAPI /definitions endpoint returns { word: "...", definitions: [{ definition: "...", partOfSpeech: "..."}] }
           if (data.definitions && data.definitions.length > 0 && data.definitions[0].definition) {
             wordOfTheDayDefinition = data.definitions[0].definition;
           } else {
@@ -158,7 +173,7 @@ const generatePuzzleSuggestionsFlow = ai.defineFlow(
         continue; 
       }
 
-      if (wordOfTheDayDefinition) { // Ensure definition was successfully fetched
+      if (wordOfTheDayDefinition) {
         strictlyValidSuggestionsWithDefinitions.push({
           wordOfTheDayText,
           seedingLetters,
@@ -168,7 +183,7 @@ const generatePuzzleSuggestionsFlow = ai.defineFlow(
     }
     
     if (strictlyValidSuggestionsWithDefinitions.length === 0 && rawOutputFromPrompt.suggestions.length > 0) {
-        console.warn("All suggestions from AI were filtered out due to validation failures or inability to fetch definitions after prompt execution.");
+        console.warn("All suggestions from AI were filtered out due to validation failures, being duplicates, or inability to fetch definitions after prompt execution.");
     }
     
     return { suggestions: strictlyValidSuggestionsWithDefinitions };
