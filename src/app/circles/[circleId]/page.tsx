@@ -12,12 +12,12 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter } from '@/components/ui/card';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"; // Removed DialogTrigger from here
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { useToast } from '@/hooks/use-toast';
-import { Loader2, Users, Settings, LogOut, Trash2, UserPlus, Link2, AlertTriangle, Copy, Check, Mail, UserSearch } from 'lucide-react';
+import { Loader2, Users, Settings, LogOut, Trash2, UserPlus, Link2, AlertTriangle, Copy, Check, Mail, UserSearch, Crown, TrendingUp, UserCheck } from 'lucide-react';
 import { leaveCircleAction, deleteCircleAction, sendCircleInviteAction } from '@/app/circles/actions';
 import { format } from 'date-fns';
 
@@ -218,7 +218,17 @@ export default function CircleDetailsPage() {
     );
   }
   
-  const canManage = circleDetails.currentUserRole === 'Admin';
+  const canManageSettings = circleDetails.currentUserRole === 'Admin';
+  const canInviteMembers = circleDetails.currentUserRole === 'Admin' || circleDetails.currentUserRole === 'Influencer';
+
+  const getRoleBadge = (role: CircleMemberRole) => {
+    switch (role) {
+      case 'Admin': return <Badge className="bg-primary/20 text-primary flex items-center gap-1"><Crown className="h-3 w-3" />Admin</Badge>;
+      case 'Influencer': return <Badge className="bg-accent/20 text-accent-foreground flex items-center gap-1"><TrendingUp className="h-3 w-3" />Influencer</Badge>;
+      case 'Member': return <Badge variant="secondary" className="flex items-center gap-1"><UserCheck className="h-3 w-3" />Member</Badge>;
+      default: return <Badge variant="outline">{role}</Badge>;
+    }
+  };
 
   return (
     <div className="space-y-8">
@@ -234,7 +244,7 @@ export default function CircleDetailsPage() {
               <p className="text-sm text-muted-foreground mt-2">Created by: {circleDetails.members.find(m => m.userId === circleDetails.creatorUserID)?.username || 'Unknown'}</p>
             </div>
             <div className="flex flex-col sm:flex-row gap-2 items-start sm:items-center">
-               {canManage && (
+               {canManageSettings && (
                 <Button variant="outline" size="sm" asChild>
                   <Link href={`/circles/${circleId}/settings`}>
                     <Settings className="mr-2 h-4 w-4" /> Circle Settings
@@ -283,7 +293,7 @@ export default function CircleDetailsPage() {
                     <div key={member.userId} className="flex items-center justify-between p-3 bg-muted/20 rounded-md">
                       <div className="flex items-center space-x-3">
                         <Avatar className="h-10 w-10">
-                           <AvatarImage src={undefined} />
+                           <AvatarImage src={member.photoURL} />
                            <AvatarFallback>{getInitials(member.username)}</AvatarFallback>
                         </Avatar>
                         <div>
@@ -291,9 +301,7 @@ export default function CircleDetailsPage() {
                           <p className="text-xs text-muted-foreground">Joined: {format(member.dateJoined.toDate(), 'PP')}</p>
                         </div>
                       </div>
-                      <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${member.role === 'Admin' ? 'bg-primary/20 text-primary' : 'bg-secondary text-secondary-foreground'}`}>
-                        {member.role}
-                      </span>
+                      {getRoleBadge(member.role)}
                     </div>
                   ))}
                 </CardContent>
@@ -319,7 +327,7 @@ export default function CircleDetailsPage() {
         </CardContent>
         <CardFooter className="p-6 flex flex-col sm:flex-row justify-between items-center gap-3 border-t">
             <div className="flex gap-2">
-                {canManage && (
+                {canInviteMembers && (
                     <Button variant="default" onClick={() => setShowInviteDialog(true)}>
                         <UserPlus className="mr-2 h-4 w-4" /> Invite Members
                     </Button>
@@ -332,7 +340,7 @@ export default function CircleDetailsPage() {
                     <LogOut className="mr-2 h-4 w-4" /> Leave Circle
                     </Button>
                 )}
-                {canManage && (
+                {canManageSettings && (
                      <Button variant="destructive" onClick={handleDeleteCircle}>
                         <Trash2 className="mr-2 h-4 w-4" /> Delete Circle
                     </Button>
@@ -341,7 +349,6 @@ export default function CircleDetailsPage() {
         </CardFooter>
       </Card>
 
-      {/* Invite Dialog - Now always in the DOM but visibility controlled by showInviteDialog */}
       <Dialog open={showInviteDialog} onOpenChange={(open) => { setShowInviteDialog(open); if (!open) setInviteeIdentifier(''); }}>
           <DialogContent>
             <DialogHeader>
@@ -400,7 +407,7 @@ export default function CircleDetailsPage() {
           </DialogContent>
       </Dialog>
 
-       {(circleDetails.members.length < 3 && currentUser) && (
+       {(circleDetails.members.length < 3 && currentUser && canInviteMembers) && (
         <Card className="mt-6 bg-accent/30 border-accent">
           <CardContent className="p-6 text-center">
             <h3 className="text-lg font-semibold text-accent-foreground">Boost Our Circle!</h3>
@@ -416,5 +423,3 @@ export default function CircleDetailsPage() {
     </div>
   );
 }
-
-    

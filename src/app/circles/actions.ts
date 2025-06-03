@@ -3,7 +3,7 @@
 
 import { firestore } from '@/lib/firebase';
 import { collection, addDoc, serverTimestamp, doc, writeBatch, query, where, getDocs, updateDoc, deleteDoc, runTransaction, increment, getDoc, Timestamp } from 'firebase/firestore';
-import type { Circle, CircleMember, CircleInvite, UserProfile, CircleInviteStatus } from '@/types';
+import type { Circle, CircleMember, CircleInvite, UserProfile, CircleInviteStatus, CircleMemberRole } from '@/types';
 import { customAlphabet } from 'nanoid';
 
 const nanoid = customAlphabet('0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz', 10);
@@ -139,6 +139,7 @@ export async function leaveCircleAction(payload: CircleActionPayload): Promise<{
             if (!memberSnap.exists()) throw new Error("You are not a member of this circle.");
             
             if (circleData.creatorUserID === payload.userId && circleData.memberCount <= 1) {
+                // TODO: Implement logic to promote another admin or require deletion
                 throw new Error("As the sole admin/creator, you must delete the circle or appoint another admin before leaving.");
             }
 
@@ -165,6 +166,7 @@ export async function deleteCircleAction(payload: DeleteCirclePayload): Promise<
         if (!circleSnap.exists()) return { success: false, error: "Circle not found." };
         
         const circleData = circleSnap.data() as Circle;
+        // Only creator or an Admin can delete
         if (circleData.creatorUserID !== payload.requestingUserId) {
             const memberQuery = query(collection(firestore, 'CircleMembers'), 
                 where('circleId', '==', payload.circleId), 
@@ -205,7 +207,7 @@ interface SendCircleInvitePayload {
   inviterUsername: string;
   inviteeUserId?: string;
   inviteeEmail?: string;
-  inviteeUsername?: string;
+  inviteeUsername?: string; // Target username for invitation
 }
 
 export async function sendCircleInviteAction(payload: SendCircleInvitePayload): Promise<{ success: boolean; error?: string }> {
@@ -217,17 +219,27 @@ export async function sendCircleInviteAction(payload: SendCircleInvitePayload): 
         return { success: false, error: "Circle not found." };
     }
     const circleData = circleDocSnap.data() as Circle;
-    if (circleData.creatorUserID !== inviterUserId) {
-      const memberQuery = query(collection(firestore, 'CircleMembers'), 
-        where('circleId', '==', circleId), 
-        where('userId', '==', inviterUserId),
-        where('role', '==', 'Admin'));
-      const memberSnap = await getDocs(memberQuery);
-      if (memberSnap.empty) {
-        return { success: false, error: "You don't have permission to invite members to this circle." };
-      }
+
+    // Permission check: Inviter must be Admin or Influencer, or the circle creator
+    let canInvite = false;
+    if (circleData.creatorUserID === inviterUserId) {
+        canInvite = true;
+    } else {
+        const inviterMemberQuery = query(collection(firestore, 'CircleMembers'), 
+            where('circleId', '==', circleId), 
+            where('userId', '==', inviterUserId),
+            where('role', 'in', ['Admin', 'Influencer'])
+        );
+        const inviterMemberSnap = await getDocs(inviterMemberQuery);
+        if (!inviterMemberSnap.empty) {
+            canInvite = true;
+        }
     }
 
+    if (!canInvite) {
+        return { success: false, error: "You don't have permission to invite members to this circle." };
+    }
+    
     let finalInviteeUserId: string | undefined = inviteeUserId;
     let finalInviteeEmail: string | undefined = inviteeEmail?.toLowerCase();
 
@@ -345,14 +357,15 @@ export async function respondToCircleInviteAction(payload: RespondToCircleInvite
       let inviterSnap;
       const circleRef = doc(firestore, 'Circles', inviteData.circleId);
       const inviterProfileRef = doc(firestore, 'Users', inviteData.inviterUserId);
-
+      
+      // Read circle and inviter profile early, regardless of response type, to adhere to transaction rules
       if (payload.responseType === 'Accepted') {
         circleSnap = await transaction.get(circleRef);
         if (!circleSnap.exists()) {
           throw new Error("The circle no longer exists.");
         }
         inviterSnap = await transaction.get(inviterProfileRef);
-        // inviterSnap existence check is done before write
+         // inviterSnap existence check is done before write
       }
       // --- END READ PHASE ---
 
@@ -573,5 +586,62 @@ export async function userResendCircleInviteAction(payload: UserManageInvitePayl
   } catch (error: any) {
     console.error("Error in userResendCircleInviteAction:", error);
     return { success: false, error: error.message || "Failed to resend invite." };
+  }
+}
+
+
+interface UpdateMemberRolePayload {
+  circleId: string;
+  requestingUserId: string; // User making the change (must be Admin)
+  targetUserId: string;    // User whose role is being changed
+  newRole: 'Member' | 'Influencer'; // Allowed roles to change to/from via this action
+}
+
+export async function updateMemberRoleAction(payload: UpdateMemberRolePayload): Promise<{ success: boolean; error?: string }> {
+  try {
+    const { circleId, requestingUserId, targetUserId, newRole } = payload;
+
+    if (requestingUserId === targetUserId) {
+      return { success: false, error: "You cannot change your own role using this function." };
+    }
+
+    // 1. Verify requestingUser is an Admin of this circle
+    const requesterMemberRef = doc(firestore, 'CircleMembers', `${circleId}_${requestingUserId}`);
+    const requesterMemberSnap = await getDoc(requesterMemberRef);
+    if (!requesterMemberSnap.exists() || requesterMemberSnap.data()?.role !== 'Admin') {
+      return { success: false, error: "You do not have permission to manage roles in this circle." };
+    }
+
+    // 2. Verify targetUser is a member of this circle and not the creator trying to be demoted from Admin
+    const targetMemberRef = doc(firestore, 'CircleMembers', `${circleId}_${targetUserId}`);
+    const targetMemberSnap = await getDoc(targetMemberRef);
+    if (!targetMemberSnap.exists()) {
+      return { success: false, error: "Target user is not a member of this circle." };
+    }
+    const targetMemberData = targetMemberSnap.data() as CircleMember;
+    if (targetMemberData.role === 'Admin') {
+        return { success: false, error: "Admin roles cannot be changed through this action. Circle creator is always an Admin."}
+    }
+
+    // 3. Update the role
+    await updateDoc(targetMemberRef, { role: newRole });
+
+    // Optional: Send a notification to the target user about their role change
+    const notificationPayload: Omit<AppNotification, 'id' | 'dateCreated'> = {
+      userId: targetUserId,
+      message: `Your role in circle "${requesterMemberSnap.data()?.circleName || circleId}" has been changed to ${newRole}.`,
+      type: 'CircleAdminAction',
+      relatedEntityId: circleId,
+      isRead: false,
+      link: `/circles/${circleId}`,
+    };
+    await addDoc(collection(firestore, 'Notifications'), { ...notificationPayload, dateCreated: serverTimestamp() });
+
+
+    return { success: true };
+
+  } catch (error: any) {
+    console.error("Error in updateMemberRoleAction:", error);
+    return { success: false, error: error.message || "Failed to update member role." };
   }
 }

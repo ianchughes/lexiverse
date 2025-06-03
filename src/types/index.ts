@@ -136,7 +136,7 @@ export type { AIPuzzleSuggestionFromFlow as AIPuzzleSuggestionType };
 
 // --- Circles Feature Types ---
 export type CircleStatus = 'Active' | 'Barred_NameIssue' | 'Deleted_ByUser' | 'Deleted_ByAdmin';
-export type CircleMemberRole = 'Admin' | 'Member';
+export type CircleMemberRole = 'Admin' | 'Member' | 'Influencer'; // Added 'Influencer'
 
 export interface Circle {
   id: string; // Firestore Document ID
@@ -153,12 +153,13 @@ export interface Circle {
 }
 
 export interface CircleMember {
-  id?: string; // Firestore Document ID (e.g., UserID for a subcollection under Circle, or CircleID_UserID for root collection)
+  id?: string; // Firestore Document ID (e.g., CircleID_UserID for root collection)
   circleId: string;
   userId: string;
   username: string; // Denormalized for display
   role: CircleMemberRole;
   dateJoined: Timestamp;
+  photoURL?: string; // Denormalized for display
 }
 
 export type CircleInviteStatus = 'Sent' | 'SentToEmail' | 'Accepted' | 'Declined' | 'Expired';
@@ -264,5 +265,3 @@ export interface WordTransfer {
   expiresAt: Timestamp;
   respondedAt?: Timestamp;
 }
-
-    

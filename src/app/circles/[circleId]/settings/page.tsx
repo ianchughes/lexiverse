@@ -6,12 +6,12 @@ import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { useAuth } from '@/contexts/AuthContext';
 import { firestore } from '@/lib/firebase';
-import { doc, getDoc, updateDoc, query, collection, where, getDocs } from 'firebase/firestore';
-import type { Circle, CircleMemberRole } from '@/types';
+import { doc, getDoc, updateDoc, query, collection, where, getDocs, orderBy } from 'firebase/firestore';
+import type { Circle, CircleMember, CircleMemberRole } from '@/types';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
-import { amendCircleDetailsAction } from '@/app/circles/actions';
+import { amendCircleDetailsAction, updateMemberRoleAction } from '@/app/circles/actions';
 
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -21,7 +21,10 @@ import { Switch } from '@/components/ui/switch';
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage, FormDescription } from '@/components/ui/form';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from '@/components/ui/card';
 import { useToast } from '@/hooks/use-toast';
-import { Loader2, Save, AlertTriangle, ArrowLeft } from 'lucide-react';
+import { Loader2, Save, AlertTriangle, ArrowLeft, Users, ShieldCheck, Crown, UserCheck, TrendingUp } from 'lucide-react';
+import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Separator } from '@/components/ui/separator';
 
 const editCircleFormSchema = z.object({
   circleName: z.string().min(3, { message: "Circle name must be at least 3 characters." }).max(50, { message: "Circle name cannot exceed 50 characters." }),
@@ -30,6 +33,12 @@ const editCircleFormSchema = z.object({
 });
 
 type EditCircleFormValues = z.infer<typeof editCircleFormSchema>;
+
+// Helper function to get initials
+const getInitials = (name?: string) => {
+  if (!name) return 'U';
+  return name.split(' ').map(n => n[0]).join('').toUpperCase().substring(0, 2);
+};
 
 export default function EditCirclePage() {
   const params = useParams();
@@ -40,9 +49,12 @@ export default function EditCirclePage() {
   const { toast } = useToast();
   
   const [circle, setCircle] = useState<Circle | null>(null);
+  const [members, setMembers] = useState<CircleMember[]>([]);
   const [isLoadingPage, setIsLoadingPage] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [processingMemberRole, setProcessingMemberRole] = useState<string | null>(null);
+
 
   const form = useForm<EditCircleFormValues>({
     resolver: zodResolver(editCircleFormSchema),
@@ -53,10 +65,10 @@ export default function EditCirclePage() {
     },
   });
 
-  const fetchCircleData = useCallback(async () => {
+  const fetchCircleAndMembersData = useCallback(async () => {
     if (!circleId || !currentUser) {
       setIsLoadingPage(false);
-      if(!currentUser && !isLoadingAuth) setError("You must be logged in to edit a circle.");
+      if(!currentUser && !isLoadingAuth) setError("You must be logged in to manage a circle.");
       return;
     }
     setIsLoadingPage(true);
@@ -69,21 +81,6 @@ export default function EditCirclePage() {
         throw new Error("Circle not found.");
       }
       const circleData = circleSnap.data() as Circle;
-
-      // Verify user is admin of this circle
-      const memberDocRef = doc(firestore, `CircleMembers/${currentUser.uid}_${circleId}`); // Or your specific member ID structure
-      // A more robust way: query CircleMembers collection
-      const membersQuery = query(collection(firestore, 'CircleMembers'), 
-        where('circleId', '==', circleId), 
-        where('userId', '==', currentUser.uid),
-        where('role', '==', 'Admin')
-      );
-      const memberSnap = await getDocs(membersQuery);
-
-      if (memberSnap.empty && circleData.creatorUserID !== currentUser.uid) { // Check creator too
-         throw new Error("You do not have permission to edit this circle.");
-      }
-      
       setCircle(circleData);
       form.reset({
         circleName: circleData.circleName,
@@ -91,9 +88,31 @@ export default function EditCirclePage() {
         isPublic: circleData.isPublic,
       });
 
+      // Fetch members
+      const membersQuery = query(
+        collection(firestore, 'CircleMembers'), 
+        where('circleId', '==', circleId),
+        orderBy('dateJoined', 'asc') // Optional: order by join date
+      );
+      const membersSnap = await getDocs(membersQuery);
+      const fetchedMembers: CircleMember[] = [];
+      let currentUserIsAdmin = false;
+      membersSnap.forEach(docSnap => {
+        const member = { id: docSnap.id, ...docSnap.data() } as CircleMember;
+        fetchedMembers.push(member);
+        if (member.userId === currentUser.uid && member.role === 'Admin') {
+          currentUserIsAdmin = true;
+        }
+      });
+      setMembers(fetchedMembers);
+
+      if (!currentUserIsAdmin && circleData.creatorUserID !== currentUser.uid) {
+         throw new Error("You do not have permission to manage this circle.");
+      }
+
     } catch (err: any) {
-      console.error("Error fetching circle data:", err);
-      setError(err.message || "Could not load circle data for editing.");
+      console.error("Error fetching circle/members data:", err);
+      setError(err.message || "Could not load circle data for management.");
     } finally {
       setIsLoadingPage(false);
     }
@@ -101,9 +120,9 @@ export default function EditCirclePage() {
 
   useEffect(() => {
     if (!isLoadingAuth) {
-      fetchCircleData();
+      fetchCircleAndMembersData();
     }
-  }, [fetchCircleData, isLoadingAuth]);
+  }, [fetchCircleAndMembersData, isLoadingAuth]);
 
 
   async function onSubmit(values: EditCircleFormValues) {
@@ -128,7 +147,8 @@ export default function EditCirclePage() {
           title: "Circle Updated!",
           description: `Circle "${values.circleName}" has been successfully updated.`,
         });
-        router.push(`/circles/${circleId}`); // Navigate back to circle details
+        // Optionally re-fetch data if circleName change affects header
+        setCircle(prev => prev ? {...prev, ...values} : null);
       } else {
         throw new Error(result.error || "Failed to update circle.");
       }
@@ -143,7 +163,37 @@ export default function EditCirclePage() {
       setIsSubmitting(false);
     }
   }
+
+  const handleRoleChange = async (targetUserId: string, newRole: 'Member' | 'Influencer') => {
+    if (!currentUser || !circleId) return;
+    setProcessingMemberRole(targetUserId);
+    try {
+      const result = await updateMemberRoleAction({
+        circleId,
+        requestingUserId: currentUser.uid,
+        targetUserId,
+        newRole
+      });
+      if (result.success) {
+        toast({ title: "Role Updated", description: `Member's role changed to ${newRole}.`});
+        fetchCircleAndMembersData(); // Refresh member list
+      } else {
+        throw new Error(result.error || "Failed to update role.");
+      }
+    } catch (error: any) {
+       toast({ title: "Role Update Failed", description: error.message, variant: "destructive" });
+    } finally {
+      setProcessingMemberRole(null);
+    }
+  };
   
+  const getRoleIcon = (role: CircleMemberRole) => {
+    if (role === 'Admin') return <Crown className="h-4 w-4 text-primary" />;
+    if (role === 'Influencer') return <TrendingUp className="h-4 w-4 text-accent" />;
+    return <UserCheck className="h-4 w-4 text-muted-foreground" />;
+  };
+
+
   if (isLoadingAuth || isLoadingPage) {
     return <div className="flex justify-center items-center h-64"><Loader2 className="h-12 w-12 animate-spin text-primary" /></div>;
   }
@@ -177,17 +227,17 @@ export default function EditCirclePage() {
   }
 
   return (
-    <div className="max-w-2xl mx-auto">
-      <Button variant="outline" asChild className="mb-6">
+    <div className="max-w-2xl mx-auto space-y-8">
+      <Button variant="outline" asChild className="mb-6 print:hidden">
          <Link href={`/circles/${circleId}`}>
            <ArrowLeft className="mr-2 h-4 w-4" /> Back to Circle Details
         </Link>
       </Button>
       <Card className="shadow-lg">
         <CardHeader>
-          <CardTitle className="text-3xl font-headline">Edit Circle: {circle.circleName}</CardTitle>
+          <CardTitle className="text-3xl font-headline">Settings for: {circle.circleName}</CardTitle>
           <CardDescription>
-            Update the details for your circle.
+            Update the details and manage members for your circle.
           </CardDescription>
         </CardHeader>
         <Form {...form}>
@@ -252,13 +302,68 @@ export default function EditCirclePage() {
                 ) : (
                   <Save className="mr-2 h-5 w-5" />
                 )}
-                Save Changes
+                Save General Settings
               </Button>
             </CardFooter>
           </form>
         </Form>
       </Card>
+
+      <Separator />
+
+      <Card className="shadow-lg">
+        <CardHeader>
+          <CardTitle className="flex items-center"><Users className="mr-2" /> Manage Members</CardTitle>
+          <CardDescription>Promote members to 'Influencer' to allow them to invite others, or demote them.</CardDescription>
+        </CardHeader>
+        <CardContent>
+          {members.length === 0 ? (
+            <p className="text-muted-foreground">No members in this circle yet (besides you).</p>
+          ) : (
+            <div className="space-y-4">
+              {members.filter(m => m.userId !== currentUser?.uid).map(member => ( // Exclude current user (admin) from list
+                <div key={member.userId} className="flex flex-col sm:flex-row items-start sm:items-center justify-between p-3 border rounded-md bg-muted/20 gap-3">
+                  <div className="flex items-center space-x-3">
+                    <Avatar className="h-10 w-10">
+                      <AvatarImage src={member.photoURL} />
+                      <AvatarFallback>{getInitials(member.username)}</AvatarFallback>
+                    </Avatar>
+                    <div>
+                      <p className="font-medium">{member.username}</p>
+                      <div className="flex items-center gap-1 text-xs text-muted-foreground">
+                        {getRoleIcon(member.role)} {member.role}
+                      </div>
+                    </div>
+                  </div>
+                  {member.role !== 'Admin' && ( // Prevent changing Admin role here
+                    <Select
+                      value={member.role}
+                      onValueChange={(newRole: 'Member' | 'Influencer') => handleRoleChange(member.userId, newRole)}
+                      disabled={processingMemberRole === member.userId}
+                    >
+                      <SelectTrigger className="w-full sm:w-[180px]">
+                        <SelectValue placeholder="Change role" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="Member">Member</SelectItem>
+                        <SelectItem value="Influencer">Influencer</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  )}
+                  {member.role === 'Admin' && (
+                    <Badge variant="secondary">Admin (Creator)</Badge>
+                  )}
+                  {processingMemberRole === member.userId && <Loader2 className="h-5 w-5 animate-spin" />}
+                </div>
+              ))}
+            </div>
+          )}
+        </CardContent>
+        <CardFooter>
+            <p className="text-xs text-muted-foreground">Admins (circle creators) cannot have their role changed here.</p>
+        </CardFooter>
+      </Card>
+
     </div>
   );
 }
-

@@ -5,7 +5,7 @@
 // and providing forms/actions to manage them as per spec (3.2 - 3.6).
 
 import { useEffect, useState, useCallback } from 'react';
-import { useParams, useRouter } ROUGHLY_IMPLEMENTED_NEEDS_TYPING
+import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { useAuth } from '@/contexts/AuthContext';
 import { firestore } from '@/lib/firebase';
@@ -14,8 +14,9 @@ import type { Circle, CircleMember, CircleMemberRole } from '@/types';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
-import { Loader2, ArrowLeft, Users, Settings, Edit3, AlertTriangle } from 'lucide-react';
+import { Loader2, ArrowLeft, Users, Settings, Edit3, AlertTriangle, Crown, TrendingUp, UserCheck } from 'lucide-react';
 import { format } from 'date-fns';
+import { Badge } from '@/components/ui/badge';
 
 // Helper function to get initials
 const getInitials = (name?: string) => {
@@ -67,6 +68,15 @@ export default function AdminCircleDetailPage() {
   useEffect(() => {
     fetchData();
   }, [fetchData]);
+  
+  const getRoleBadge = (role: CircleMemberRole) => {
+    switch (role) {
+      case 'Admin': return <Badge className="bg-primary/20 text-primary flex items-center gap-1"><Crown className="h-3 w-3" />Admin</Badge>;
+      case 'Influencer': return <Badge className="bg-accent/20 text-accent-foreground flex items-center gap-1"><TrendingUp className="h-3 w-3" />Influencer</Badge>;
+      case 'Member': return <Badge variant="secondary" className="flex items-center gap-1"><UserCheck className="h-3 w-3" />Member</Badge>;
+      default: return <Badge variant="outline">{role}</Badge>;
+    }
+  };
 
   if (isLoadingAuth || isLoadingPage) {
     return <div className="flex justify-center items-center h-64"><Loader2 className="h-12 w-12 animate-spin text-primary" /></div>;
@@ -139,7 +149,7 @@ export default function AdminCircleDetailPage() {
                  <div key={member.userId} className="flex items-center justify-between p-3 bg-muted/20 rounded-md">
                     <div className="flex items-center space-x-3">
                     <Avatar className="h-10 w-10">
-                        <AvatarImage src={undefined /* Fetch avatar if available */} />
+                        <AvatarImage src={member.photoURL} />
                         <AvatarFallback>{getInitials(member.username)}</AvatarFallback>
                     </Avatar>
                     <div>
@@ -147,10 +157,7 @@ export default function AdminCircleDetailPage() {
                         <p className="text-xs text-muted-foreground">Joined: {format(member.dateJoined.toDate(), 'PP')}</p>
                     </div>
                     </div>
-                    <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${member.role === 'Admin' ? 'bg-primary/20 text-primary' : 'bg-secondary text-secondary-foreground'}`}>
-                    {member.role}
-                    </span>
-                    {/* Add admin actions per member (e.g., change role, remove) */}
+                    {getRoleBadge(member.role)}
                 </div>
               ))}
             </div>
