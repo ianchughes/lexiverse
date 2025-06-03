@@ -107,7 +107,7 @@ export default function CreateCirclePage() {
             <PlusCircle className="mr-3 h-8 w-8 text-primary" /> Create a New Circle
           </CardTitle>
           <CardDescription>
-            Build your Lexiverse team! Choose a name, set privacy, and start inviting members.
+            Build your LexiVerse team! Choose a name, set privacy, and start inviting members.
           </CardDescription>
         </CardHeader>
         <Form {...form}>
@@ -199,3 +199,4 @@ export default function CreateCirclePage() {
     </div>
   );
 }
+

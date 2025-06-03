@@ -28,7 +28,7 @@ export function SuggestionsBot() {
   useEffect(() => {
     if (isOpen && messages.length === 0 && !isLoading) {
         // Initial welcome message from the bot
-        setMessages([{ id: crypto.randomUUID(), text: "Hi there! I'm the Lexiverse suggestions bot. Have any ideas to make the game better? Let me know!", sender: 'bot' }]);
+        setMessages([{ id: crypto.randomUUID(), text: "Hi there! I'm the LexiVerse suggestions bot. Have any ideas to make the game better? Let me know!", sender: 'bot' }]);
     }
   }, [isOpen, messages.length, isLoading]);
 
@@ -174,3 +174,4 @@ export function SuggestionsBot() {
     </>
   );
 }
+

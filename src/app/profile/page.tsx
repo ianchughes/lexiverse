@@ -268,7 +268,7 @@ export default function ProfilePage() {
             Words You Own ({ownedWords.length})
           </CardTitle>
           <CardDescription>
-            Words you were the first to submit and are now part of Lexiverse! You can transfer ownership to another user.
+            Words you were the first to submit and are now part of LexiVerse! You can transfer ownership to another user.
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -367,3 +367,4 @@ export default function ProfilePage() {
     </div>
   );
 }
+

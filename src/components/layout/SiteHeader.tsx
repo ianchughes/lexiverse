@@ -41,7 +41,7 @@ export function SiteHeader() {
       <div className="container flex h-16 max-w-screen-2xl items-center">
         <Link href="/" className="flex items-center space-x-2 mr-auto">
           <BookText className="h-6 w-6 text-primary" />
-          <span className="font-headline text-2xl font-bold text-primary">Lexiverse</span>
+          <span className="font-headline text-2xl font-bold text-primary">LexiVerse</span>
         </Link>
 
         <nav className="flex items-center space-x-3">
@@ -109,3 +109,4 @@ export function SiteHeader() {
     </header>
   );
 }
+

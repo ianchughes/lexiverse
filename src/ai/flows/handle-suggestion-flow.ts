@@ -36,7 +36,7 @@ const suggestionPrompt = ai.definePrompt({
   name: 'handleSuggestionPrompt',
   input: {schema: HandleSuggestionInputSchema},
   output: {schema: HandleSuggestionOutputSchema},
-  prompt: `You are a friendly and helpful suggestions bot for a word puzzle game called Lexiverse.
+  prompt: `You are a friendly and helpful suggestions bot for a word puzzle game called LexiVerse.
 Your goal is to encourage users to provide feedback and make them feel heard.
 
 Conversation History (if any):
@@ -98,3 +98,4 @@ const handleSuggestionFlow = ai.defineFlow(
     return {response: botResponseText};
   }
 );
+

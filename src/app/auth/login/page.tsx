@@ -44,7 +44,7 @@ export default function LoginPage() {
       await signInWithEmailAndPassword(auth, values.email, values.password);
       toast({
         title: "Login Successful!",
-        description: "Welcome back to Lexiverse!",
+        description: "Welcome back to LexiVerse!",
       });
       router.push('/'); // Navigate to homepage or dashboard
     } catch (error: any) {
@@ -85,7 +85,7 @@ export default function LoginPage() {
             <LogIn className="h-8 w-8 text-primary-foreground" />
           </div>
           <CardTitle className="text-3xl font-headline">Welcome Back!</CardTitle>
-          <CardDescription>Log in to continue your Lexiverse journey.</CardDescription>
+          <CardDescription>Log in to continue your LexiVerse journey.</CardDescription>
         </CardHeader>
         <CardContent>
           <Form {...form}>
@@ -143,3 +143,4 @@ export default function LoginPage() {
     </div>
   );
 }
+

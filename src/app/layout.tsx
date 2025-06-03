@@ -8,7 +8,7 @@ import { AuthProvider } from '@/contexts/AuthContext'; // Import AuthProvider
 import { SuggestionsBot } from '@/components/suggestions-bot/SuggestionsBot'; // Import SuggestionsBot
 
 export const metadata: Metadata = {
-  title: 'Lexiverse - Daily Word Puzzle',
+  title: 'LexiVerse - Daily Word Puzzle',
   description: 'Find words, own discoveries, and compete in Lexi Circles!',
 };
 
@@ -38,3 +38,4 @@ export default function RootLayout({
     </html>
   );
 }
+

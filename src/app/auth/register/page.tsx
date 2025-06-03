@@ -129,7 +129,7 @@ function RegisterFormContent() {
         await sendEmailVerification(user);
         toast({
           title: "Account Created!",
-          description: "Your Lexiverse account has been successfully created. A verification email has been sent.",
+          description: "Your LexiVerse account has been successfully created. A verification email has been sent.",
         });
         router.push('/');
       } else {
@@ -174,7 +174,7 @@ function RegisterFormContent() {
           <div className="mx-auto bg-primary rounded-full p-3 w-fit mb-4">
             <UserPlus className="h-8 w-8 text-primary-foreground" />
           </div>
-          <CardTitle className="text-3xl font-headline">Create your Lexiverse Account</CardTitle>
+          <CardTitle className="text-3xl font-headline">Create your LexiVerse Account</CardTitle>
           <CardDescription>Join the community and start your word adventure!</CardDescription>
         </CardHeader>
         <CardContent>
@@ -310,3 +310,4 @@ export default function RegisterPage() {
     </Suspense>
   );
 }
+

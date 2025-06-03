@@ -140,7 +140,7 @@ export default function WordManagementPage() {
 
   useEffect(() => {
     fetchPendingSubmissions(true); 
-  }, [itemsPerPage]); 
+  }, [itemsPerPage, fetchPendingSubmissions]); // Added fetchPendingSubmissions to dependencies
 
    useEffect(() => {
     fetchMasterWords();
@@ -417,7 +417,7 @@ export default function WordManagementPage() {
                                 checked={submissionActions[submission.id!] === 'approve'}
                                 onCheckedChange={(checked) => handleActionCheckboxChange(submission.id!, 'approve', Boolean(checked))}
                                 disabled={isProcessingBulk}
-                                className="border-green-500 data-[state=checked]:bg-green-500 data-[state=checked]:text-white"
+                                className="border-green-500 data-[state=checked]:bg-green-500 data-[state=checked]:text-white data-[state=indeterminate]:bg-green-500 data-[state=indeterminate]:text-white"
                             />
                             <label htmlFor={`approve-${submission.id}`} className="text-xs text-green-600 sr-only">Approve</label>
                             <CheckIcon className="h-4 w-4 text-green-500" />
@@ -428,7 +428,7 @@ export default function WordManagementPage() {
                                 checked={submissionActions[submission.id!] === 'rejectGibberish'}
                                 onCheckedChange={(checked) => handleActionCheckboxChange(submission.id!, 'rejectGibberish', Boolean(checked))}
                                 disabled={isProcessingBulk}
-                                className="border-orange-500 data-[state=checked]:bg-orange-500 data-[state=checked]:text-white"
+                                className="border-orange-500 data-[state=checked]:bg-orange-500 data-[state=checked]:text-white data-[state=indeterminate]:bg-orange-500 data-[state=indeterminate]:text-white"
                             />
                              <label htmlFor={`reject-gibberish-${submission.id}`} className="text-xs text-orange-600 sr-only">Reject Gibberish</label>
                              <AlertCircleIcon className="h-4 w-4 text-orange-500" />
@@ -439,7 +439,7 @@ export default function WordManagementPage() {
                                 checked={submissionActions[submission.id!] === 'rejectAdminDecision'}
                                 onCheckedChange={(checked) => handleActionCheckboxChange(submission.id!, 'rejectAdminDecision', Boolean(checked))}
                                 disabled={isProcessingBulk}
-                                className="border-red-500 data-[state=checked]:bg-red-500 data-[state=checked]:text-white"
+                                className="border-red-500 data-[state=checked]:bg-red-500 data-[state=checked]:text-white data-[state=indeterminate]:bg-red-500 data-[state=indeterminate]:text-white"
                             />
                              <label htmlFor={`reject-admin-${submission.id}`} className="text-xs text-red-600 sr-only">Reject Admin</label>
                              <BanIcon className="h-4 w-4 text-red-500" />

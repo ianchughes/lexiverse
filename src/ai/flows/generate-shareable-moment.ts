@@ -1,3 +1,4 @@
+
 'use server';
 
 /**
@@ -38,7 +39,7 @@ const shareableMomentPrompt = ai.definePrompt({
   output: {
     schema: GenerateShareableMomentOutputSchema,
   },
-  prompt: `You are a creative social media manager for Lexiverse, a word puzzle game. Generate a fun and engaging shareable moment for a player based on their game performance. The player's information is below:
+  prompt: `You are a creative social media manager for LexiVerse, a word puzzle game. Generate a fun and engaging shareable moment for a player based on their game performance. The player's information is below:
 
   Date: {{{date}}}
   Score: {{{score}}}
@@ -47,7 +48,7 @@ const shareableMomentPrompt = ai.definePrompt({
   {{#if circleName}}Circle: {{{circleName}}}{{/if}}
 
   Create a short text (under 280 characters) to share on social media and generate an image to accompany it.
-  The text should highlight the player's score and Word of the Day status, and should encourage others to play Lexiverse. The generated image should be visually appealing and relevant to the game.
+  The text should highlight the player's score and Word of the Day status, and should encourage others to play LexiVerse. The generated image should be visually appealing and relevant to the game.
   The image should have the score, the words found, the date and the WotD status overlaid on top of it in a visually appealing manner using white 'Inter' font.
 
   Ensure that the response includes the text in the 'shareableText' field and the image data URI in the 'imageUri' field. The image must be a data URI that must include a MIME type and use Base64 encoding. Expected format: 'data:<mimetype>;base64,<encoded_data>'.
@@ -65,3 +66,4 @@ const generateShareableMomentFlow = ai.defineFlow(
     return output!;
   }
 );
+

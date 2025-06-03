@@ -25,7 +25,7 @@ export function WelcomeInstructionsDialog({ isOpen, onOpenChange, onConfirm }: W
       <DialogContent className="sm:max-w-lg md:max-w-xl bg-card text-card-foreground">
         <DialogHeader className="text-center">
           <Rocket className="mx-auto h-12 w-12 text-primary mb-3" />
-          <DialogTitle className="text-3xl font-headline text-primary">Welcome to Lexiverse!</DialogTitle>
+          <DialogTitle className="text-3xl font-headline text-primary">Welcome to LexiVerse!</DialogTitle>
           <DialogDescription className="text-md text-muted-foreground px-2">
             Get ready for a fun, fast-paced daily word challenge! Here’s how to jump in:
           </DialogDescription>
@@ -79,7 +79,7 @@ export function WelcomeInstructionsDialog({ isOpen, onOpenChange, onConfirm }: W
               <h3 className="font-semibold text-lg text-primary mb-1">Quick Tips:</h3>
               <ul className="list-disc list-outside pl-5 space-y-1">
                 <li>Look for common prefixes and suffixes.</li>
-                <li>Don't be afraid to try words – if a word isn't in our main list yet, you might be able to submit it for review and even "own" it if it's new to Lexiverse!</li>
+                <li>Don't be afraid to try words – if a word isn't in our main list yet, you might be able to submit it for review and even "own" it if it's new to LexiVerse!</li>
               </ul>
             </div>
           </div>
@@ -101,3 +101,4 @@ export function WelcomeInstructionsDialog({ isOpen, onOpenChange, onConfirm }: W
     </Dialog>
   );
 }
+

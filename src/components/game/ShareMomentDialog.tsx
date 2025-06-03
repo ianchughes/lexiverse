@@ -1,3 +1,4 @@
+
 'use client';
 
 import { useState, useEffect } from 'react';
@@ -91,7 +92,7 @@ export function ShareMomentDialog({ isOpen, onOpenChange, gameData }: ShareMomen
         <DialogHeader>
           <DialogTitle className="text-2xl font-headline text-center text-primary">Share Your Achievement!</DialogTitle>
           <DialogDescription className="text-center text-muted-foreground">
-            Let the world know how you did in Lexiverse today!
+            Let the world know how you did in LexiVerse today!
           </DialogDescription>
         </DialogHeader>
 
@@ -109,7 +110,7 @@ export function ShareMomentDialog({ isOpen, onOpenChange, gameData }: ShareMomen
               {shareContent.imageUri && (
                 <Image
                   src={shareContent.imageUri}
-                  alt="Lexiverse Shareable Moment"
+                  alt="LexiVerse Shareable Moment"
                   width={500}
                   height={250}
                   className="w-full object-cover"
@@ -146,3 +147,4 @@ export function ShareMomentDialog({ isOpen, onOpenChange, gameData }: ShareMomen
     </Dialog>
   );
 }
+

@@ -15,9 +15,9 @@ import type { SeedingLetter, SubmittedWord, GameState, WordSubmission, SystemSet
 import { useToast } from '@/hooks/use-toast';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { PlayCircle, Check, AlertTriangle, Send, Loader2, ThumbsDown, Users, BellRing, LogIn, UserPlus, Clock, Key, Star, UsersRound, Gift, Info, Handshake } from 'lucide-react'; // Added Info, Handshake
+import { PlayCircle, Check, AlertTriangle, Send, Loader2, ThumbsDown, Users, BellRing, LogIn, UserPlus, Clock, Key, Star, UsersRound, Gift, Info, Handshake } from 'lucide-react'; 
 import { Badge } from '@/components/ui/badge';
-import { Card, CardHeader, CardContent, CardTitle, CardDescription } from '@/components/ui/card'; // Added Card components
+import { Card, CardHeader, CardContent, CardTitle, CardDescription } from '@/components/ui/card'; 
 import { firestore, auth } from '@/lib/firebase';
 import { collection, addDoc, serverTimestamp, doc, getDoc, updateDoc, increment, Timestamp, writeBatch, getDocs, query, where } from 'firebase/firestore';
 import { format } from 'date-fns';
@@ -558,6 +558,7 @@ export default function HomePage() {
             description: `"${wordUpperCase}" is already pending review.`,
             variant: "default"
         });
+        handleClearWord(); // Clear word if it's already pending.
         return;
     }
 
@@ -606,7 +607,7 @@ export default function HomePage() {
     return (
       <div className="flex flex-col items-center justify-center text-center h-full py-12">
         <Loader2 className="w-16 h-16 text-primary animate-spin mb-4" />
-        <h1 className="text-2xl font-headline">Loading Lexiverse...</h1>
+        <h1 className="text-2xl font-headline">Loading LexiVerse...</h1>
       </div>
     );
   }
@@ -615,7 +616,7 @@ export default function HomePage() {
     return (
       <div className="flex flex-col items-center justify-center text-center h-full py-10 md:py-16 px-4">
         <h1 className="text-4xl sm:text-5xl md:text-6xl font-headline text-primary mb-4 sm:mb-6">
-          ⚡ Lexiverse: Your 90-Second Word Revolution! ⚡
+          ⚡ LexiVerse: Your 90-Second Word Revolution! ⚡
         </h1>
         <p className="text-lg sm:text-xl text-muted-foreground max-w-2xl mx-auto mb-8 sm:mb-10">
           Dive into a thrilling daily word puzzle where speed meets strategy! Uncover words from 9 daily letters, "mint" your unique discoveries to earn ongoing points, and team up with friends in Circles. Can you conquer the lexicon in just 90 seconds?
@@ -675,7 +676,7 @@ export default function HomePage() {
         <AlertTriangle className="w-16 h-16 text-primary mb-4" />
         <h1 className="text-3xl font-headline mb-4">Patience, Word Smith!</h1>
         <p className="text-xl text-muted-foreground mb-8">
-          You've already played today's Lexiverse puzzle.
+          You've already played today's LexiVerse puzzle.
         </p>
         <p className="text-lg">A new challenge awaits tomorrow or when an admin resets the day.</p>
          {pendingInvitesCount > 0 && (
@@ -717,7 +718,7 @@ export default function HomePage() {
 
       {gameState === 'idle' && !showWelcomeInstructionsModal && (
         <div className="text-center space-y-6">
-          <h1 className="text-4xl md:text-5xl font-headline text-primary">Welcome to Lexiverse!</h1>
+          <h1 className="text-4xl md:text-5xl font-headline text-primary">Welcome to LexiVerse!</h1>
           <p className="text-lg md:text-xl text-muted-foreground max-w-xl mx-auto">
             Find as many {MIN_WORD_LENGTH}+ letter words as you can in {DAILY_GAME_DURATION} seconds.
             Points are awarded based on word rarity and length. WotD gets 2x final score bonus.

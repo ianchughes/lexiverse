@@ -1,7 +1,7 @@
 
 'use client';
 
-import { useState, useEffect, Suspense } from 'react'; // Added Suspense
+import { useState, useEffect, Suspense } from 'react'; 
 import Link from 'next/link';
 import { useAuth } from '@/contexts/AuthContext';
 import { firestore } from '@/lib/firebase';
@@ -9,10 +9,10 @@ import { collection, query, where, getDocs, doc, getDoc } from 'firebase/firesto
 import type { Circle, CircleMember, CircleMemberRole } from '@/types';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter } from '@/components/ui/card';
-import { PlusCircle, Users, Eye, Loader2, AlertTriangle, Settings, LogIn, UserPlus, Info, Handshake } from 'lucide-react'; // Added LogIn, UserPlus, Info, Handshake
+import { PlusCircle, Users, Eye, Loader2, AlertTriangle, Settings, LogIn, UserPlus, Info, Handshake } from 'lucide-react'; 
 import { Separator } from '@/components/ui/separator';
 import { CircleInviteManagerDialog } from '@/components/circles/CircleInviteManagerDialog';
-import { useSearchParams } from 'next/navigation'; // Added useSearchParams
+import { useSearchParams } from 'next/navigation'; 
 
 interface UserCircleMembership extends Circle {
   userRoleInCircle: CircleMemberRole;
@@ -93,18 +93,18 @@ function MyCirclesPageContent() {
           <CardHeader className="pt-8">
             <Handshake className="mx-auto h-16 w-16 text-primary mb-4" />
             <CardTitle className="text-3xl md:text-4xl font-headline text-primary">
-              Eager to Dive into Lexiverse Teams? Awesome! 🤝
+              Eager to Dive into LexiVerse Teams? Awesome! 🤝
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-6 px-6 md:px-8 pb-8">
             <p className="text-muted-foreground text-lg leading-relaxed">
-              We see you're ready to explore Lexiverse Teams – that's fantastic! Circles are where you can team up with friends, combine your daily scores, and climb the leaderboards together. It's a core part of the fun!
+              We see you're ready to explore LexiVerse Teams – that's fantastic! Circles are where you can team up with friends, combine your daily scores, and climb the leaderboards together. It's a core part of the fun!
             </p>
             <p className="text-lg text-foreground">
               To create, join, or manage your Circles, we just need to know who you are first.
             </p>
             <div className="text-lg text-foreground">
-              New to Lexiverse? It only takes a moment to{' '}
+              New to LexiVerse? It only takes a moment to{' '}
               <Button variant="link" asChild className="p-0 h-auto text-lg text-accent">
                 <Link href={`/auth/register${inviteCodeFromUrl ? `?inviteCode=${inviteCodeFromUrl}` : ''}`}>Create Your Free Account</Link>
               </Button>
@@ -256,3 +256,4 @@ export default function MyCirclesPageWrapper() {
     </Suspense>
   )
 }
+
