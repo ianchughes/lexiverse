@@ -12,7 +12,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter } from '@/components/ui/card';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"; // Removed DialogTrigger from here
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
@@ -320,66 +320,9 @@ export default function CircleDetailsPage() {
         <CardFooter className="p-6 flex flex-col sm:flex-row justify-between items-center gap-3 border-t">
             <div className="flex gap-2">
                 {canManage && (
-                    <Dialog open={showInviteDialog} onOpenChange={(open) => { setShowInviteDialog(open); if (!open) setInviteeIdentifier(''); }}>
-                        <DialogTrigger asChild>
-                        <Button variant="default"><UserPlus className="mr-2 h-4 w-4" /> Invite Members</Button>
-                        </DialogTrigger>
-                        <DialogContent>
-                        <DialogHeader>
-                            <DialogTitle>Invite to "{circleDetails.circleName}"</DialogTitle>
-                            <DialogDescription>
-                            Invite users by their username or email address, or share an invite link.
-                            </DialogDescription>
-                        </DialogHeader>
-                        <div className="space-y-4 py-3">
-                            <RadioGroup defaultValue="username" value={inviteType} onValueChange={(value: 'username' | 'email') => { setInviteType(value); setInviteeIdentifier(''); }}>
-                                <div className="flex items-center space-x-2">
-                                    <RadioGroupItem value="username" id="r-username" />
-                                    <Label htmlFor="r-username" className="flex items-center gap-2"><UserSearch /> Invite by Username</Label>
-                                </div>
-                                <div className="flex items-center space-x-2">
-                                    <RadioGroupItem value="email" id="r-email" />
-                                    <Label htmlFor="r-email" className="flex items-center gap-2"><Mail /> Invite by Email</Label>
-                                </div>
-                            </RadioGroup>
-                            <div>
-                                <Label htmlFor="inviteeIdentifier" className="sr-only">{inviteType === 'username' ? 'Username' : 'Email Address'}</Label>
-                                <div className="flex gap-2 mt-1">
-                                    <Input 
-                                    id="inviteeIdentifier" 
-                                    value={inviteeIdentifier} 
-                                    onChange={(e) => setInviteeIdentifier(e.target.value)}
-                                    placeholder={inviteType === 'username' ? 'Enter username' : 'Enter email address'}
-                                    type={inviteType === 'email' ? 'email' : 'text'}
-                                    disabled={isInviting}
-                                    />
-                                    <Button onClick={handleSendInvite} disabled={!inviteeIdentifier.trim() || isInviting}>
-                                    {isInviting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />} Send Invite
-                                    </Button>
-                                </div>
-                            </div>
-                            <div className="text-center text-sm text-muted-foreground">OR</div>
-                            <div>
-                                <Label>Share Invite Link</Label>
-                                <div className="flex items-center gap-2 mt-1 p-2 border rounded-md bg-muted">
-                                <Link2 className="h-4 w-4 text-muted-foreground" />
-                                <input 
-                                    type="text" 
-                                    readOnly 
-                                    value={`${window.location.origin}/circles/join?code=${circleDetails.inviteLinkCode}`} 
-                                    className="text-xs bg-transparent flex-grow outline-none"
-                                />
-                                <Button variant="ghost" size="icon" onClick={copyInviteLink} title="Copy invite link">
-                                    {inviteLinkCopied ? <Check className="h-4 w-4 text-green-500" /> : <Copy className="h-4 w-4" />}
-                                </Button>
-                                </div>
-                            </div>
-                        </div>
-                        <DialogFooter>
-                            <Button variant="outline" onClick={() => setShowInviteDialog(false)}>Close</Button>
-                        </DialogFooter>
-                        </DialogContent>
-                    </Dialog>
+                    <Button variant="default" onClick={() => setShowInviteDialog(true)}>
+                        <UserPlus className="mr-2 h-4 w-4" /> Invite Members
+                    </Button>
                 )}
             </div>
            
@@ -397,6 +340,66 @@ export default function CircleDetailsPage() {
             </div>
         </CardFooter>
       </Card>
+
+      {/* Invite Dialog - Now always in the DOM but visibility controlled by showInviteDialog */}
+      <Dialog open={showInviteDialog} onOpenChange={(open) => { setShowInviteDialog(open); if (!open) setInviteeIdentifier(''); }}>
+          <DialogContent>
+            <DialogHeader>
+                <DialogTitle>Invite to "{circleDetails.circleName}"</DialogTitle>
+                <DialogDescription>
+                Invite users by their username or email address, or share an invite link.
+                </DialogDescription>
+            </DialogHeader>
+            <div className="space-y-4 py-3">
+                <RadioGroup defaultValue="username" value={inviteType} onValueChange={(value: 'username' | 'email') => { setInviteType(value); setInviteeIdentifier(''); }}>
+                    <div className="flex items-center space-x-2">
+                        <RadioGroupItem value="username" id="r-username" />
+                        <Label htmlFor="r-username" className="flex items-center gap-2"><UserSearch /> Invite by Username</Label>
+                    </div>
+                    <div className="flex items-center space-x-2">
+                        <RadioGroupItem value="email" id="r-email" />
+                        <Label htmlFor="r-email" className="flex items-center gap-2"><Mail /> Invite by Email</Label>
+                    </div>
+                </RadioGroup>
+                <div>
+                    <Label htmlFor="inviteeIdentifier" className="sr-only">{inviteType === 'username' ? 'Username' : 'Email Address'}</Label>
+                    <div className="flex gap-2 mt-1">
+                        <Input 
+                        id="inviteeIdentifier" 
+                        value={inviteeIdentifier} 
+                        onChange={(e) => setInviteeIdentifier(e.target.value)}
+                        placeholder={inviteType === 'username' ? 'Enter username' : 'Enter email address'}
+                        type={inviteType === 'email' ? 'email' : 'text'}
+                        disabled={isInviting}
+                        />
+                        <Button onClick={handleSendInvite} disabled={!inviteeIdentifier.trim() || isInviting}>
+                        {isInviting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />} Send Invite
+                        </Button>
+                    </div>
+                </div>
+                <div className="text-center text-sm text-muted-foreground">OR</div>
+                <div>
+                    <Label>Share Invite Link</Label>
+                    <div className="flex items-center gap-2 mt-1 p-2 border rounded-md bg-muted">
+                    <Link2 className="h-4 w-4 text-muted-foreground" />
+                    <input 
+                        type="text" 
+                        readOnly 
+                        value={`${window.location.origin}/circles/join?code=${circleDetails.inviteLinkCode}`} 
+                        className="text-xs bg-transparent flex-grow outline-none"
+                    />
+                    <Button variant="ghost" size="icon" onClick={copyInviteLink} title="Copy invite link">
+                        {inviteLinkCopied ? <Check className="h-4 w-4 text-green-500" /> : <Copy className="h-4 w-4" />}
+                    </Button>
+                    </div>
+                </div>
+            </div>
+            <DialogFooter>
+                <Button variant="outline" onClick={() => setShowInviteDialog(false)}>Close</Button>
+            </DialogFooter>
+          </DialogContent>
+      </Dialog>
+
        {(circleDetails.members.length < 3 && currentUser) && (
         <Card className="mt-6 bg-accent/30 border-accent">
           <CardContent className="p-6 text-center">
@@ -413,3 +416,5 @@ export default function CircleDetailsPage() {
     </div>
   );
 }
+
+    
