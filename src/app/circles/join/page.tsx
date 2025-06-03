@@ -14,7 +14,7 @@ import { Input } from '@/components/ui/input';
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from '@/components/ui/form';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { useToast } from '@/hooks/use-toast';
-import { Loader2, LogIn, UserPlus, AlertTriangle, Handshake, Info } from 'lucide-react';
+import { Loader2, LogIn, UserPlus, AlertTriangle, Handshake, Info, CheckCircle, UsersRound } from 'lucide-react'; // Added CheckCircle, UsersRound for list items
 import Link from 'next/link';
 
 const joinCircleFormSchema = z.object({
@@ -77,8 +77,6 @@ function JoinCircleFormContent() {
     return <div className="flex justify-center items-center h-64"><Loader2 className="h-12 w-12 animate-spin text-primary" /></div>;
   }
 
-  // This case should ideally be handled by the Page component directly,
-  // but as a fallback within the form content:
   if (!currentUser) {
      return (
       <div className="text-center py-10">
@@ -151,41 +149,40 @@ export default function JoinCirclePage() {
       <div className="flex items-center justify-center min-h-screen py-12 bg-gradient-to-br from-background to-secondary/20">
         <Card className="w-full max-w-lg shadow-2xl text-center">
           <CardHeader className="pt-8">
+             {/* Using Handshake icon as a generic welcome/team icon */}
             <Handshake className="mx-auto h-16 w-16 text-primary mb-4" />
             <CardTitle className="text-3xl md:text-4xl font-headline text-primary">
-              🤝 Team Up in LexiCircles! An Invite Awaits You!
+              🎉 Get Ready for LexiCircles! Your Friend Wants You on Their Team! 🎉
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-6 px-6 md:px-8 pb-8">
             <p className="text-muted-foreground text-lg leading-relaxed">
-              Hello there! A friend has invited you to join their Circle in LexiCircles, the exciting daily word challenge!
+              Welcome! You've been invited to join a Circle in LexiCircles!
             </p>
             
             <div className="text-left p-4 bg-muted/50 rounded-lg space-y-3">
-              <h3 className="text-xl font-semibold text-foreground text-center mb-3">What's LexiCircles?</h3>
-              <p><Info className="inline h-5 w-5 mr-2 text-accent" />Every day, you get 9 letters and 90 seconds to find as many words (4+ letters) as possible. Find the special "Word of the Day" to double your score! What makes it unique? You can discover and "own" words, earning points when others guess them later!</p>
+              <h3 className="text-xl font-semibold text-foreground text-center mb-3">What is LexiCircles?</h3>
+              <p><Info className="inline h-5 w-5 mr-2 text-accent" />LexiCircles is a daily word game where you get 9 letters and just 90 seconds to find as many words as you can. Discover the special "Word of the Day" to double your score, and even "own" rare words to earn points when others find them!</p>
               
-              <h3 className="text-xl font-semibold text-foreground text-center mt-4 mb-3">Why Join Their Circle?</h3>
-              <ul className="list-disc list-outside pl-5 space-y-1 marker:text-accent">
-                <li>Combine your daily scores with friends.</li>
-                <li>Compete together against other Circles.</li>
-                <li>Share the fun of word discovery!</li>
-              </ul>
+              <h3 className="text-xl font-semibold text-foreground text-center mt-4 mb-3">Why join their Circle?</h3>
+                <p><UsersRound className="inline h-5 w-5 mr-2 text-accent" />Joining a Circle means you can team up with friends, combine your scores, and compete for weekly glory.</p>
             </div>
 
             <p className="text-lg font-medium text-foreground">
-              Ready to jump in? <br/> You'll just need to log in or create a quick account to accept the invite and start playing.
+              To get started and accept your Circle invitation:<br/>
+              Please Log In to your existing account.<br/>
+              Or, if you're new, Create a Free Account – it's quick and easy!
             </p>
 
             <div className="flex flex-col sm:flex-row gap-4 justify-center pt-4">
               <Button size="lg" className="w-full sm:w-auto font-semibold text-lg" asChild>
                 <Link href="/auth/login">
-                  <LogIn className="mr-2 h-5 w-5" /> Log In
+                  <LogIn className="mr-2 h-5 w-5" /> Log In to Join
                 </Link>
               </Button>
               <Button size="lg" variant="secondary" className="w-full sm:w-auto font-semibold text-lg" asChild>
                 <Link href="/auth/register">
-                  <UserPlus className="mr-2 h-5 w-5" /> Create Your Free Account
+                  <UserPlus className="mr-2 h-5 w-5" /> Sign Up & Team Up!
                 </Link>
               </Button>
             </div>
