@@ -14,7 +14,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Checkbox } from '@/components/ui/checkbox';
 import { useToast } from '@/hooks/use-toast';
 import { Input } from '@/components/ui/input';
-import { Loader2, RefreshCw, Star, CheckCircle, XCircle, ThumbsDown, ShieldAlert, Settings2, Send, UserMinus, MoreHorizontal } from 'lucide-react';
+import { Loader2, RefreshCw, Star, CheckCircle, XCircle, ThumbsDown, ShieldAlert, Settings2, Send, UserMinus, MoreHorizontal, CheckIcon, AlertCircleIcon, BanIcon } from 'lucide-react';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { format } from 'date-fns';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -45,7 +45,6 @@ export default function WordManagementPage() {
   const [hasMounted, setHasMounted] = useState(false);
 
   const [submissionActions, setSubmissionActions] = useState<Record<string, WordAction>>({});
-  const [selectedRowIds, setSelectedRowIds] = useState<Set<string>>(new Set());
   const [itemsPerPage, setItemsPerPage] = useState(25);
   const [currentPage, setCurrentPage] = useState(1); 
   const [isProcessingBulk, setIsProcessingBulk] = useState(false);
@@ -68,6 +67,7 @@ export default function WordManagementPage() {
     if (resetPagination) {
         setPendingSubmissions([]); 
         setCurrentPage(1); 
+        setSubmissionActions({}); // Reset actions when pagination resets
     }
 
     try {
@@ -94,11 +94,7 @@ export default function WordManagementPage() {
         submissions.push({ id: docSnap.id, ...docSnap.data() } as WordSubmission);
       });
       
-      if (resetPagination) {
-        setPendingSubmissions(submissions);
-      } else {
-        setPendingSubmissions(prev => [...prev, ...submissions]);
-      }
+      setPendingSubmissions(prev => resetPagination ? submissions : [...prev, ...submissions]);
       
       setLastVisibleSubmission(querySnapshot.docs[querySnapshot.docs.length - 1] || null);
 
@@ -106,7 +102,7 @@ export default function WordManagementPage() {
       setSubmissionActions(prevActions => {
         const newActions = {...prevActions};
         submissions.forEach(s => {
-          if (s.id && !newActions[s.id]) {
+          if (s.id && !newActions[s.id]) { // Only add if not already set by a previous page load in the same view
             newActions[s.id] = 'noAction';
           }
         });
@@ -143,7 +139,7 @@ export default function WordManagementPage() {
 
   useEffect(() => {
     fetchPendingSubmissions(true); 
-  }, [itemsPerPage]); 
+  }, [itemsPerPage]); // Only re-fetch on itemsPerPage change
 
    useEffect(() => {
     fetchMasterWords();
@@ -159,32 +155,22 @@ export default function WordManagementPage() {
     }
   };
 
-  const handleSubmissionActionChange = (submissionId: string, action: WordAction) => {
-    setSubmissionActions(prev => ({ ...prev, [submissionId]: action }));
-  };
-
-  const handleRowSelectionChange = (submissionId: string, checked: boolean) => {
-    setSelectedRowIds(prev => {
-      const newSet = new Set(prev);
-      if (checked) {
-        newSet.add(submissionId);
+  const handleActionCheckboxChange = (submissionId: string, toggledAction: WordAction, isChecked: boolean) => {
+    setSubmissionActions(prev => {
+      const newActions = { ...prev };
+      if (isChecked) {
+        // If checking a box, set it as the action
+        newActions[submissionId] = toggledAction;
       } else {
-        newSet.delete(submissionId);
+        // If unchecking a box, and it was the current action, set to noAction
+        if (newActions[submissionId] === toggledAction) {
+          newActions[submissionId] = 'noAction';
+        }
       }
-      return newSet;
+      return newActions;
     });
   };
 
-  const handleSelectAllOnPage = (checked: boolean) => {
-    const newSet = new Set(selectedRowIds);
-    const submissionIdsOnPage = pendingSubmissions.map(s => s.id!);
-    if (checked) {
-      submissionIdsOnPage.forEach(id => newSet.add(id));
-    } else {
-      submissionIdsOnPage.forEach(id => newSet.delete(id));
-    }
-    setSelectedRowIds(newSet);
-  };
 
   const handleBulkProcessSubmissions = async () => {
     if (!currentUser) { 
@@ -193,35 +179,31 @@ export default function WordManagementPage() {
       return;
     }
 
-    if (selectedRowIds.size === 0) {
-      toast({ title: "No Submissions Selected", description: "Please select submissions to process.", variant: "default" });
-      return;
-    }
-    setIsProcessingBulk(true);
-
     const submissionsToProcessPayload: Array<{ submissionId: string; wordText: string; definition?: string; frequency?: number; submittedByUID: string; puzzleDateGMT: string; action: WordAction; isWotDClaim?: boolean; }> = [];
-    selectedRowIds.forEach(id => {
-      const submission = pendingSubmissions.find(s => s.id === id);
-      const action = submissionActions[id];
-      if (submission && action && action !== 'noAction') {
-        submissionsToProcessPayload.push({
-          submissionId: submission.id!,
-          wordText: submission.wordText,
-          definition: submission.definition,
-          frequency: submission.frequency,
-          submittedByUID: submission.submittedByUID,
-          puzzleDateGMT: submission.puzzleDateGMT,
-          action: action,
-          isWotDClaim: submission.isWotDClaim
-        });
-      }
+    
+    Object.entries(submissionActions).forEach(([id, action]) => {
+        if (action !== 'noAction') {
+            const submission = pendingSubmissions.find(s => s.id === id);
+            if (submission) {
+                submissionsToProcessPayload.push({
+                    submissionId: submission.id!,
+                    wordText: submission.wordText,
+                    definition: submission.definition,
+                    frequency: submission.frequency,
+                    submittedByUID: submission.submittedByUID,
+                    puzzleDateGMT: submission.puzzleDateGMT,
+                    action: action,
+                    isWotDClaim: submission.isWotDClaim
+                });
+            }
+        }
     });
 
     if (submissionsToProcessPayload.length === 0) {
-        toast({ title: "No Actions Selected", description: "Please select an action (Approve/Reject) for the selected submissions.", variant: "default" });
-        setIsProcessingBulk(false);
-        return;
+      toast({ title: "No Actions Selected", description: "Please select an action (Approve/Reject) for at least one submission.", variant: "default" });
+      return;
     }
+    setIsProcessingBulk(true);
 
     try {
       const result = await adminBulkProcessWordSubmissionsAction({ 
@@ -245,9 +227,7 @@ export default function WordManagementPage() {
          toast({ title: "Bulk Processing Error", description: `An error occurred during bulk processing. ${successCount} processed, ${errorCount} failed. Details: ${result.error || ''}`, variant: "destructive" });
       }
       
-      fetchPendingSubmissions(true); 
-      setSelectedRowIds(new Set());
-      setSubmissionActions({});
+      fetchPendingSubmissions(true); // Reset and fetch first page
       fetchMasterWords(); 
 
     } catch (error: any) {
@@ -299,15 +279,15 @@ export default function WordManagementPage() {
       setWordToDisassociate(null);
     }
   };
-
-  const isAllOnPageSelected = pendingSubmissions.length > 0 && pendingSubmissions.every(s => s.id && selectedRowIds.has(s.id));
   
+  const itemsToProcessCount = Object.values(submissionActions).filter(action => action !== 'noAction').length;
+
   return (
     <div className="space-y-6">
       <div>
         <h1 className="text-3xl font-bold tracking-tight">Word Management & Moderation</h1>
         <p className="text-muted-foreground mt-1">
-          Review submissions. Approve, reject, or skip. Process selected words in bulk.
+          Review submissions. Select an action for each word, then process in bulk.
         </p>
       </div>
 
@@ -347,33 +327,17 @@ export default function WordManagementPage() {
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead className="w-[50px]">
-                    <Checkbox 
-                        checked={isAllOnPageSelected}
-                        onCheckedChange={(checked) => handleSelectAllOnPage(Boolean(checked))}
-                        aria-label="Select all on page"
-                        disabled={isProcessingBulk}
-                    />
-                  </TableHead>
                   <TableHead>Word</TableHead>
                   <TableHead>Submitted By (UID)</TableHead>
                   <TableHead>Date</TableHead>
                   <TableHead>Definition</TableHead>
                   <TableHead className="text-center">Frequency</TableHead>
-                  <TableHead className="w-[200px]">Action</TableHead>
+                  <TableHead className="w-[250px] text-center">Actions</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {pendingSubmissions.map((submission) => (
-                  <TableRow key={submission.id} data-state={selectedRowIds.has(submission.id!) ? "selected" : ""}>
-                    <TableCell>
-                      <Checkbox
-                        checked={selectedRowIds.has(submission.id!)}
-                        onCheckedChange={(checked) => handleRowSelectionChange(submission.id!, Boolean(checked))}
-                        aria-labelledby={`select-submission-${submission.id}`}
-                        disabled={isProcessingBulk}
-                      />
-                    </TableCell>
+                  <TableRow key={submission.id}>
                     <TableCell className="font-medium">{submission.wordText}</TableCell>
                     <TableCell className="font-mono text-xs" title={submission.submittedByUID}>{submission.submittedByUID.substring(0,10)}...</TableCell>
                     <TableCell>{formatDate(submission.submittedTimestamp)}</TableCell>
@@ -384,21 +348,41 @@ export default function WordManagementPage() {
                       {submission.frequency !== undefined ? submission.frequency.toFixed(2) : 'N/A'}
                     </TableCell>
                     <TableCell>
-                       <Select
-                        value={submission.id ? submissionActions[submission.id] || 'noAction' : 'noAction'}
-                        onValueChange={(value) => handleSubmissionActionChange(submission.id!, value as WordAction)}
-                        disabled={isProcessingBulk}
-                       >
-                         <SelectTrigger className="h-9">
-                           <SelectValue placeholder="Select action" />
-                         </SelectTrigger>
-                         <SelectContent>
-                           <SelectItem value="noAction">No Action</SelectItem>
-                           <SelectItem value="approve" className="text-green-600">Approve</SelectItem>
-                           <SelectItem value="rejectGibberish" className="text-orange-600">Reject (Gibberish)</SelectItem>
-                           <SelectItem value="rejectAdminDecision" className="text-red-600">Reject (Admin)</SelectItem>
-                         </SelectContent>
-                       </Select>
+                       <div className="flex items-center justify-around gap-2">
+                        <div className="flex items-center space-x-1" title="Approve">
+                            <Checkbox
+                                id={`approve-${submission.id}`}
+                                checked={submissionActions[submission.id!] === 'approve'}
+                                onCheckedChange={(checked) => handleActionCheckboxChange(submission.id!, 'approve', Boolean(checked))}
+                                disabled={isProcessingBulk}
+                                className="border-green-500 data-[state=checked]:bg-green-500 data-[state=checked]:text-white"
+                            />
+                            <label htmlFor={`approve-${submission.id}`} className="text-xs text-green-600 sr-only">Approve</label>
+                            <CheckIcon className="h-4 w-4 text-green-500" />
+                        </div>
+                         <div className="flex items-center space-x-1" title="Reject (Gibberish)">
+                            <Checkbox
+                                id={`reject-gibberish-${submission.id}`}
+                                checked={submissionActions[submission.id!] === 'rejectGibberish'}
+                                onCheckedChange={(checked) => handleActionCheckboxChange(submission.id!, 'rejectGibberish', Boolean(checked))}
+                                disabled={isProcessingBulk}
+                                className="border-orange-500 data-[state=checked]:bg-orange-500 data-[state=checked]:text-white"
+                            />
+                             <label htmlFor={`reject-gibberish-${submission.id}`} className="text-xs text-orange-600 sr-only">Reject Gibberish</label>
+                             <AlertCircleIcon className="h-4 w-4 text-orange-500" />
+                        </div>
+                        <div className="flex items-center space-x-1" title="Reject (Admin Decision)">
+                            <Checkbox
+                                id={`reject-admin-${submission.id}`}
+                                checked={submissionActions[submission.id!] === 'rejectAdminDecision'}
+                                onCheckedChange={(checked) => handleActionCheckboxChange(submission.id!, 'rejectAdminDecision', Boolean(checked))}
+                                disabled={isProcessingBulk}
+                                className="border-red-500 data-[state=checked]:bg-red-500 data-[state=checked]:text-white"
+                            />
+                             <label htmlFor={`reject-admin-${submission.id}`} className="text-xs text-red-600 sr-only">Reject Admin</label>
+                             <BanIcon className="h-4 w-4 text-red-500" />
+                        </div>
+                       </div>
                     </TableCell>
                   </TableRow>
                 ))}
@@ -408,7 +392,7 @@ export default function WordManagementPage() {
         </CardContent>
          <CardFooter className="flex flex-col sm:flex-row justify-between items-center gap-4 pt-4 border-t">
             <p className="text-xs text-muted-foreground">
-              Showing {pendingSubmissions.length} submissions on page {currentPage}. Selected: {selectedRowIds.size}
+              Showing {pendingSubmissions.length} submissions on page {currentPage}. Actions selected for: {itemsToProcessCount}
             </p>
             <div className="flex gap-2">
                  <Button 
@@ -421,11 +405,11 @@ export default function WordManagementPage() {
                 </Button>
                 <Button 
                     onClick={handleBulkProcessSubmissions} 
-                    disabled={selectedRowIds.size === 0 || isProcessingBulk}
+                    disabled={itemsToProcessCount === 0 || isProcessingBulk}
                     className="bg-primary hover:bg-primary/90"
                 >
                   {isProcessingBulk ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Send className="mr-2 h-4 w-4" />}
-                  Process Selected ({selectedRowIds.size})
+                  Process Selected ({itemsToProcessCount})
                 </Button>
             </div>
           </CardFooter>
@@ -548,3 +532,4 @@ export default function WordManagementPage() {
     </div>
   );
 }
+
