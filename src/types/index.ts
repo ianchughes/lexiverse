@@ -114,7 +114,7 @@ export interface SystemSettings {
 }
 
 // For AI-generated puzzle suggestions (client-side & flow output)
-export interface PuzzleSuggestion { // Client-side type with ID
+export interface ClientPuzzleSuggestion { // Client-side type with ID
   wordOfTheDayText: string;
   seedingLetters: string;
   wordOfTheDayDefinition: string;
@@ -272,6 +272,17 @@ export interface WordTransfer {
   respondedAt?: Timestamp;
 }
 
+// Changelog Entry Type
+export interface ChangelogEntry {
+  id?: string; // Firestore Document ID
+  version: string; // e.g., "1.0.1"
+  title: string; // Brief summary of the update
+  description: string; // Detailed changes, potentially multi-line or markdown
+  datePublished: Timestamp;
+  publishedByAdminId: string; // UID of the admin who published this entry
+}
+
+
 // Admin Audit Log Types
 export type AdminActionType =
   // User Management
@@ -301,16 +312,19 @@ export type AdminActionType =
   | 'SYSTEM_DAILY_RESET_TRIGGER'
   // Suggestion Management
   | 'SUGGESTION_ACTIONED'
-  | 'SUGGESTION_ARCHIVED_NO_ACTION';
+  | 'SUGGESTION_ARCHIVED_NO_ACTION'
+  // Changelog Management
+  | 'CHANGELOG_ENTRY_CREATE'
+  | 'CHANGELOG_ENTRY_DELETE';
 
 export interface AdminAuditLogEntry {
   id?: string; // Firestore Document ID
   timestamp: Timestamp;
   actingAdminId: string;
   actionType: AdminActionType;
-  targetEntityType?: string; // e.g., 'User', 'Puzzle', 'Word', 'Circle', 'Invite', 'Suggestion'
+  targetEntityType?: string; // e.g., 'User', 'Puzzle', 'Word', 'Circle', 'Invite', 'Suggestion', 'ChangelogEntry'
   targetEntityId?: string; // UID of user, ID of puzzle, etc.
-  targetEntityDisplay?: string; // e.g. username, wordText, circleName
+  targetEntityDisplay?: string; // e.g. username, wordText, circleName, changelog version
   details?: string | object; // Human-readable summary or structured data
 }
 

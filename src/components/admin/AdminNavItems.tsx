@@ -11,9 +11,10 @@ import {
   UsersRound,
   BarChart3,
   Settings,
-  History,
+  History, // Keep History for Audit Logs
   MailCheck,
-  Lightbulb, // Changed icon for Suggestions
+  Lightbulb,
+  FileClock, // New icon for Changelog
 } from 'lucide-react';
 import {
   SidebarMenu,
@@ -29,7 +30,8 @@ const navItems = [
   { href: '/admin/users', label: 'Users', icon: Users },
   { href: '/admin/circles', label: 'Circles', icon: UsersRound },
   { href: '/admin/invites', label: 'Invites', icon: MailCheck },
-  { href: '/admin/suggestions', label: 'Suggestions', icon: Lightbulb }, // New Suggestions Link
+  { href: '/admin/suggestions', label: 'Suggestions', icon: Lightbulb },
+  { href: '/admin/changelog', label: 'Changelog', icon: FileClock }, // New Changelog Link
   { href: '/admin/stats', label: 'Statistics', icon: BarChart3 },
   { href: '/admin/config', label: 'Configuration', icon: Settings },
   { href: '/admin/audit', label: 'Audit Logs', icon: History },
