@@ -2,8 +2,8 @@
 'use client';
 
 import React, { useState, useEffect, useCallback } from 'react';
-import { firestore, auth } from '@/lib/firebase';
-import { collection, getDocs, doc, updateDoc, deleteDoc, Timestamp, query, orderBy, serverTimestamp } from 'firebase/firestore';
+import { firestore } from '@/lib/firebase'; // auth removed
+import { collection, getDocs, Timestamp, query, orderBy } from 'firebase/firestore'; // serverTimestamp, doc, updateDoc, deleteDoc removed
 import type { CircleInvite, CircleInviteStatus } from '@/types';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from "@/components/ui/card";
@@ -17,9 +17,12 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { MoreHorizontal, Trash2, Send, BellRing, Loader2, RefreshCw, History, XCircle } from 'lucide-react';
 import { format, formatDistanceToNowStrict } from 'date-fns';
 import { adminDeleteCircleInviteAction, adminUpdateCircleInviteStatusAction, adminSendCircleInviteReminderAction } from './actions';
+import { useAuth } from '@/contexts/AuthContext'; // Import useAuth
+
 
 export default function CircleInviteManagementPage() {
   const { toast } = useToast();
+  const { currentUser: actingAdmin } = useAuth(); // Get current admin
   const [invites, setInvites] = useState<CircleInvite[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
@@ -85,23 +88,44 @@ export default function CircleInviteManagementPage() {
   };
 
   const handleConfirmAction = async () => {
-    if (!inviteToProcess || !actionType) return;
+    if (!inviteToProcess || !actionType || !actingAdmin) {
+      toast({ title: "Error", description: "Required information missing or admin not authenticated.", variant: "destructive" });
+      return;
+    }
     
     setIsProcessingAction(true);
     let result: { success: boolean; error?: string } = { success: false, error: "Unknown action type." };
+    const inviteeIdentifier = inviteToProcess.inviteeUsername || inviteToProcess.inviteeEmail || 'Unknown';
 
     try {
       if (actionType === 'delete') {
-        result = await adminDeleteCircleInviteAction({ inviteId: inviteToProcess.id! });
+        result = await adminDeleteCircleInviteAction({ 
+            inviteId: inviteToProcess.id!, 
+            actingAdminId: actingAdmin.uid,
+            inviteeIdentifier: inviteeIdentifier,
+            circleName: inviteToProcess.circleName,
+        });
       } else if (actionType === 'updateStatus' && newStatusForInvite) {
-        result = await adminUpdateCircleInviteStatusAction({ inviteId: inviteToProcess.id!, newStatus: newStatusForInvite, adminNotes: "Status updated by admin." });
+        result = await adminUpdateCircleInviteStatusAction({ 
+            inviteId: inviteToProcess.id!, 
+            newStatus: newStatusForInvite, 
+            adminNotes: "Status updated by admin.", 
+            actingAdminId: actingAdmin.uid,
+            inviteeIdentifier: inviteeIdentifier,
+            circleName: inviteToProcess.circleName,
+        });
       } else if (actionType === 'sendReminder') {
-        result = await adminSendCircleInviteReminderAction({ inviteId: inviteToProcess.id! });
+        result = await adminSendCircleInviteReminderAction({ 
+            inviteId: inviteToProcess.id!,
+            actingAdminId: actingAdmin.uid,
+            inviteeIdentifier: inviteeIdentifier,
+            circleName: inviteToProcess.circleName,
+        });
       }
 
       if (result.success) {
-        toast({ title: "Action Successful", description: `Invite action "${actionType}" completed for invite to "${inviteToProcess.circleName}".` });
-        fetchInvites(); // Refresh list
+        toast({ title: "Action Successful", description: `Invite action "${actionType}" completed for invite to "${inviteeIdentifier}" for circle "${inviteToProcess.circleName}".` });
+        fetchInvites(); 
       } else {
         throw new Error(result.error || "Failed to perform action.");
       }
@@ -119,6 +143,10 @@ export default function CircleInviteManagementPage() {
   const formatDateSafe = (timestamp: Timestamp | undefined) => {
     if (!timestamp) return 'N/A';
     return format(timestamp.toDate(), 'PP p');
+  }
+  const formatDistanceSafe = (timestamp?: Timestamp) => {
+    if (!timestamp) return 'Never';
+    return formatDistanceToNowStrict(timestamp.toDate(), { addSuffix: true });
   }
 
   return (
@@ -202,7 +230,7 @@ export default function CircleInviteManagementPage() {
                     <TableCell>{getStatusBadge(invite.status)}</TableCell>
                     <TableCell>{formatDateSafe(invite.dateSent)}</TableCell>
                     <TableCell>{formatDateSafe(invite.dateResponded)}</TableCell>
-                    <TableCell>{invite.lastReminderSentTimestamp ? formatDistanceToNowStrict(invite.lastReminderSentTimestamp.toDate(), {addSuffix: true}) : 'Never'}</TableCell>
+                    <TableCell>{formatDistanceSafe(invite.lastReminderSentTimestamp)}</TableCell>
                     <TableCell className="text-right">
                       <DropdownMenu>
                         <DropdownMenuTrigger asChild>
@@ -212,14 +240,14 @@ export default function CircleInviteManagementPage() {
                         </DropdownMenuTrigger>
                         <DropdownMenuContent align="end">
                           <DropdownMenuLabel>Actions for Invite</DropdownMenuLabel>
-                           <DropdownMenuItem onClick={() => openActionConfirmDialog(invite, 'sendReminder')} disabled={invite.status !== 'Sent' && invite.status !== 'SentToEmail'}>
+                           <DropdownMenuItem onClick={() => openActionConfirmDialog(invite, 'sendReminder')} disabled={(invite.status !== 'Sent' && invite.status !== 'SentToEmail') || (isProcessingAction && inviteToProcess?.id === invite.id)}>
                             <BellRing className="mr-2 h-4 w-4 text-blue-500"/>Send Reminder
                           </DropdownMenuItem>
-                          <DropdownMenuItem onClick={() => openActionConfirmDialog(invite, 'updateStatus', 'Expired')} disabled={invite.status === 'Expired' || invite.status === 'Accepted' || invite.status === 'Declined'}>
+                          <DropdownMenuItem onClick={() => openActionConfirmDialog(invite, 'updateStatus', 'Expired')} disabled={invite.status === 'Expired' || invite.status === 'Accepted' || invite.status === 'Declined' || (isProcessingAction && inviteToProcess?.id === invite.id)}>
                             <XCircle className="mr-2 h-4 w-4 text-orange-500"/>Mark as Expired
                           </DropdownMenuItem>
                           <DropdownMenuSeparator />
-                          <DropdownMenuItem onClick={() => openActionConfirmDialog(invite, 'delete')} className="text-destructive focus:text-destructive">
+                          <DropdownMenuItem onClick={() => openActionConfirmDialog(invite, 'delete')} className="text-destructive focus:text-destructive" disabled={isProcessingAction && inviteToProcess?.id === invite.id}>
                             <Trash2 className="mr-2 h-4 w-4"/>Delete Invite
                           </DropdownMenuItem>
                         </DropdownMenuContent>
@@ -243,9 +271,10 @@ export default function CircleInviteManagementPage() {
               <AlertDialogTitle>Confirm Action: {actionType?.replace(/([A-Z])/g, ' $1').trim()}</AlertDialogTitle>
               <AlertDialogDescription>
                 Are you sure you want to {actionType} this invite
-                {actionType === 'updateStatus' && ` and set its status to "${newStatusForInvite}"`}?
-                {actionType === 'sendReminder' && ` This will log a reminder event and update the timestamp.`}
-                {actionType === 'delete' && ` This action cannot be undone.`}
+                {actionType === 'updateStatus' && ` for "${inviteToProcess.inviteeUsername || inviteToProcess.inviteeEmail}" to circle "${inviteToProcess.circleName}" and set its status to "${newStatusForInvite}"`}
+                {actionType === 'sendReminder' && ` for "${inviteToProcess.inviteeUsername || inviteToProcess.inviteeEmail}" to circle "${inviteToProcess.circleName}"? This will log a reminder event and update the timestamp.`}
+                {actionType === 'delete' && ` for "${inviteToProcess.inviteeUsername || inviteToProcess.inviteeEmail}" to circle "${inviteToProcess.circleName}"? This action cannot be undone.`}
+                ?
               </AlertDialogDescription>
             </AlertDialogHeader>
             <AlertDialogFooter>

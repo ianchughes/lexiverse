@@ -1,36 +1,39 @@
 
 'use client';
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState } from 'react'; // useEffect, useCallback, getDoc removed as not used
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { useToast } from '@/hooks/use-toast';
-import { firestore } from '@/lib/firebase';
-import { doc, setDoc, getDoc, serverTimestamp } from 'firebase/firestore';
-import { Loader2, Zap, Save } from 'lucide-react';
+// firestore, serverTimestamp removed from firebase imports
+import { Loader2, Zap } from 'lucide-react';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
-import type { SystemSettings } from '@/types';
+// SystemSettings type removed
+import { adminForceDailyResetAction } from './actions'; // Import the server action
+import { useAuth } from '@/contexts/AuthContext'; // Import useAuth
 
-const SYSTEM_SETTINGS_COLLECTION = "SystemConfiguration";
-const GAME_SETTINGS_DOC_ID = "gameSettings";
 
 export default function SystemConfigurationPage() {
   const { toast } = useToast();
+  const { currentUser: actingAdmin } = useAuth(); // Get current admin
   const [isResetting, setIsResetting] = useState(false);
-  // UI Tone state and functions removed
 
   const handleForceDailyReset = async () => {
+    if (!actingAdmin) {
+      toast({ title: "Authentication Error", description: "Admin not authenticated.", variant: "destructive"});
+      return;
+    }
     setIsResetting(true);
     try {
-      const settingsDocRef = doc(firestore, SYSTEM_SETTINGS_COLLECTION, GAME_SETTINGS_DOC_ID);
-      const newSettings: Partial<SystemSettings> = {
-        lastForcedResetTimestamp: serverTimestamp(),
-      };
-      await setDoc(settingsDocRef, newSettings, { merge: true });
-      toast({
-        title: "Daily Reset Triggered",
-        description: "The daily game play limit has been reset. Users will be able to play again on their next visit/refresh.",
-      });
+      const result = await adminForceDailyResetAction({ actingAdminId: actingAdmin.uid });
+      if (result.success) {
+        toast({
+          title: "Daily Reset Triggered",
+          description: "The daily game play limit has been reset. Users will be able to play again on their next visit/refresh.",
+        });
+      } else {
+        throw new Error(result.error || "Could not trigger daily reset.");
+      }
     } catch (error: any) {
       console.error("Error forcing daily reset:", error);
       toast({
@@ -43,7 +46,6 @@ export default function SystemConfigurationPage() {
     }
   };
 
-  // handleSaveUiTone function removed
 
   return (
     <div className="space-y-6">
@@ -71,7 +73,7 @@ export default function SystemConfigurationPage() {
               </div>
               <AlertDialog>
                 <AlertDialogTrigger asChild>
-                  <Button variant="destructive" className="mt-2 sm:mt-0 shrink-0" disabled={isResetting}>
+                  <Button variant="destructive" className="mt-2 sm:mt-0 shrink-0" disabled={isResetting || !actingAdmin}>
                     {isResetting ? (
                       <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                     ) : (
@@ -97,9 +99,6 @@ export default function SystemConfigurationPage() {
               </AlertDialog>
             </div>
           </Card>
-
-          {/* UI Friendliness Tone Card removed */}
-
         </CardContent>
          <CardFooter>
             <p className="text-xs text-muted-foreground">

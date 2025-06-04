@@ -1,30 +1,49 @@
 
 'use server';
 
-import { firestore, auth } from '@/lib/firebase';
+import { firestore } from '@/lib/firebase'; // auth removed
 import { doc, updateDoc, deleteDoc, getDoc, serverTimestamp, Timestamp } from 'firebase/firestore';
-import type { CircleInviteStatus, AppNotification } from '@/types';
+import type { CircleInviteStatus, CircleInvite } from '@/types'; // AppNotification removed as not used directly here
+import { logAdminAction } from '@/lib/auditLogger';
 
-interface AdminCircleInviteActionPayload {
+interface AdminCircleInviteActionBasePayload {
   inviteId: string;
+  actingAdminId: string;
+}
+interface AdminDeleteCircleInvitePayload extends AdminCircleInviteActionBasePayload {
+  inviteeIdentifier: string; // email or username for logging
+  circleName: string; // for logging
 }
 
-interface AdminUpdateCircleInviteStatusPayload extends AdminCircleInviteActionPayload {
+interface AdminUpdateCircleInviteStatusPayload extends AdminCircleInviteActionBasePayload {
   newStatus: CircleInviteStatus;
+  inviteeIdentifier: string; // email or username for logging
+  circleName: string; // for logging
   adminNotes?: string;
 }
 
-export async function adminDeleteCircleInviteAction(payload: AdminCircleInviteActionPayload): Promise<{ success: boolean; error?: string }> {
-  try {
-    const { inviteId } = payload;
-    // Optional: Add admin permission check here
-    // const currentUserUID = auth.currentUser?.uid;
-    // if (!currentUserUID) return { success: false, error: "Authentication required." };
-    // const adminRole = await checkAdminRole(currentUserUID); // Implement this function
-    // if (adminRole !== 'admin') return { success: false, error: "Permission denied." };
+interface AdminSendCircleInviteReminderPayload extends AdminCircleInviteActionBasePayload {
+    inviteeIdentifier: string; // email or username for logging
+    circleName: string; // for logging
+}
 
+
+export async function adminDeleteCircleInviteAction(payload: AdminDeleteCircleInvitePayload): Promise<{ success: boolean; error?: string }> {
+  try {
+    const { inviteId, actingAdminId, inviteeIdentifier, circleName } = payload;
+    if (!actingAdminId) return { success: false, error: "Authentication required." };
+    
     const inviteRef = doc(firestore, 'CircleInvites', inviteId);
     await deleteDoc(inviteRef);
+
+    await logAdminAction({
+        actingAdminId,
+        actionType: 'INVITE_DELETE_ADMIN',
+        targetEntityType: 'CircleInvite',
+        targetEntityId: inviteId,
+        targetEntityDisplay: `Invite for ${inviteeIdentifier} to ${circleName}`,
+        details: `Admin deleted circle invite ID ${inviteId}.`
+    });
     return { success: true };
   } catch (error: any) {
     console.error("Error in adminDeleteCircleInviteAction:", error);
@@ -34,10 +53,14 @@ export async function adminDeleteCircleInviteAction(payload: AdminCircleInviteAc
 
 export async function adminUpdateCircleInviteStatusAction(payload: AdminUpdateCircleInviteStatusPayload): Promise<{ success: boolean; error?: string }> {
   try {
-    const { inviteId, newStatus, adminNotes } = payload;
-    // Optional: Add admin permission check here
+    const { inviteId, newStatus, adminNotes, actingAdminId, inviteeIdentifier, circleName } = payload;
+    if (!actingAdminId) return { success: false, error: "Authentication required." };
 
     const inviteRef = doc(firestore, 'CircleInvites', inviteId);
+    const inviteSnap = await getDoc(inviteRef);
+    if (!inviteSnap.exists()) return { success: false, error: "Invite not found." };
+    const oldStatus = inviteSnap.data()?.status;
+
     const updateData: { status: CircleInviteStatus; adminNotes?: string, dateResponded?: Timestamp } = { status: newStatus };
     
     if (adminNotes) {
@@ -48,6 +71,15 @@ export async function adminUpdateCircleInviteStatusAction(payload: AdminUpdateCi
     }
 
     await updateDoc(inviteRef, updateData);
+
+    await logAdminAction({
+        actingAdminId,
+        actionType: 'INVITE_STATUS_UPDATE_ADMIN',
+        targetEntityType: 'CircleInvite',
+        targetEntityId: inviteId,
+        targetEntityDisplay: `Invite for ${inviteeIdentifier} to ${circleName}`,
+        details: `Admin updated status from ${oldStatus} to ${newStatus}. Notes: ${adminNotes || 'N/A'}`
+    });
     return { success: true };
   } catch (error: any) {
     console.error("Error in adminUpdateCircleInviteStatusAction:", error);
@@ -55,10 +87,10 @@ export async function adminUpdateCircleInviteStatusAction(payload: AdminUpdateCi
   }
 }
 
-export async function adminSendCircleInviteReminderAction(payload: AdminCircleInviteActionPayload): Promise<{ success: boolean; error?: string }> {
+export async function adminSendCircleInviteReminderAction(payload: AdminSendCircleInviteReminderPayload): Promise<{ success: boolean; error?: string }> {
   try {
-    const { inviteId } = payload;
-    // Optional: Add admin permission check here
+    const { inviteId, actingAdminId, inviteeIdentifier, circleName } = payload;
+    if (!actingAdminId) return { success: false, error: "Authentication required." };
 
     const inviteRef = doc(firestore, 'CircleInvites', inviteId);
     const inviteSnap = await getDoc(inviteRef);
@@ -66,31 +98,28 @@ export async function adminSendCircleInviteReminderAction(payload: AdminCircleIn
     if (!inviteSnap.exists()) {
       return { success: false, error: "Invite not found." };
     }
-    const inviteData = inviteSnap.data();
+    const inviteData = inviteSnap.data() as CircleInvite;
 
+    const adminNoteText = `${inviteData.adminNotes || ''} Reminder manually triggered by admin on ${new Date().toISOString()}`.trim();
     await updateDoc(inviteRef, {
       lastReminderSentTimestamp: serverTimestamp(),
-      adminNotes: `${inviteData.adminNotes || ''} Reminder manually triggered by admin on ${new Date().toISOString()}`.trim()
+      adminNotes: adminNoteText,
     });
 
     if (inviteData.status === 'SentToEmail' && inviteData.inviteeEmail) {
-      // Placeholder for actual email sending logic
       console.log(`ADMIN ACTION: Reminder email should be re-sent to ${inviteData.inviteeEmail} for invite ID ${inviteId} to join circle "${inviteData.circleName}".`);
-      // In a real app, you would trigger an email service here.
     } else if (inviteData.status === 'Sent' && inviteData.inviteeUserId) {
-      // Placeholder for re-sending in-app notification
-      // This might involve creating a new Notification document or using another mechanism
       console.log(`ADMIN ACTION: In-app reminder should be sent to user ${inviteData.inviteeUserId} for invite ID ${inviteId} to join circle "${inviteData.circleName}".`);
-      // Example: Create a new generic notification
-      // const notifPayload: Omit<AppNotification, 'id' | 'dateCreated'> = {
-      //   userId: inviteData.inviteeUserId,
-      //   message: `Friendly reminder: You have a pending invitation to join circle "${inviteData.circleName}".`,
-      //   type: 'Generic', 
-      //   isRead: false,
-      //   link: `/notifications` 
-      // };
-      // await addDoc(collection(firestore, 'Notifications'), { ...notifPayload, dateCreated: serverTimestamp() });
     }
+
+    await logAdminAction({
+        actingAdminId,
+        actionType: 'INVITE_REMINDER_SEND_ADMIN',
+        targetEntityType: 'CircleInvite',
+        targetEntityId: inviteId,
+        targetEntityDisplay: `Invite for ${inviteeIdentifier} to ${circleName}`,
+        details: `Admin sent reminder for invite. Old Admin Notes: ${inviteData.adminNotes || 'N/A'}. New notes: ${adminNoteText}`
+    });
 
     return { success: true };
   } catch (error: any) {

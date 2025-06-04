@@ -1,9 +1,10 @@
 
 'use server';
 
-import { firestore, auth } from '@/lib/firebase';
+import { firestore } from '@/lib/firebase'; // auth removed
 import { collection, query, where, getDocs, doc, updateDoc, setDoc, serverTimestamp, Timestamp, increment, getDoc as getFirestoreDoc, deleteDoc, writeBatch } from 'firebase/firestore';
-import type { WordSubmission, WordSubmissionStatus, MasterWordType, UserProfile, RejectedWordType, RejectionType } from '@/types';
+import type { WordSubmission, MasterWordType, UserProfile, RejectedWordType, RejectionType } from '@/types';
+import { logAdminAction } from '@/lib/auditLogger';
 
 const WORD_SUBMISSIONS_QUEUE = "WordSubmissionsQueue";
 const MASTER_WORDS_COLLECTION = "Words";
@@ -21,6 +22,7 @@ export async function adminApproveWordSubmissionAction(payload: { submissionId: 
     const submissionDocRef = doc(firestore, WORD_SUBMISSIONS_QUEUE, submissionId);
     const wordKey = wordText.toUpperCase();
     const masterWordDocRef = doc(firestore, MASTER_WORDS_COLLECTION, wordKey);
+    let actionMessage = "";
     
     try {
         const masterWordSnap = await getFirestoreDoc(masterWordDocRef);
@@ -28,16 +30,13 @@ export async function adminApproveWordSubmissionAction(payload: { submissionId: 
         if (masterWordSnap.exists()) {
             const masterWordData = masterWordSnap.data() as MasterWordType;
             if (masterWordData.originalSubmitterUID && masterWordData.originalSubmitterUID !== submittedByUID) {
-                // Word exists and IS ALREADY OWNED by someone else. This submission is a duplicate.
                 await deleteDoc(submissionDocRef); 
-                return { success: true, message: `Word "${wordKey}" already exists and is owned by another user. Submission removed as duplicate.` };
+                actionMessage = `Word "${wordKey}" already exists and is owned by another user. Submission removed as duplicate.`;
             } else if (masterWordData.originalSubmitterUID && masterWordData.originalSubmitterUID === submittedByUID) {
-                // Word exists and is already owned by THIS submitter. Benign duplicate.
                 await deleteDoc(submissionDocRef);
-                return { success: true, message: `Word "${wordKey}" is already owned by this submitter. Duplicate submission removed.` };
+                actionMessage = `Word "${wordKey}" is already owned by this submitter. Duplicate submission removed.`;
             }
             else {
-                // Word exists but is UNCLAIMED (originalSubmitterUID is null). This submission RECLAIMS it.
                 await updateDoc(masterWordDocRef, {
                     originalSubmitterUID: submittedByUID,
                     puzzleDateGMTOfSubmission: puzzleDateGMT,
@@ -46,13 +45,12 @@ export async function adminApproveWordSubmissionAction(payload: { submissionId: 
                     definition: definition || masterWordData.definition, 
                     frequency: frequency || masterWordData.frequency,   
                     status: 'Approved', 
-                    pendingTransferId: null, // Ensure any old pending transfer is cleared on reclaim
+                    pendingTransferId: null,
                 });
                 await deleteDoc(submissionDocRef); 
-                return { success: true, message: `Word "${wordKey}" was unclaimed and has now been re-claimed by the submitter.` };
+                actionMessage = `Word "${wordKey}" was unclaimed and has now been re-claimed by the submitter.`;
             }
         } else {
-            // Word does not exist in Master Dictionary. This is a NEW word.
             const newMasterWord: MasterWordType = {
                 wordText: wordKey,
                 definition: definition || "No definition provided.",
@@ -65,15 +63,26 @@ export async function adminApproveWordSubmissionAction(payload: { submissionId: 
             };
             await setDoc(masterWordDocRef, newMasterWord);
             await deleteDoc(submissionDocRef); 
-            return { success: true, message: `New word "${wordKey}" approved and added to dictionary.` };
+            actionMessage = `New word "${wordKey}" approved and added to dictionary.`;
         }
+
+        await logAdminAction({
+            actingAdminId,
+            actionType: 'WORD_SUBMISSION_APPROVE',
+            targetEntityType: 'Word',
+            targetEntityId: wordKey,
+            targetEntityDisplay: wordKey,
+            details: actionMessage,
+        });
+        return { success: true, message: actionMessage };
+
     } catch (error: any) {
         console.error("Error approving submission:", error);
         return { success: false, error: `Could not approve submission for "${wordKey}": ${error.message}` };
     }
 }
 
-export async function adminRejectWordSubmissionAction(payload: { submissionId: string, wordText: string, submittedByUID: string, rejectionType: RejectionType, actingAdminId: string }): Promise<{ success: boolean; error?: string }> {
+export async function adminRejectWordSubmissionAction(payload: { submissionId: string, wordText: string, submittedByUID: string, rejectionType: RejectionType, actingAdminId: string }): Promise<{ success: boolean; error?: string, message?:string }> {
     const { submissionId, wordText, submittedByUID, rejectionType, actingAdminId } = payload;
     if (!actingAdminId) {
         return { success: false, error: "Authentication Error: You must be logged in to moderate." };
@@ -82,6 +91,7 @@ export async function adminRejectWordSubmissionAction(payload: { submissionId: s
     const wordKey = wordText.toUpperCase();
     const rejectedWordDocRef = doc(firestore, REJECTED_WORDS_COLLECTION, wordKey);
     const submissionDocRef = doc(firestore, WORD_SUBMISSIONS_QUEUE, submissionId);
+    let message = "";
 
     try {
         const newRejectedWord: RejectedWordType = {
@@ -94,7 +104,7 @@ export async function adminRejectWordSubmissionAction(payload: { submissionId: s
         await setDoc(rejectedWordDocRef, newRejectedWord, { merge: true }); 
         await deleteDoc(submissionDocRef);
 
-        let message = `Word "${wordText}" rejected as ${rejectionType}.`;
+        message = `Word "${wordText}" rejected as ${rejectionType}.`;
         if (rejectionType === 'Gibberish') {
             const userDocRef = doc(firestore, USERS_COLLECTION, submittedByUID);
             const userSnap = await getFirestoreDoc(userDocRef);
@@ -106,7 +116,16 @@ export async function adminRejectWordSubmissionAction(payload: { submissionId: s
                 message += ` ${deductionPoints} points deducted from submitter.`;
             }
         }
-        return { success: true };
+        
+        await logAdminAction({
+            actingAdminId,
+            actionType: 'WORD_SUBMISSION_REJECT',
+            targetEntityType: 'Word',
+            targetEntityId: wordKey,
+            targetEntityDisplay: wordKey,
+            details: message,
+        });
+        return { success: true, message };
     } catch (error: any) {
         console.error("Error rejecting submission:", error);
         return { success: false, error: `Could not reject submission: ${error.message}` };
@@ -138,6 +157,8 @@ export async function adminBulkProcessWordSubmissionsAction(payload: BulkProcess
 
     const batch = writeBatch(firestore);
     const results: Array<{id: string, status: string, error?: string}> = [];
+    let approvedCount = 0;
+    let rejectedCount = 0;
 
     const uniqueWordKeysInBatch = new Set(submissionsToProcess.filter(s => s.action === 'approve').map(s => s.wordText.toUpperCase()));
     const masterWordPreFetchPromises: Promise<[string, MasterWordType | null]>[] = [];
@@ -167,9 +188,11 @@ export async function adminBulkProcessWordSubmissionsAction(payload: BulkProcess
                     if (existingMasterWordData.originalSubmitterUID && existingMasterWordData.originalSubmitterUID !== item.submittedByUID) {
                         batch.delete(submissionDocRef);
                         results.push({ id: item.submissionId, status: 'rejected_duplicate_owned', error: 'Word already owned by another user.' });
+                        rejectedCount++;
                     } else if (existingMasterWordData.originalSubmitterUID && existingMasterWordData.originalSubmitterUID === item.submittedByUID) {
                         batch.delete(submissionDocRef);
                         results.push({ id: item.submissionId, status: 'rejected_duplicate_self_owned', error: 'Word already owned by this submitter.' });
+                        rejectedCount++;
                     } else {
                         batch.update(masterWordDocRef, {
                             originalSubmitterUID: item.submittedByUID,
@@ -187,7 +210,8 @@ export async function adminBulkProcessWordSubmissionsAction(payload: BulkProcess
                             ...existingMasterWordData,
                             originalSubmitterUID: item.submittedByUID,
                             addedByUID: actingAdminId,
-                        });
+                        } as MasterWordType); // Cast here
+                        approvedCount++;
                     }
                 } else {
                     const newMasterWord: MasterWordType = {
@@ -204,6 +228,7 @@ export async function adminBulkProcessWordSubmissionsAction(payload: BulkProcess
                     batch.delete(submissionDocRef);
                     results.push({ id: item.submissionId, status: 'approved_new' });
                     preFetchedMasterWordsMap.set(wordKey, newMasterWord);
+                    approvedCount++;
                 }
             } else if (item.action === 'rejectGibberish' || item.action === 'rejectAdminDecision') {
                 const rejectedWordDocRef = doc(firestore, REJECTED_WORDS_COLLECTION, wordKey);
@@ -217,10 +242,11 @@ export async function adminBulkProcessWordSubmissionsAction(payload: BulkProcess
                 batch.set(rejectedWordDocRef, newRejectedWord, { merge: true });
                 batch.delete(submissionDocRef);
                 results.push({ id: item.submissionId, status: `rejected_${item.action === 'rejectGibberish' ? 'gibberish' : 'admin_decision'}` });
+                rejectedCount++;
 
                 if (item.action === 'rejectGibberish') {
                     const userDocRef = doc(firestore, USERS_COLLECTION, item.submittedByUID);
-                     const userSnap = await getFirestoreDoc(userDocRef);
+                     const userSnap = await getFirestoreDoc(userDocRef); // This needs to be outside batch or handled differently
                      if (userSnap.exists()) {
                        const deductionPoints = item.wordText.length;
                        batch.update(userDocRef, { overallPersistentScore: increment(-deductionPoints) });
@@ -234,6 +260,11 @@ export async function adminBulkProcessWordSubmissionsAction(payload: BulkProcess
 
     try {
         await batch.commit();
+        await logAdminAction({
+            actingAdminId,
+            actionType: 'WORD_SUBMISSION_BULK_PROCESS',
+            details: `Bulk processed: ${approvedCount} approved, ${rejectedCount} rejected. Total items: ${submissionsToProcess.filter(s => s.action !== 'noAction').length}.`,
+        });
         return { success: true, results };
     } catch (error: any) {
         console.error("Error committing bulk word processing batch:", error);
@@ -248,12 +279,13 @@ export async function adminBulkProcessWordSubmissionsAction(payload: BulkProcess
 
 
 interface AdminDisassociateWordOwnerPayload {
-  wordText: string; // Document ID of the word
+  wordText: string; 
   actingAdminId: string;
+  originalOwnerUID?: string; // For logging
 }
 
 export async function adminDisassociateWordOwnerAction(payload: AdminDisassociateWordOwnerPayload): Promise<{ success: boolean; error?: string }> {
-  const { wordText, actingAdminId } = payload;
+  const { wordText, actingAdminId, originalOwnerUID } = payload;
 
   if (!actingAdminId) {
     return { success: false, error: "Authentication Error: Admin ID is required." };
@@ -271,6 +303,15 @@ export async function adminDisassociateWordOwnerAction(payload: AdminDisassociat
       originalSubmitterUID: null,
       puzzleDateGMTOfSubmission: null,
       pendingTransferId: null, 
+    });
+
+    await logAdminAction({
+        actingAdminId,
+        actionType: 'WORD_OWNER_DISASSOCIATE',
+        targetEntityType: 'Word',
+        targetEntityId: wordText.toUpperCase(),
+        targetEntityDisplay: wordText.toUpperCase(),
+        details: `Owner disassociated from word. Original owner UID (if known): ${originalOwnerUID || 'N/A'}.`,
     });
 
     return { success: true };
@@ -301,28 +342,25 @@ export async function adminBulkDisassociateWordOwnersAction(payload: AdminBulkDi
   for (const wordText of wordTexts) {
     const wordKey = wordText.toUpperCase();
     const wordDocRef = doc(firestore, MASTER_WORDS_COLLECTION, wordKey);
-    
-    // We might want to check if the word exists first, but for a bulk action,
-    // attempting the update and catching errors per item might be acceptable.
-    // For now, let's assume they exist from the client selection.
-    // A pre-fetch like in bulk process could be added for robustness.
     batch.update(wordDocRef, {
       originalSubmitterUID: null,
       puzzleDateGMTOfSubmission: null,
       pendingTransferId: null,
     });
-    // We can't confirm success per item until batch.commit(), so we'll assume success for now
-    // and rely on the overall batch commit success/failure.
-    // A more granular result would require individual get/update or more complex transaction logic not suitable for a simple batch.
   }
 
   try {
     await batch.commit();
     wordTexts.forEach(wt => results.push({ wordText: wt, status: 'disassociated' }));
+    
+    await logAdminAction({
+        actingAdminId,
+        actionType: 'WORD_OWNER_BULK_DISASSOCIATE',
+        details: `Bulk disassociated owners for ${wordTexts.length} words: ${wordTexts.join(', ')}.`,
+    });
     return { success: true, results };
   } catch (error: any) {
     console.error("Error committing bulk word disassociation batch:", error);
-    // Mark all as error if batch fails, as we don't know which one failed
     wordTexts.forEach(wt => {
         if (!results.find(r => r.wordText === wt)) {
             results.push({ wordText: wt, status: 'error', error: error.message });

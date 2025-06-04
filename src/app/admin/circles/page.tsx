@@ -4,7 +4,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import Link from 'next/link';
 import { firestore } from '@/lib/firebase';
-import { collection, getDocs, doc, updateDoc, query, orderBy, limit, startAfter, where } from 'firebase/firestore';
+import { collection, getDocs, query, orderBy } from 'firebase/firestore'; // Removed doc, updateDoc
 import type { Circle, CircleStatus } from '@/types';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from "@/components/ui/card";
@@ -18,17 +18,17 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { MoreHorizontal, Users, ShieldAlert, ShieldCheck, Trash2, Eye, Loader2, RefreshCw } from 'lucide-react';
 import { format } from 'date-fns';
 import { adminUpdateCircleStatusAction } from '@/app/admin/circles/actions';
-
+import { useAuth } from '@/contexts/AuthContext'; // Import useAuth
 
 const CIRCLES_PER_PAGE = 15;
 
 export default function CircleManagementPage() {
   const { toast } = useToast();
+  const { currentUser: actingAdmin } = useAuth(); // Get current admin
   const [circles, setCircles] = useState<Circle[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState<CircleStatus | 'all'>('all');
-  // Pagination state would go here if implemented: lastVisible, firstVisible etc.
 
   const [circleToUpdate, setCircleToUpdate] = useState<Circle | null>(null);
   const [newStatusForCircle, setNewStatusForCircle] = useState<CircleStatus | null>(null);
@@ -39,9 +39,6 @@ export default function CircleManagementPage() {
     setIsLoading(true);
     try {
       let q = query(collection(firestore, "Circles"), orderBy("dateCreated", "desc"));
-      
-      // Basic client-side filtering for demo. For production, use Firestore queries.
-      // This requires composite indexes for combined filtering/sorting if done server-side.
       
       const querySnapshot = await getDocs(q);
       let fetchedCircles: Circle[] = querySnapshot.docs.map(d => ({ id: d.id, ...d.data() } as Circle));
@@ -64,7 +61,7 @@ export default function CircleManagementPage() {
     } finally {
       setIsLoading(false);
     }
-  }, [toast, searchTerm, statusFilter]); // Re-fetch when filters change
+  }, [toast, searchTerm, statusFilter]); 
 
   useEffect(() => {
     fetchCircles();
@@ -87,13 +84,21 @@ export default function CircleManagementPage() {
   };
 
   const handleConfirmStatusUpdate = async () => {
-    if (!circleToUpdate || !newStatusForCircle) return;
+    if (!circleToUpdate || !newStatusForCircle || !actingAdmin) {
+      toast({ title: "Error", description: "Missing required information or admin not authenticated.", variant: "destructive" });
+      return;
+    }
     setIsProcessing(true);
     try {
-      const result = await adminUpdateCircleStatusAction({ circleId: circleToUpdate.id, newStatus: newStatusForCircle });
+      const result = await adminUpdateCircleStatusAction({ 
+        circleId: circleToUpdate.id, 
+        newStatus: newStatusForCircle,
+        actingAdminId: actingAdmin.uid,
+        circleName: circleToUpdate.circleName // For logging
+      });
       if (result.success) {
         toast({ title: "Status Updated", description: `Circle "${circleToUpdate.circleName}" status changed to ${newStatusForCircle}.` });
-        fetchCircles(); // Refresh list
+        fetchCircles(); 
       } else {
         throw new Error(result.error || "Failed to update status.");
       }
@@ -215,7 +220,6 @@ export default function CircleManagementPage() {
           )}
         </CardContent>
         <CardFooter>
-            {/* Add pagination controls here if implementing pagination */}
             <p className="text-xs text-muted-foreground">Displaying {circles.length} circles.</p>
         </CardFooter>
       </Card>
@@ -244,4 +248,3 @@ export default function CircleManagementPage() {
     </div>
   );
 }
-

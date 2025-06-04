@@ -111,8 +111,6 @@ export interface RejectedWordType {
 
 export interface SystemSettings {
   lastForcedResetTimestamp?: Timestamp;
-  // uiTone?: number; // Removed uiTone
-  // Add other global settings here
 }
 
 // For AI-generated puzzle suggestions (client-side & flow output)
@@ -173,6 +171,7 @@ export interface CircleInvite {
   inviterUsername: string; // Denormalized
   inviteeUserId?: string;
   inviteeEmail?: string;
+  inviteeUsername?: string; // Added for consistency in pending invites display
   status: CircleInviteStatus;
   dateSent: Timestamp;
   dateResponded?: Timestamp;
@@ -265,4 +264,43 @@ export interface WordTransfer {
   initiatedAt: Timestamp;
   expiresAt: Timestamp;
   respondedAt?: Timestamp;
+}
+
+// Admin Audit Log Types
+export type AdminActionType =
+  // User Management
+  | 'USER_ROLE_CHANGE'
+  | 'USER_STATUS_CHANGE'
+  | 'USER_DELETE'
+  // Puzzle Management (Illustrative - these need actual server actions for proper logging)
+  | 'PUZZLE_CREATE'
+  | 'PUZZLE_UPDATE'
+  | 'PUZZLE_DELETE'
+  | 'PUZZLE_AI_SUGGESTIONS_SAVED'
+  | 'PUZZLE_FILL_GAPS'
+  | 'PUZZLE_RESEED_UPCOMING'
+  // Word Moderation
+  | 'WORD_SUBMISSION_APPROVE'
+  | 'WORD_SUBMISSION_REJECT'
+  | 'WORD_SUBMISSION_BULK_PROCESS'
+  | 'WORD_OWNER_DISASSOCIATE'
+  | 'WORD_OWNER_BULK_DISASSOCIATE'
+  // Circle Management
+  | 'CIRCLE_STATUS_CHANGE_ADMIN'
+  // Invite Management
+  | 'INVITE_DELETE_ADMIN'
+  | 'INVITE_STATUS_UPDATE_ADMIN'
+  | 'INVITE_REMINDER_SEND_ADMIN'
+  // System Configuration
+  | 'SYSTEM_DAILY_RESET_TRIGGER';
+
+export interface AdminAuditLogEntry {
+  id?: string; // Firestore Document ID
+  timestamp: Timestamp;
+  actingAdminId: string;
+  actionType: AdminActionType;
+  targetEntityType?: string; // e.g., 'User', 'Puzzle', 'Word', 'Circle', 'Invite'
+  targetEntityId?: string; // UID of user, ID of puzzle, etc.
+  targetEntityDisplay?: string; // e.g. username, wordText, circleName
+  details?: string | object; // Human-readable summary or structured data
 }
