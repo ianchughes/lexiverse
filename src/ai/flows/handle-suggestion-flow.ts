@@ -11,7 +11,8 @@
 import {ai} from '@/ai/genkit';
 import {z} from 'genkit';
 import { firestore } from '@/lib/firebase';
-import { collection, addDoc, serverTimestamp } from 'firebase/firestore';
+import { collection, addDoc, serverTimestamp, doc, getDoc } from 'firebase/firestore';
+import type { UserProfile } from '@/types';
 
 const HandleSuggestionInputSchema = z.object({
   userId: z.string().optional().describe('The ID of the user making the suggestion, if logged in.'),
@@ -20,7 +21,6 @@ const HandleSuggestionInputSchema = z.object({
     role: z.enum(['user', 'model']),
     content: z.string(),
   })).optional().describe('Previous messages in the conversation, if any.'),
-  // uiTone field removed
 });
 export type HandleSuggestionInput = z.infer<typeof HandleSuggestionInputSchema>;
 
@@ -30,7 +30,6 @@ const HandleSuggestionOutputSchema = z.object({
 export type HandleSuggestionOutput = z.infer<typeof HandleSuggestionOutputSchema>;
 
 export async function handleUserSuggestion(input: HandleSuggestionInput): Promise<HandleSuggestionOutput> {
-  // Removed fallback to default uiTone as it's no longer used
   return handleSuggestionFlow(input);
 }
 
@@ -68,7 +67,6 @@ Bot: "More colors, got it! Could you tell me a bit more about where you'd like t
 Respond to the user's suggestion: "{{{suggestionText}}}"
 Bot:`,
   templateFormat: "handlebars",
-  // Removed model.helpers for uiTone_description
 });
 
 const handleSuggestionFlow = ai.defineFlow(
@@ -78,11 +76,10 @@ const handleSuggestionFlow = ai.defineFlow(
     outputSchema: HandleSuggestionOutputSchema,
   },
   async (input) => {
-    // Removed effectiveInput and uiTone logic
-    let botResponseText = "Thanks for your suggestion! I'll make sure our team sees it."; // Default fallback
+    let botResponseText = "Thanks for your suggestion! I'll make sure our team sees it."; 
 
     try {
-      const { output, history } = await suggestionPrompt(input); // Pass input directly
+      const { output, history } = await suggestionPrompt(input); 
       if (output?.response) {
         botResponseText = output.response;
       } else {
@@ -90,7 +87,6 @@ const handleSuggestionFlow = ai.defineFlow(
       }
     } catch (flowError: any) {
       console.error(`[handleSuggestionFlow] Error executing suggestionPrompt: ${flowError.message}`, flowError);
-      // botResponseText remains the default fallback
     }
 
     try {
@@ -99,10 +95,17 @@ const handleSuggestionFlow = ai.defineFlow(
         botResponse: botResponseText,
         conversationHistory: input.conversationHistory || [],
         timestamp: serverTimestamp(),
-        // uiToneUsed removed from log
+        status: 'Pending', // Set initial status
       };
       if (input.userId) {
         suggestionLogData.userId = input.userId;
+        // Denormalize username for easier admin display
+        const userDocRef = doc(firestore, 'Users', input.userId);
+        const userSnap = await getDoc(userDocRef);
+        if (userSnap.exists()) {
+          const userData = userSnap.data() as UserProfile;
+          suggestionLogData.username = userData.username;
+        }
       }
       await addDoc(collection(firestore, 'UserSuggestions'), suggestionLogData);
     } catch (error) {
@@ -112,3 +115,5 @@ const handleSuggestionFlow = ai.defineFlow(
     return {response: botResponseText};
   }
 );
+
+    

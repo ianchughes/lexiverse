@@ -241,13 +241,19 @@ export interface AppNotification {
 }
 
 // User Suggestions Log
+export type UserSuggestionStatus = 'Pending' | 'Actioned' | 'Archived_NoAction';
 export interface UserSuggestionLog {
   id?: string;
   userId?: string; // Optional, if user is logged in
+  username?: string; // Denormalized for admin display
   suggestionText: string;
   botResponse: string;
   conversationHistory?: Array<{ role: 'user' | 'model'; content: string }>;
   timestamp: Timestamp;
+  status: UserSuggestionStatus; // New field
+  adminNotes?: string; // New field
+  actionedByAdminId?: string; // New field
+  dateActioned?: Timestamp; // New field
 }
 
 // Word Transfer Types
@@ -272,7 +278,7 @@ export type AdminActionType =
   | 'USER_ROLE_CHANGE'
   | 'USER_STATUS_CHANGE'
   | 'USER_DELETE'
-  // Puzzle Management (Illustrative - these need actual server actions for proper logging)
+  // Puzzle Management
   | 'PUZZLE_CREATE'
   | 'PUZZLE_UPDATE'
   | 'PUZZLE_DELETE'
@@ -292,15 +298,20 @@ export type AdminActionType =
   | 'INVITE_STATUS_UPDATE_ADMIN'
   | 'INVITE_REMINDER_SEND_ADMIN'
   // System Configuration
-  | 'SYSTEM_DAILY_RESET_TRIGGER';
+  | 'SYSTEM_DAILY_RESET_TRIGGER'
+  // Suggestion Management
+  | 'SUGGESTION_ACTIONED'
+  | 'SUGGESTION_ARCHIVED_NO_ACTION';
 
 export interface AdminAuditLogEntry {
   id?: string; // Firestore Document ID
   timestamp: Timestamp;
   actingAdminId: string;
   actionType: AdminActionType;
-  targetEntityType?: string; // e.g., 'User', 'Puzzle', 'Word', 'Circle', 'Invite'
+  targetEntityType?: string; // e.g., 'User', 'Puzzle', 'Word', 'Circle', 'Invite', 'Suggestion'
   targetEntityId?: string; // UID of user, ID of puzzle, etc.
   targetEntityDisplay?: string; // e.g. username, wordText, circleName
   details?: string | object; // Human-readable summary or structured data
 }
+
+    
