@@ -89,7 +89,6 @@ function JoinCircleFormContent() {
 
   if (!currentUser) {
     // This is the UI for unauthenticated users with an invite link.
-    // The screenshot shows a different "Access Denied" message, suggesting this block might not be reached in prod.
     return (
       <div className="flex items-center justify-center min-h-screen py-12 bg-gradient-to-br from-background to-secondary/20 px-4">
         <Card className="w-full max-w-lg shadow-2xl text-center">
