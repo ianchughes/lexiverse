@@ -1,7 +1,7 @@
 
 'use client';
 
-import { Suspense, useState, useEffect } from 'react'; // Added useEffect
+import { Suspense, useState, useEffect } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -30,17 +30,15 @@ function JoinCircleFormContent() {
   const { currentUser, userProfile, isLoadingAuth } = useAuth();
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  // Get inviteCodeFromUrl once and use it. Default to empty string if not present.
   const inviteCodeFromUrl = searchParams.get('code') || '';
 
   const form = useForm<JoinCircleFormValues>({
     resolver: zodResolver(joinCircleFormSchema),
     defaultValues: {
-      inviteCode: inviteCodeFromUrl, // Pre-fill from URL if available
+      inviteCode: inviteCodeFromUrl,
     },
   });
   
-  // Effect to update form if inviteCodeFromUrl changes (e.g., SPA navigation updates params)
   useEffect(() => {
     if (inviteCodeFromUrl && form.getValues("inviteCode") !== inviteCodeFromUrl) {
       form.reset({ inviteCode: inviteCodeFromUrl });
@@ -88,7 +86,6 @@ function JoinCircleFormContent() {
   }
 
   if (!currentUser) {
-    // This is the UI for unauthenticated users with an invite link.
     return (
       <div className="flex items-center justify-center min-h-screen py-12 bg-gradient-to-br from-background to-secondary/20 px-4">
         <Card className="w-full max-w-lg shadow-2xl text-center">
