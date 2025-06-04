@@ -16,7 +16,7 @@ import { Label } from '@/components/ui/label';
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from '@/components/ui/form';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { useToast } from '@/hooks/use-toast';
-import { LogIn, Eye, EyeOff } from 'lucide-react';
+import { LogIn, Eye, EyeOff, UserPlus } from 'lucide-react';
 
 const formSchema = z.object({
   email: z.string().email({ message: "Please enter a valid email address." }),
@@ -149,12 +149,18 @@ export default function LoginPage() {
               </Button>
             </form>
           </Form>
-          <p className="mt-6 text-center text-sm text-muted-foreground">
-            Don't have an account?{' '}
-            <Button variant="link" className="p-0 h-auto font-semibold" onClick={() => router.push('/auth/register')}>
-              Sign Up
+          <div className="mt-8 text-center">
+            <p className="text-lg text-foreground mb-3">
+              New round here?
+            </p>
+            <Button 
+              variant="secondary"
+              className="w-full sm:w-auto font-semibold text-md py-2.5 px-6"
+              onClick={() => router.push('/auth/register')}
+            >
+              <UserPlus className="mr-2 h-5 w-5" /> Sign up and join the fun!
             </Button>
-          </p>
+          </div>
         </CardContent>
       </Card>
     </div>
