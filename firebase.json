@@ -1,11 +1,14 @@
-
 {
-  "hosting": {
-    "source": ".",
-    "ignore": [
-      "firebase.json",
-      "**/.*",
-      "**/node_modules/**"
-    ]
-  }
+  "apphosting": [
+    {
+      "backend": "lexiverse",
+      "source": ".",
+      "ignore": [
+        "node_modules",
+        ".git",
+        ".firebase",
+        "functions"
+      ]
+    }
+  ]
 }
