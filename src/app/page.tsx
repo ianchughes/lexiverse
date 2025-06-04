@@ -167,33 +167,31 @@ export default function HomePage() {
         console.error("Error checking for admin reset:", error);
       }
       
-      if (userCanPlayToday) { // Only check session results if not force-reset
+      if (userCanPlayToday) { 
         const storedSessionResultsJSON = localStorage.getItem(LEXIVERSE_LAST_SESSION_RESULTS_KEY);
         if (storedSessionResultsJSON) {
           try {
             const storedResults = JSON.parse(storedSessionResultsJSON);
-            // Check if stored results are for today's puzzle date
             if (storedResults.puzzleDateGMT === puzzleDate && storedResults.dateString === todayAsDateString) {
               setFinalDailyScoreForDebrief(storedResults.score);
               setWordsFoundCountForDebrief(storedResults.wordsFoundCount);
               setGuessedWotDForDebrief(storedResults.guessedWotD);
               setNewlyOwnedWordsForDebrief(storedResults.newlyOwnedWords || []);
-              setShareableGameDate(storedResults.puzzleDateGMT); // For sharing
+              setShareableGameDate(storedResults.puzzleDateGMT); 
               setShowDebrief(true);
-              userCanPlayToday = false; // They "played" by viewing results
+              userCanPlayToday = false; 
             } else {
-              // Stored results are old, clear them
               localStorage.removeItem(LEXIVERSE_LAST_SESSION_RESULTS_KEY);
             }
           } catch (e) {
             console.error("Error parsing stored session results:", e);
-            localStorage.removeItem(LEXIVERSE_LAST_SESSION_RESULTS_KEY); // Clear corrupted data
+            localStorage.removeItem(LEXIVERSE_LAST_SESSION_RESULTS_KEY); 
           }
         }
       }
 
       setHasPlayedToday(!userCanPlayToday);
-      setGameState(userCanPlayToday ? 'idle' : 'debrief'); // Go to debrief if already played
+      setGameState(userCanPlayToday ? 'idle' : 'debrief'); 
       setCurrentPuzzleDate(puzzleDate);
       setIsLoadingInitialState(false);
 
@@ -224,8 +222,7 @@ export default function HomePage() {
       });
     }, 1000);
     return () => clearInterval(timerId);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [gameState]); 
+  }, [gameState, timeLeft]); // Added timeLeft to dependencies, handleGameEnd is stable
 
   useEffect(() => {
     if (currentUser && userProfile && !isLoadingAuth && (userProfile.hasSeenWelcomeInstructions === false || userProfile.hasSeenWelcomeInstructions === undefined)) {
@@ -259,7 +256,7 @@ export default function HomePage() {
         toast({title: "Login Required", description: "Please log in or register to play.", variant: "default"});
         return;
     }
-    if (hasPlayedToday && !showDebrief) { // Allow starting if only debrief is showing from stored results
+    if (hasPlayedToday && !showDebrief) { 
       toast({ title: "Already Played", description: "You've already played today. Come back tomorrow!", variant: "default" });
       return;
     }
@@ -270,7 +267,6 @@ export default function HomePage() {
     setCurrentWord([]);
     setSubmittedWords([]);
     setSessionScore(0);
-    // Reset debrief states for a new game
     setGuessedWotDForDebrief(false); 
     setTimeLeft(DAILY_GAME_DURATION);
     setGameState('playing');
@@ -299,7 +295,7 @@ export default function HomePage() {
   };
 
   const handleGameEnd = async () => {
-    setGameState('debrief'); // Transition to debrief state
+    setGameState('debrief'); 
     let finalScore = sessionScore;
     let wotdGuessedThisSession = false;
     if (submittedWords.some(sw => sw.isWotD)) {
@@ -309,19 +305,17 @@ export default function HomePage() {
 
     const roundedFinalScore = Math.round(finalScore);
 
-    // Set states for DailyDebriefDialog
     setFinalDailyScoreForDebrief(roundedFinalScore);
     setWordsFoundCountForDebrief(submittedWords.length);
     setGuessedWotDForDebrief(wotdGuessedThisSession);
     setNewlyOwnedWordsForDebrief([...newlyOwnedWordsThisSession]);
 
     setShowDebrief(true);
-    setHasPlayedToday(true); // Mark as played
+    setHasPlayedToday(true); 
     
     const todayAsDateString = new Date().toDateString();
     localStorage.setItem(LOCALSTORAGE_LAST_PLAYED_KEY, todayAsDateString); 
 
-    // Save session results to local storage
     const sessionResultsToStore = {
         puzzleDateGMT: currentPuzzleDate,
         dateString: todayAsDateString,
@@ -441,7 +435,7 @@ export default function HomePage() {
           newlyClaimedWotD = true;
           setNewlyOwnedWordsThisSession(prev => [...prev, wordText]);
           setApprovedWords(prevMap => new Map(prevMap).set(wordText, {...approvedWordDetails, originalSubmitterUID: currentUser.uid}));
-          toast({ title: "WotD Claimed!", description: `You've claimed ownership of the Word of the Day "${wordText}"!`, className: "bg-accent text-accent-foreground" });
+          toast({ title: "Amazing!", description: `You own the Word of the Day "${wordText}"! It's worth ${wotdSessionPoints} base points.`, className: "bg-accent text-accent-foreground" });
         } else if (approvedWordDetails.originalSubmitterUID && approvedWordDetails.originalSubmitterUID !== currentUser.uid) {
           try {
             const claimerProfileRef = doc(firestore, "Users", approvedWordDetails.originalSubmitterUID);
@@ -456,7 +450,9 @@ export default function HomePage() {
         await saveSubmissionToFirestore(wordText, definitionForSubmission, frequencyForSubmission, true); 
       }
 
-      toast({ title: "Word of the Day!", description: `You found "${wordText}" for ${wotdSessionPoints} base points! (Bonus applied at end)`, className: "bg-accent text-accent-foreground" });
+      if(!newlyClaimedWotD) { // Only show generic WotD if not already shown "Amazing" toast
+        toast({ title: "Word of the Day!", description: `You found "${wordText}" for ${wotdSessionPoints} base points! (Bonus applied at end)`, className: "bg-accent text-accent-foreground" });
+      }
       setSessionScore((prev) => prev + wotdSessionPoints);
       setSubmittedWords((prev) => [...prev, { id: crypto.randomUUID(), text: wordText, points: wotdSessionPoints, isWotD: true, newlyOwned: newlyClaimedWotD }]);
       handleClearWord();
@@ -476,7 +472,7 @@ export default function HomePage() {
         newlyClaimedRegularWord = true;
         setNewlyOwnedWordsThisSession(prev => [...prev, wordText]);
         setApprovedWords(prevMap => new Map(prevMap).set(wordText, {...approvedWordDetails, originalSubmitterUID: currentUser.uid}));
-        toast({ title: "Word Claimed!", description: `You've claimed ownership of "${wordText}"! It's worth ${points} points.`, variant: "default" });
+        toast({ title: "Amazing!", description: `You own "${wordText}"! It's worth ${points} points.`, variant: "default" });
       } else if (approvedWordDetails.originalSubmitterUID === currentUser.uid) { 
         toast({ title: "Word Found!", description: `"${wordText}" is worth ${points} points.`, variant: "default" });
       } else { 
@@ -820,13 +816,13 @@ export default function HomePage() {
         isOpen={showDebrief}
         onOpenChange={(open) => {
             setShowDebrief(open);
-            if (!open) setGameState('idle'); // Return to idle if dialog closed and played today
+            if (!open) setGameState('idle'); 
         }}
         score={finalDailyScoreForDebrief}
         wordsFoundCount={wordsFoundCountForDebrief}
         guessedWotD={guessedWotDForDebrief}
         onShare={() => {
-          setShowDebrief(false); // Close debrief before showing share
+          setShowDebrief(false); 
           setShareableGameDate(currentPuzzleDate); 
           setShowShareModal(true);
         }}
@@ -844,7 +840,7 @@ export default function HomePage() {
           guessedWotD: guessedWotDForDebrief,
           wordsFoundCount: wordsFoundCountForDebrief,
           date: shareableGameDate, 
-          circleName: userProfile?.activeCircleId ? "CircleNamePlaceholder" : undefined,
+          circleName: userProfile?.activeCircleId ? "Your Circle" : undefined, // Placeholder for circle name
           newlyClaimedWordsCount: newlyOwnedWordsForDebrief.length,
         }}
       />
@@ -881,3 +877,4 @@ export default function HomePage() {
   );
 }
 
+    
