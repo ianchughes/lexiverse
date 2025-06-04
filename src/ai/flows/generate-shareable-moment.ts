@@ -33,9 +33,9 @@ export async function generateShareableMoment(input: GenerateShareableMomentInpu
 
 const shareableMomentPrompt = ai.definePrompt({
   name: 'shareableMomentPrompt',
-  model: 'googleai/gemini-2.0-flash-exp', // Moved model config here
+  model: 'googleai/gemini-2.0-flash-exp',
   config: {
-    responseModalities: ['TEXT', 'IMAGE'], // Moved config here
+    responseModalities: ['TEXT', 'IMAGE'],
   },
   input: {
     schema: GenerateShareableMomentInputSchema,
@@ -87,9 +87,8 @@ const generateShareableMomentFlow = ai.defineFlow(
       
       if (!output || !output.imageUri || !output.shareableText) {
           console.error("[generateShareableMomentFlow] AI failed to generate complete shareable moment. Output or history:", output, history);
-          // Provide a fallback text and potentially a placeholder image data URI
           const fallbackText = `I played LexiVerse on ${input.date}! Scored ${input.score}, found ${input.wordsFoundCount} words. ${input.guessedWotD ? 'Got the Word of the Day! 🎉' : 'Missed the WotD. 😥'} Play LexiVerse! #LexiVerse`;
-          const fallbackImage = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=";
+          const fallbackImage = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII="; // Placeholder
           return { 
               shareableText: output?.shareableText || fallbackText, 
               imageUri: output?.imageUri || fallbackImage 
@@ -97,9 +96,9 @@ const generateShareableMomentFlow = ai.defineFlow(
       }
       return output;
     } catch (flowError: any) {
-        console.error(`[generateShareableMomentFlow] Error executing shareableMomentPrompt: ${flowError.message}`, flowError);
+        console.error(`[generateShareableMomentFlow] Error executing shareableMomentPrompt. Message: ${flowError.message}. Stack: ${flowError.stack}. Full error:`, flowError);
         const fallbackText = `LexiVerse results for ${input.date}: ${input.score}pts, ${input.wordsFoundCount} words. WotD: ${input.guessedWotD ? 'Yes!' : 'No'}. #LexiVerse`;
-        const fallbackImage = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=";
+        const fallbackImage = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII="; // Placeholder
         return { 
             shareableText: fallbackText, 
             imageUri: fallbackImage 
@@ -107,3 +106,4 @@ const generateShareableMomentFlow = ai.defineFlow(
     }
   }
 );
+
