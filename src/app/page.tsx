@@ -691,7 +691,7 @@ export default function HomePage() {
           ⚡ LexiVerse: Your 90-Second Word Revolution! ⚡
         </h1>
         <p className="text-lg sm:text-xl text-muted-foreground max-w-2xl mx-auto mb-8 sm:mb-10">
-          Dive into a thrilling daily word puzzle where speed meets strategy! Uncover words from 9 daily letters, "mint" your unique discoveries to earn ongoing points, and team up with friends in Circles. Can you conquer the lexicon in just 90 seconds?
+          Dive into a thrilling daily word puzzle where speed meets strategy! Uncover words from 9 daily letters, "claim" your unique discoveries to earn ongoing points, and team up with friends in Circles. Can you conquer the lexicon in just 90 seconds?
         </p>
         
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6 max-w-3xl mx-auto mb-10 sm:mb-12 text-left">
@@ -725,9 +725,9 @@ export default function HomePage() {
           </Card>
         </div>
 
-        <Button size="xl" className="text-lg font-semibold py-3 px-8 rounded-lg shadow-lg hover:shadow-xl transition-shadow duration-200" asChild>
+        <Button className="text-base font-semibold py-2.5 px-6 sm:text-lg sm:py-3 sm:px-8 rounded-lg shadow-lg hover:shadow-xl transition-shadow duration-200" asChild>
           <Link href="/auth/register">
-            <Gift className="mr-2 h-6 w-6" /> Sign Up Free & Start Your Word Legacy!
+            <Gift className="mr-2 h-5 sm:h-6 w-5 sm:w-6" /> Sign Up Free & Start Your Word Legacy!
           </Link>
         </Button>
          <p className="mt-4">
@@ -771,8 +771,8 @@ export default function HomePage() {
             Points are awarded based on word rarity and length. WotD gets 2x final score bonus.
             Claimed words give their original submitter a bonus!
           </p>
-          <Button size="lg" onClick={startGame} className="font-semibold text-lg py-3 px-8" disabled={isLoadingAuth && !currentUser || hasPlayedToday}>
-            <PlayCircle className="mr-2 h-6 w-6" /> Start Today's Game
+          <Button onClick={startGame} className="font-semibold text-base py-2.5 px-6 sm:text-lg sm:py-3 sm:px-8" disabled={isLoadingAuth && !currentUser || hasPlayedToday}>
+            <PlayCircle className="mr-2 h-5 sm:h-6 w-5 sm:w-6" /> Start Today's Game
           </Button>
         </div>
       )}
