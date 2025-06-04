@@ -779,12 +779,14 @@ export default function HomePage() {
 
       {gameState === 'playing' && (
         <div className="w-full max-w-2xl mx-auto">
-          <div className="flex justify-between items-center mb-6">
-             <div className="w-1/3 text-left">
-                <Badge variant="outline" className="text-sm">Score: {sessionScore}</Badge>
+          <div className="flex flex-col sm:flex-row justify-between items-center gap-2 mb-4 w-full">
+            <div className="sm:w-1/3 text-center sm:text-left">
+                <Badge variant="outline" className="text-lg px-3 py-1">Score: {sessionScore}</Badge>
             </div>
-            <GameTimer timeLeft={timeLeft} />
-            <div className="w-1/3 flex justify-end">
+            <div className="sm:w-1/3 flex justify-center">
+                <GameTimer timeLeft={timeLeft} />
+            </div>
+            <div className="sm:w-1/3 text-center sm:text-right min-h-[38px] flex justify-center sm:justify-end items-center">
               {submittedWords.some(sw => sw.isWotD) && (
                 <Badge variant="default" className="bg-accent text-accent-foreground py-2 px-3 text-sm">
                   <Check className="h-5 w-5 mr-1" /> WotD Found!
