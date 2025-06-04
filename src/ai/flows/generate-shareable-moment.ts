@@ -33,6 +33,10 @@ export async function generateShareableMoment(input: GenerateShareableMomentInpu
 
 const shareableMomentPrompt = ai.definePrompt({
   name: 'shareableMomentPrompt',
+  model: 'googleai/gemini-2.0-flash-exp', // Moved model config here
+  config: {
+    responseModalities: ['TEXT', 'IMAGE'], // Moved config here
+  },
   input: {
     schema: GenerateShareableMomentInputSchema,
   },
@@ -77,29 +81,29 @@ const generateShareableMomentFlow = ai.defineFlow(
     inputSchema: GenerateShareableMomentInputSchema,
     outputSchema: GenerateShareableMomentOutputSchema,
   },
-  async input => {
-    // Use the experimental image generation model
-    const {output} = await ai.generate({
-        model: 'googleai/gemini-2.0-flash-exp', // Ensure this is the image-capable model
-        prompt: shareableMomentPrompt.compile({input}), // Compile the prompt with input
-        config: {
-            responseModalities: ['TEXT', 'IMAGE'], // Request both text and image
-        },
-        output: { schema: GenerateShareableMomentOutputSchema } // Specify output schema for parsing
-    });
-    
-    if (!output || !output.imageUri || !output.shareableText) {
-        // Fallback or error handling if image/text generation fails
-        console.error("AI failed to generate complete shareable moment. Output:", output);
-        // Provide a fallback text and potentially a placeholder image data URI
-        const fallbackText = `I played LexiVerse on ${input.date}! Scored ${input.score}, found ${input.wordsFoundCount} words. ${input.guessedWotD ? 'Got the Word of the Day! 🎉' : 'Missed the WotD. 😥'} Play LexiVerse! #LexiVerse`;
-        // A very simple placeholder 1x1 transparent PNG
+  async (input) => {
+    try {
+      const { output, history } = await shareableMomentPrompt(input);
+      
+      if (!output || !output.imageUri || !output.shareableText) {
+          console.error("[generateShareableMomentFlow] AI failed to generate complete shareable moment. Output or history:", output, history);
+          // Provide a fallback text and potentially a placeholder image data URI
+          const fallbackText = `I played LexiVerse on ${input.date}! Scored ${input.score}, found ${input.wordsFoundCount} words. ${input.guessedWotD ? 'Got the Word of the Day! 🎉' : 'Missed the WotD. 😥'} Play LexiVerse! #LexiVerse`;
+          const fallbackImage = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=";
+          return { 
+              shareableText: output?.shareableText || fallbackText, 
+              imageUri: output?.imageUri || fallbackImage 
+          };
+      }
+      return output;
+    } catch (flowError: any) {
+        console.error(`[generateShareableMomentFlow] Error executing shareableMomentPrompt: ${flowError.message}`, flowError);
+        const fallbackText = `LexiVerse results for ${input.date}: ${input.score}pts, ${input.wordsFoundCount} words. WotD: ${input.guessedWotD ? 'Yes!' : 'No'}. #LexiVerse`;
         const fallbackImage = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=";
         return { 
-            shareableText: output?.shareableText || fallbackText, 
-            imageUri: output?.imageUri || fallbackImage 
+            shareableText: fallbackText, 
+            imageUri: fallbackImage 
         };
     }
-    return output;
   }
 );

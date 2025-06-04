@@ -10,17 +10,15 @@
 
 import {ai} from '@/ai/genkit';
 import {z} from 'genkit';
-import { firestore } from '@/lib/firebase'; // Added Firestore import
-import { collection, getDocs } from 'firebase/firestore'; // Added Firestore functions
-import type { DailyPuzzle } from '@/types'; // Added DailyPuzzle type import
+import { firestore } from '@/lib/firebase';
+import { collection, getDocs } from 'firebase/firestore';
+import type { DailyPuzzle } from '@/types';
 
-// Strict schema for the flow's final output and for external types
 const PuzzleSuggestionSchema = z.object({
   wordOfTheDayText: z.string().regex(/^[A-Z]{6,9}$/, "Word of the Day must be 6-9 uppercase English letters.").describe('A potential Word of the Day, 6-9 English letters.'),
   seedingLetters: z.string().length(9).regex(/^[A-Z]{9}$/, "Seeding letters must be exactly 9 uppercase English letters.").describe('A string of 9 English letters from which the Word of the Day can be formed.'),
   wordOfTheDayDefinition: z.string().min(1, "Definition must not be empty.").describe('The definition of the Word of the Day from WordsAPI.'),
 });
-// This type is implicitly created by Zod infer, but we export a more specific one from /src/types/index.ts
 
 const GeneratePuzzleSuggestionsInputSchema = z.object({
   quantity: z.number().int().min(1).max(100).describe('The number of puzzle suggestions to generate (1-100).'),
@@ -32,8 +30,6 @@ const GeneratePuzzleSuggestionsOutputSchema = z.object({
 });
 export type GeneratePuzzleSuggestionsOutput = z.infer<typeof GeneratePuzzleSuggestionsOutputSchema>;
 
-
-// Relaxed internal schema for what the LLM prompt initially tries to produce (definition is fetched later)
 const PuzzleSuggestionSchemaRelaxedInternal = z.object({
   wordOfTheDayText: z.string().describe('A potential Word of the Day, 6-9 English letters.'),
   seedingLetters: z.string().describe('A string of English letters, AIMING for 9, from which the Word of the Day can be formed.'),
@@ -51,7 +47,7 @@ export async function generatePuzzleSuggestions(input: GeneratePuzzleSuggestions
 const puzzleGenerationPrompt = ai.definePrompt({
   name: 'puzzleGenerationPrompt',
   input: { schema: GeneratePuzzleSuggestionsInputSchema },
-  output: { schema: GeneratePuzzleSuggestionsOutputSchemaRelaxedInternal }, // LLM uses relaxed schema
+  output: { schema: GeneratePuzzleSuggestionsOutputSchemaRelaxedInternal },
   prompt: `You are tasked with generating {{quantity}} daily word puzzle suggestions for a game like LexiVerse.
 Each suggestion needs a "Word of the Day" (WotD) and "Seeding Letters".
 
@@ -82,10 +78,25 @@ const generatePuzzleSuggestionsFlow = ai.defineFlow(
   {
     name: 'generatePuzzleSuggestionsFlow',
     inputSchema: GeneratePuzzleSuggestionsInputSchema,
-    outputSchema: GeneratePuzzleSuggestionsOutputSchema, // Flow's final output MUST be strict (including definition)
+    outputSchema: GeneratePuzzleSuggestionsOutputSchema,
   },
   async (input) => {
-    // Fetch existing Word of the Day texts from Firestore to avoid duplicates
+    let rawOutputFromPrompt: GeneratePuzzleSuggestionsOutputRelaxedInternal | undefined;
+    try {
+      const { output } = await puzzleGenerationPrompt(input);
+      rawOutputFromPrompt = output;
+    } catch (flowError: any) {
+      console.error(`[generatePuzzleSuggestionsFlow] Error executing puzzleGenerationPrompt: ${flowError.message}`, flowError);
+      // Depending on how critical this is, you might re-throw or return empty.
+      // For now, we'll return empty as the downstream logic expects 'suggestions' to be potentially empty.
+      return { suggestions: [] };
+    }
+
+    if (!rawOutputFromPrompt || !rawOutputFromPrompt.suggestions) {
+      console.warn('[generatePuzzleSuggestionsFlow] AI failed to generate puzzle suggestions or returned an empty/malformed suggestions list.');
+      return { suggestions: [] };
+    }
+
     const existingPuzzlesSnap = await getDocs(collection(firestore, 'DailyPuzzles'));
     const existingWotDs = new Set<string>();
     existingPuzzlesSnap.forEach(doc => {
@@ -95,17 +106,11 @@ const generatePuzzleSuggestionsFlow = ai.defineFlow(
       }
     });
 
-    const {output: rawOutputFromPrompt} = await puzzleGenerationPrompt(input); 
-
-    if (!rawOutputFromPrompt || !rawOutputFromPrompt.suggestions) {
-      throw new Error('AI failed to generate puzzle suggestions or returned an empty/malformed suggestions list.');
-    }
-
     const strictlyValidSuggestionsWithDefinitions: z.infer<typeof PuzzleSuggestionSchema>[] = [];
     const apiKey = process.env.NEXT_PUBLIC_WORDSAPI_KEY;
 
     if (!apiKey || apiKey === "YOUR_WORDSAPI_KEY_PLACEHOLDER" || apiKey.length < 10) {
-      console.warn("WordsAPI key not configured or is placeholder. Cannot fetch definitions. No suggestions will be returned.");
+      console.warn("[generatePuzzleSuggestionsFlow] WordsAPI key not configured or is placeholder. Cannot fetch definitions. No suggestions will be returned.");
       return { suggestions: [] };
     }
 
@@ -114,16 +119,16 @@ const generatePuzzleSuggestionsFlow = ai.defineFlow(
       const seedingLetters = rawSuggestion.seedingLetters.toUpperCase().trim();
 
       if (existingWotDs.has(wordOfTheDayText)) {
-        console.warn(`AI suggested WotD '${wordOfTheDayText}' which already exists in DailyPuzzles. Filtering out.`);
+        console.warn(`[generatePuzzleSuggestionsFlow] AI suggested WotD '${wordOfTheDayText}' which already exists in DailyPuzzles. Filtering out.`);
         continue;
       }
 
       if (!/^[A-Z]{6,9}$/.test(wordOfTheDayText)) {
-        console.warn(`AI returned WotD '${wordOfTheDayText}' with invalid format/length. Filtering out.`);
+        console.warn(`[generatePuzzleSuggestionsFlow] AI returned WotD '${wordOfTheDayText}' with invalid format/length. Filtering out.`);
         continue;
       }
       if (!/^[A-Z]{9}$/.test(seedingLetters)) {
-        console.warn(`AI returned Seeding Letters '${seedingLetters}' for WotD '${wordOfTheDayText}' with invalid format/length. Filtering out.`);
+        console.warn(`[generatePuzzleSuggestionsFlow] AI returned Seeding Letters '${seedingLetters}' for WotD '${wordOfTheDayText}' with invalid format/length. Filtering out.`);
         continue;
       }
       
@@ -142,7 +147,7 @@ const generatePuzzleSuggestionsFlow = ai.defineFlow(
           }
       }
       if (!formable) {
-          console.warn(`AI returned WotD '${wordOfTheDayText}' which is not formable from Seeding Letters '${seedingLetters}'. Filtering out.`);
+          console.warn(`[generatePuzzleSuggestionsFlow] AI returned WotD '${wordOfTheDayText}' which is not formable from Seeding Letters '${seedingLetters}'. Filtering out.`);
           continue;
       }
       
@@ -161,15 +166,19 @@ const generatePuzzleSuggestionsFlow = ai.defineFlow(
           if (data.definitions && data.definitions.length > 0 && data.definitions[0].definition) {
             wordOfTheDayDefinition = data.definitions[0].definition;
           } else {
-            console.warn(`No definition found for WotD '${wordOfTheDayText}' via WordsAPI. Filtering out this suggestion.`);
+            console.warn(`[generatePuzzleSuggestionsFlow] WordsAPI: No definition found for WotD '${wordOfTheDayText}'. Filtering out.`);
             continue; 
           }
         } else {
-          console.warn(`WordsAPI request for '${wordOfTheDayText}' failed with status ${response.status}. Filtering out this suggestion.`);
+          if (response.status === 404) {
+            console.warn(`[generatePuzzleSuggestionsFlow] WordsAPI: Word '${wordOfTheDayText}' not found (404). Filtering out.`);
+          } else {
+            console.warn(`[generatePuzzleSuggestionsFlow] WordsAPI request for '${wordOfTheDayText}' failed with status ${response.status}. Filtering out.`);
+          }
           continue; 
         }
       } catch (error: any) {
-        console.error(`Error fetching definition for WotD '${wordOfTheDayText}' from WordsAPI: ${error.message}. Filtering out this suggestion.`);
+        console.error(`[generatePuzzleSuggestionsFlow] Error fetching definition for WotD '${wordOfTheDayText}' from WordsAPI: ${error.message}. Filtering out.`);
         continue; 
       }
 
@@ -183,7 +192,7 @@ const generatePuzzleSuggestionsFlow = ai.defineFlow(
     }
     
     if (strictlyValidSuggestionsWithDefinitions.length === 0 && rawOutputFromPrompt.suggestions.length > 0) {
-        console.warn("All suggestions from AI were filtered out due to validation failures, being duplicates, or inability to fetch definitions after prompt execution.");
+        console.warn("[generatePuzzleSuggestionsFlow] All suggestions from AI were filtered out due to validation failures, being duplicates, or inability to fetch definitions after prompt execution.");
     }
     
     return { suggestions: strictlyValidSuggestionsWithDefinitions };

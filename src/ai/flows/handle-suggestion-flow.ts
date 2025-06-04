@@ -95,11 +95,20 @@ const handleSuggestionFlow = ai.defineFlow(
     outputSchema: HandleSuggestionOutputSchema,
   },
   async (input) => {
-    // If uiTone is not provided, default to 5 (neutral friendly) for the prompt.
     const effectiveInput = { ...input, uiTone: input.uiTone ?? 5 };
-    const {output} = await suggestionPrompt(effectiveInput);
+    let botResponseText = "Thanks for your suggestion! I'll make sure our team sees it."; // Default fallback
 
-    const botResponseText = output?.response || "Thanks for your suggestion! I'll make sure our team sees it.";
+    try {
+      const { output, history } = await suggestionPrompt(effectiveInput);
+      if (output?.response) {
+        botResponseText = output.response;
+      } else {
+        console.warn("[handleSuggestionFlow] AI did not return a response. Using fallback. History:", history);
+      }
+    } catch (flowError: any) {
+      console.error(`[handleSuggestionFlow] Error executing suggestionPrompt: ${flowError.message}`, flowError);
+      // botResponseText remains the default fallback
+    }
 
     try {
       const suggestionLogData: any = {
@@ -107,19 +116,16 @@ const handleSuggestionFlow = ai.defineFlow(
         botResponse: botResponseText,
         conversationHistory: input.conversationHistory || [],
         timestamp: serverTimestamp(),
-        uiToneUsed: effectiveInput.uiTone, // Log the tone used
+        uiToneUsed: effectiveInput.uiTone,
       };
       if (input.userId) {
         suggestionLogData.userId = input.userId;
       }
       await addDoc(collection(firestore, 'UserSuggestions'), suggestionLogData);
     } catch (error) {
-      console.error("Error saving user suggestion to Firestore:", error);
-      // We'll still return the bot's response even if saving fails
+      console.error("[handleSuggestionFlow] Error saving user suggestion to Firestore:", error);
     }
 
     return {response: botResponseText};
   }
 );
-
-    

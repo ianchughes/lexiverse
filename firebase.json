@@ -1,14 +1,18 @@
 {
-  "apphosting": [
-    {
-      "backend": "lexiverse",
-      "source": ".",
-      "ignore": [
-        "node_modules",
-        ".git",
-        ".firebase",
-        "functions"
-      ]
+      "hosting": {
+        "apphosting": {
+          "backend": "lexiverse-lexiverse-tkufa-europe-west4"
+        },
+        "rewrites": [
+          {
+            "source": "**",
+            "run": {
+              "serviceId": "lexiverse-lexiverse-tkufa-europe-west4",
+              "region": "europe-west4"
+            }
+          }
+        ]
+        // Other hosting configurations
+      }
+      // Other Firebase configurations
     }
-  ]
-}
