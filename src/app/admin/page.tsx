@@ -1,11 +1,11 @@
 
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import Link from 'next/link';
-import { Users, FileText, UserPlus, MessageSquareQuote, ExternalLink, Settings, ListChecks, Eye, AlertCircle } from "lucide-react";
+import { Users, FileText, UserPlus, MessageSquareQuote, ExternalLink, Settings, ListChecks, Eye, AlertCircle, Lightbulb } from "lucide-react"; // Added Lightbulb
 import { firestore } from '@/lib/firebase';
 import { collection, query, where, getDocs, doc, getDoc, Timestamp, limit, orderBy } from 'firebase/firestore';
 import { format, subDays, startOfDay, endOfDay } from 'date-fns';
-import type { DailyPuzzle, UserProfile, WordSubmission } from '@/types';
+import type { DailyPuzzle, UserProfile, WordSubmission, UserSuggestionLog } from '@/types'; // Added UserSuggestionLog
 
 async function getQuickStatsData() {
   try {
@@ -20,10 +20,7 @@ async function getQuickStatsData() {
     // Firestore timestamps are timezone-agnostic (UTC). If puzzles are GMT-based,
     // we should align our query with GMT midnight to GMT midnight.
     
-    // For "Active Users Today" based on lastPlayedDate_GMT (assuming it's a Timestamp)
-    // This is a bit complex due to timezone conversions if lastPlayedDate_GMT stores only a date part or is a full timestamp.
-    // A simpler approach for "played today" could be to check against a string date if `lastPlayedDate_GMT` on UserProfile is consistently stored as 'YYYY-MM-DD' string.
-    // Let's assume `lastPlayedDate_GMT` is a string 'YYYY-MM-DD' for now for simplicity in this stat.
+    // For "Active Users Today" based on lastPlayedDate_GMT (assuming it's a string 'YYYY-MM-DD')
     const todayGMTString = format(new Date(), 'yyyy-MM-dd');
     const activeUsersQuery = query(collection(firestore, "Users"), where("lastPlayedDate_GMT", "==", todayGMTString));
     const activeUsersSnap = await getDocs(activeUsersQuery);
@@ -51,11 +48,18 @@ async function getQuickStatsData() {
       currentWotDText = puzzleData.wordOfTheDayText || "---";
     }
 
+    // 5. Suggestions Pending Moderation
+    const pendingSuggestionsQuery = query(collection(firestore, "UserSuggestions"), where("status", "==", "Pending"));
+    const pendingSuggestionsSnap = await getDocs(pendingSuggestionsQuery);
+    const pendingSuggestionsCount = pendingSuggestionsSnap.size;
+
+
     return {
       activeUsersCount,
       pendingWordsCount,
       newRegistrationsCount,
       currentWotDText,
+      pendingSuggestionsCount, // Added new stat
     };
 
   } catch (error) {
@@ -65,6 +69,7 @@ async function getQuickStatsData() {
       pendingWordsCount: "Error",
       newRegistrationsCount: "Error",
       currentWotDText: "Error",
+      pendingSuggestionsCount: "Error", // Added new stat error state
     };
   }
 }
@@ -76,12 +81,14 @@ export default async function AdminDashboardPage() {
   const quickStats = [
     { title: "Active Users (Today)", value: String(statsData.activeUsersCount), icon: Users, color: "text-blue-500", description: "Users who played today (GMT)" },
     { title: "Words Pending Review", value: String(statsData.pendingWordsCount), icon: FileText, color: "text-orange-500", description: "Awaiting moderation" },
+    { title: "Suggestions Pending", value: String(statsData.pendingSuggestionsCount), icon: Lightbulb, color: "text-yellow-500", description: "Feedback awaiting review" },
     { title: "New Registrations (Week)", value: String(statsData.newRegistrationsCount), icon: UserPlus, color: "text-green-500", description: "Joined in last 7 days" },
     { title: "Current WotD", value: statsData.currentWotDText, icon: MessageSquareQuote, color: "text-purple-500", description: "Today's Word of the Day" },
   ];
 
   const quickLinks = [
     { href: "/admin/words", label: "Moderate Words", icon: ListChecks },
+    { href: "/admin/suggestions", label: "Review Suggestions", icon: Lightbulb }, // Updated link or add new
     { href: "/admin/puzzles", label: "Manage Daily Puzzle", icon: Settings },
     { href: "/admin/users", label: "View Users", icon: Eye },
   ];
@@ -138,7 +145,7 @@ export default async function AdminDashboardPage() {
       
       <section>
         <h2 className="text-2xl font-semibold mb-4">Quick Stats</h2>
-        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4"> {/* Adjusted grid for potentially 5 items */}
           {quickStats.map((stat) => (
             <Card key={stat.title} className="shadow-sm">
               <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
@@ -156,7 +163,7 @@ export default async function AdminDashboardPage() {
 
       <section>
         <h2 className="text-2xl font-semibold mb-4">Quick Links</h2>
-        <div className="grid gap-4 sm:grid-cols-1 md:grid-cols-2 lg:grid-cols-3">
+        <div className="grid gap-4 sm:grid-cols-1 md:grid-cols-2 lg:grid-cols-4"> {/* Adjusted grid for quick links */}
           {quickLinks.map((link) => (
             <Card key={link.href} className="hover:shadow-md transition-shadow duration-150 ease-in-out">
               <CardContent className="p-0">
