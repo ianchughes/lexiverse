@@ -11,8 +11,9 @@ import {
   DialogFooter,
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
-import { Award, CheckCircle2, XCircle, Share2, Users } from 'lucide-react';
-import type { UserProfile } from '@/types'; // Import UserProfile
+import { Award, CheckCircle2, XCircle, Share2, Users, Trophy } from 'lucide-react'; // Added Trophy
+import type { UserProfile } from '@/types'; 
+import { ScrollArea } from '@/components/ui/scroll-area'; // Added ScrollArea
 
 interface DailyDebriefDialogProps {
   isOpen: boolean;
@@ -21,9 +22,10 @@ interface DailyDebriefDialogProps {
   wordsFoundCount: number;
   guessedWotD: boolean;
   onShare: () => void;
-  userProfile: UserProfile | null; // Add userProfile
-  circleId?: string; // Add circleId
-  circleName?: string; // Add circleName
+  userProfile: UserProfile | null; 
+  circleId?: string; 
+  circleName?: string; 
+  newlyOwnedWords: string[]; // New prop
 }
 
 export function DailyDebriefDialog({
@@ -36,6 +38,7 @@ export function DailyDebriefDialog({
   userProfile,
   circleId,
   circleName,
+  newlyOwnedWords, // Destructure new prop
 }: DailyDebriefDialogProps) {
   return (
     <Dialog open={isOpen} onOpenChange={onOpenChange}>
@@ -67,7 +70,21 @@ export function DailyDebriefDialog({
             )}
           </div>
           
-          {/* Circle Contribution Display */}
+          {newlyOwnedWords.length > 0 && (
+            <div className="mt-4 p-3 bg-green-500/10 border border-green-500/30 rounded-md">
+              <h4 className="text-md font-semibold text-green-700 dark:text-green-400 flex items-center mb-2">
+                <Trophy className="h-5 w-5 mr-2" /> Words You Claimed Today!
+              </h4>
+              <ScrollArea className="h-20">
+                <ul className="list-disc list-inside pl-2 space-y-0.5 text-sm text-green-600 dark:text-green-300">
+                  {newlyOwnedWords.map(word => (
+                    <li key={word}>{word}</li>
+                  ))}
+                </ul>
+              </ScrollArea>
+            </div>
+          )}
+
           {userProfile && (
             <div className="mt-4 p-3 bg-secondary/50 rounded-md text-center">
               {circleId && circleName ? (

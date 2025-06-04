@@ -1,9 +1,10 @@
+
 'use client';
 
 import type { SubmittedWord } from '@/types';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Badge } from '@/components/ui/badge';
-import { CheckCircle2, Award } from 'lucide-react';
+import { CheckCircle2, Award, Trophy } from 'lucide-react'; // Added Trophy
 
 interface SubmittedWordsListProps {
   words: SubmittedWord[];
@@ -31,6 +32,11 @@ export function SubmittedWordsList({ words }: SubmittedWordsListProps) {
               {word.isWotD && (
                 <Badge variant="default" className="bg-accent text-accent-foreground">
                   <CheckCircle2 className="h-4 w-4 mr-1" /> WotD
+                </Badge>
+              )}
+              {word.newlyOwned && ( // Display if word was newly owned
+                <Badge variant="outline" className="border-green-500 text-green-600">
+                  <Trophy className="h-4 w-4 mr-1" /> Claimed!
                 </Badge>
               )}
               <Badge variant="secondary">
