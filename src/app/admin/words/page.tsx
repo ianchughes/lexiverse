@@ -32,6 +32,7 @@ type WordAction = 'noAction' | 'approve' | 'rejectGibberish' | 'rejectAdminDecis
 
 interface DisplayMasterWordType extends MasterWordType {
   originalSubmitterUsername?: string;
+  calculatedScore?: number; // Added for word score
 }
 
 
@@ -139,7 +140,6 @@ export default function WordManagementPage() {
       const usernamesMap = new Map<string, string>();
 
       if (ownerUIDs.size > 0) {
-        // Fetch user profiles for the owners in batches of 30 (Firestore 'in' query limit)
         const uidArray = Array.from(ownerUIDs);
         for (let i = 0; i < uidArray.length; i += 30) {
             const batchUIDs = uidArray.slice(i, i + 30);
@@ -157,6 +157,7 @@ export default function WordManagementPage() {
       const displayWords: DisplayMasterWordType[] = words.map(word => ({
         ...word,
         originalSubmitterUsername: word.originalSubmitterUID ? usernamesMap.get(word.originalSubmitterUID) : undefined,
+        calculatedScore: calculateWordScore(word.wordText, word.frequency), // Calculate score here
       }));
 
       setMasterWordsList(displayWords);
@@ -549,7 +550,7 @@ export default function WordManagementPage() {
                     </TableHead>
                     <TableHead>Word</TableHead>
                     <TableHead>Definition</TableHead>
-                    <TableHead className="text-center">Frequency</TableHead>
+                    <TableHead className="text-center">Word Score</TableHead>
                     <TableHead>Owner Username</TableHead>
                     <TableHead>Date Added</TableHead>
                     <TableHead className="text-right">Actions</TableHead>
@@ -568,7 +569,7 @@ export default function WordManagementPage() {
                       </TableCell>
                       <TableCell className="font-medium">{word.wordText}</TableCell>
                       <TableCell className="max-w-xs truncate" title={word.definition}>{word.definition.substring(0,50)}...</TableCell>
-                      <TableCell className="text-center">{word.frequency.toFixed(2)}</TableCell>
+                      <TableCell className="text-center">{word.calculatedScore ?? 'N/A'}</TableCell>
                       <TableCell>
                         {word.originalSubmitterUsername ? (
                           <span className="text-sm" title={word.originalSubmitterUID}>
