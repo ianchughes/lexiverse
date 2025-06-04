@@ -3,8 +3,8 @@
 
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { firestore } from '@/lib/firebase'; 
-import { collection, query, where, getDocs, doc, Timestamp, orderBy, limit, startAfter } from 'firebase/firestore';
-import type { WordSubmission, MasterWordType, RejectedWordType, RejectionType } from '@/types';
+import { collection, query, where, getDocs, doc, Timestamp, orderBy, limit, startAfter, getDoc as getFirestoreDocFE } from 'firebase/firestore'; // Renamed getDoc to avoid conflict with server action
+import type { WordSubmission, MasterWordType, RejectedWordType, RejectionType, UserProfile } from '@/types';
 import { useAuth } from '@/contexts/AuthContext'; 
 import { calculateWordScore } from '@/lib/scoring'; 
 
@@ -26,8 +26,13 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigge
 
 const WORD_SUBMISSIONS_QUEUE = "WordSubmissionsQueue";
 const MASTER_WORDS_COLLECTION = "Words";
+const USERS_COLLECTION = "Users";
 
 type WordAction = 'noAction' | 'approve' | 'rejectGibberish' | 'rejectAdminDecision';
+
+interface DisplayMasterWordType extends MasterWordType {
+  originalSubmitterUsername?: string;
+}
 
 
 export default function WordManagementPage() {
@@ -36,7 +41,7 @@ export default function WordManagementPage() {
   const [pendingSubmissions, setPendingSubmissions] = useState<WordSubmission[]>([]);
   const [isLoadingSubmissions, setIsLoadingSubmissions] = useState(true);
   
-  const [masterWordsList, setMasterWordsList] = useState<MasterWordType[]>([]);
+  const [masterWordsList, setMasterWordsList] = useState<DisplayMasterWordType[]>([]);
   const [isLoadingMasterWords, setIsLoadingMasterWords] = useState(true);
   const [searchTermMasterWords, setSearchTermMasterWords] = useState('');
   
@@ -49,7 +54,7 @@ export default function WordManagementPage() {
   const [lastVisibleSubmission, setLastVisibleSubmission] = useState<any>(null);
 
   const [isDisassociateConfirmOpen, setIsDisassociateConfirmOpen] = useState(false);
-  const [wordToDisassociate, setWordToDisassociate] = useState<MasterWordType | null>(null);
+  const [wordToDisassociate, setWordToDisassociate] = useState<DisplayMasterWordType | null>(null);
   const [isProcessingDisassociation, setIsProcessingDisassociation] = useState(false);
 
   // State for bulk disassociation
@@ -129,7 +134,32 @@ export default function WordManagementPage() {
       querySnapshot.forEach((docSnap) => {
         words.push({ wordText: docSnap.id, ...docSnap.data() } as MasterWordType);
       });
-      setMasterWordsList(words);
+
+      const ownerUIDs = new Set(words.map(w => w.originalSubmitterUID).filter(uid => uid));
+      const usernamesMap = new Map<string, string>();
+
+      if (ownerUIDs.size > 0) {
+        // Fetch user profiles for the owners in batches of 30 (Firestore 'in' query limit)
+        const uidArray = Array.from(ownerUIDs);
+        for (let i = 0; i < uidArray.length; i += 30) {
+            const batchUIDs = uidArray.slice(i, i + 30);
+            if (batchUIDs.length > 0) {
+                const usersQuery = query(collection(firestore, USERS_COLLECTION), where("uid", "in", batchUIDs));
+                const usersSnap = await getDocs(usersQuery);
+                usersSnap.forEach(userDoc => {
+                    const userData = userDoc.data() as UserProfile;
+                    usernamesMap.set(userData.uid, userData.username);
+                });
+            }
+        }
+      }
+      
+      const displayWords: DisplayMasterWordType[] = words.map(word => ({
+        ...word,
+        originalSubmitterUsername: word.originalSubmitterUID ? usernamesMap.get(word.originalSubmitterUID) : undefined,
+      }));
+
+      setMasterWordsList(displayWords);
     } catch (error) {
       console.error("Error fetching master words:", error);
       toast({ title: "Error", description: "Could not fetch master word list.", variant: "destructive" });
@@ -239,7 +269,8 @@ export default function WordManagementPage() {
   const ownedMasterWords = useMemo(() => masterWordsList.filter(word => 
     word.originalSubmitterUID && (
       word.wordText.toLowerCase().includes(searchTermMasterWords.toLowerCase()) ||
-      word.originalSubmitterUID.toLowerCase().includes(searchTermMasterWords.toLowerCase())
+      (word.originalSubmitterUsername && word.originalSubmitterUsername.toLowerCase().includes(searchTermMasterWords.toLowerCase())) ||
+      word.originalSubmitterUID.toLowerCase().includes(searchTermMasterWords.toLowerCase()) 
     )
   ), [masterWordsList, searchTermMasterWords]);
 
@@ -258,7 +289,7 @@ export default function WordManagementPage() {
     return 'N/A';
   };
 
-  const openDisassociateConfirm = (word: MasterWordType) => {
+  const openDisassociateConfirm = (word: DisplayMasterWordType) => {
     setWordToDisassociate(word);
     setIsDisassociateConfirmOpen(true);
   };
@@ -484,7 +515,7 @@ export default function WordManagementPage() {
           <div className="pt-4 flex items-center gap-2">
             {hasMounted ? (
                 <Input 
-                placeholder="Search by Word or Submitter UID..."
+                placeholder="Search by Word, Owner Username, or UID..."
                 value={searchTermMasterWords}
                 onChange={(e) => setSearchTermMasterWords(e.target.value)}
                 className="max-w-sm"
@@ -519,7 +550,7 @@ export default function WordManagementPage() {
                     <TableHead>Word</TableHead>
                     <TableHead>Definition</TableHead>
                     <TableHead className="text-center">Frequency</TableHead>
-                    <TableHead>Original Submitter (UID)</TableHead>
+                    <TableHead>Owner Username</TableHead>
                     <TableHead>Date Added</TableHead>
                     <TableHead className="text-right">Actions</TableHead>
                   </TableRow>
@@ -539,9 +570,13 @@ export default function WordManagementPage() {
                       <TableCell className="max-w-xs truncate" title={word.definition}>{word.definition.substring(0,50)}...</TableCell>
                       <TableCell className="text-center">{word.frequency.toFixed(2)}</TableCell>
                       <TableCell>
-                        {word.originalSubmitterUID ? (
-                          <span className="font-mono text-xs" title={word.originalSubmitterUID}>
-                            {word.originalSubmitterUID.substring(0,10)}... <Star className="h-3 w-3 ml-1 fill-amber-400 text-amber-500 inline"/>
+                        {word.originalSubmitterUsername ? (
+                          <span className="text-sm" title={word.originalSubmitterUID}>
+                            {word.originalSubmitterUsername} <Star className="h-3 w-3 ml-1 fill-amber-400 text-amber-500 inline"/>
+                          </span>
+                        ) : word.originalSubmitterUID ? (
+                           <span className="font-mono text-xs text-muted-foreground" title={word.originalSubmitterUID}>
+                            {word.originalSubmitterUID.substring(0,10)}... (No Username)
                           </span>
                         ) : (
                           <span className="text-xs text-muted-foreground">N/A</span>
