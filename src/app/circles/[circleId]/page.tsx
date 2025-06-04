@@ -179,12 +179,30 @@ export default function CircleDetailsPage() {
   const copyInviteLink = () => {
     if (!circleDetails?.inviteLinkCode) return;
     const link = `${window.location.origin}/circles/join?code=${circleDetails.inviteLinkCode}`;
+
+    if (!navigator.clipboard) {
+      toast({title: "Clipboard Error", description: "Clipboard API not available in your browser.", variant: "destructive"});
+      return;
+    }
+    // Some browsers require a secure context (HTTPS) for the clipboard API
+    if (!window.isSecureContext) {
+        toast({title: "Clipboard Error", description: "Cannot copy to clipboard from an insecure context (HTTP). Please use HTTPS.", variant: "destructive"});
+        return;
+    }
+
     navigator.clipboard.writeText(link).then(() => {
       setInviteLinkCopied(true);
       toast({ title: "Invite Link Copied!"});
       setTimeout(() => setInviteLinkCopied(false), 2000);
     }).catch(err => {
-      toast({title: "Error", description: "Could not copy link.", variant: "destructive"});
+      console.error("Clipboard writeText failed:", err); // Log the actual error
+      let description = "Could not copy link.";
+      if (err instanceof Error && err.name === 'NotAllowedError') {
+        description = "Clipboard permission denied. Please allow clipboard access in your browser settings.";
+      } else if (err instanceof Error) {
+        description = `Could not copy link: ${err.message}. Check console for details.`;
+      }
+      toast({title: "Error", description: description, variant: "destructive"});
     });
   };
 
