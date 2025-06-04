@@ -110,7 +110,7 @@ export default function UserManagementPage() {
       } else if (actionType === 'deleteUser') {
         result = await adminDeleteUserAndReleaseWordsAction({ 
           actingAdminId: actingAdmin.uid, 
-          userIdToDelete: selectedUser.uid, 
+          targetUserId: selectedUser.uid, // Corrected parameter name
           targetUsername: selectedUser.username 
         });
         if (result.success) toast({ title: "User Deleted", description: `${selectedUser.username} has been deleted and their words released.` });
