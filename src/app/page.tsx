@@ -15,7 +15,7 @@ import type { SeedingLetter, SubmittedWord, GameState, WordSubmission, SystemSet
 import { useToast } from '@/hooks/use-toast';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { PlayCircle, Check, AlertTriangle, Send, Loader2, ThumbsDown, Users, BellRing, LogIn, UserPlus, Clock, Key, Star, UsersRound, Gift, Info, Handshake, Trophy } from 'lucide-react'; // Added Trophy
+import { PlayCircle, Check, AlertTriangle, Send, Loader2, ThumbsDown, Users, BellRing, LogIn, UserPlus, Clock, Key, Star, UsersRound, Gift, Info, Handshake, Trophy } from 'lucide-react'; 
 import { Badge } from '@/components/ui/badge';
 import { Card, CardHeader, CardContent, CardTitle, CardDescription } from '@/components/ui/card';
 import { firestore, auth } from '@/lib/firebase';
@@ -251,7 +251,7 @@ export default function HomePage() {
     setGuessedWotD(false);
     setTimeLeft(DAILY_GAME_DURATION);
     setGameState('playing');
-    setNewlyOwnedWordsThisSession([]); // Reset newly owned words for the new session
+    setNewlyOwnedWordsThisSession([]); 
     const todayGMTStr = format(new Date(), 'yyyy-MM-dd');
     setCurrentPuzzleDate(todayGMTStr); 
     if(currentPuzzleDate !== todayGMTStr || actualWordOfTheDayText === null) {
@@ -386,9 +386,9 @@ export default function HomePage() {
       let wotdSessionPoints = 0;
       let newlyClaimedWotD = false;
 
-      if (approvedWordDetails) { // WotD is in the master dictionary
+      if (approvedWordDetails) { 
         wotdSessionPoints = calculateWordScore(wordText, approvedWordDetails.frequency);
-        if (!approvedWordDetails.originalSubmitterUID) { // WotD is unowned
+        if (!approvedWordDetails.originalSubmitterUID) { 
           const wordDocRef = doc(firestore, MASTER_WORDS_COLLECTION, wordText);
           await updateDoc(wordDocRef, {
             originalSubmitterUID: currentUser.uid,
@@ -396,22 +396,20 @@ export default function HomePage() {
           });
           newlyClaimedWotD = true;
           setNewlyOwnedWordsThisSession(prev => [...prev, wordText]);
-           // Update local map for immediate reflection, though full sync is on next game init
           setApprovedWords(prevMap => new Map(prevMap).set(wordText, {...approvedWordDetails, originalSubmitterUID: currentUser.uid}));
           toast({ title: "WotD Claimed!", description: `You've claimed ownership of the Word of the Day "${wordText}"!`, className: "bg-accent text-accent-foreground" });
         } else if (approvedWordDetails.originalSubmitterUID && approvedWordDetails.originalSubmitterUID !== currentUser.uid) {
-          // WotD owned by someone else, give bonus
           try {
             const claimerProfileRef = doc(firestore, "Users", approvedWordDetails.originalSubmitterUID);
             await updateDoc(claimerProfileRef, { overallPersistentScore: increment(wotdSessionPoints) });
             toast({ title: "WotD Claimer Bonus!", description: `Original submitter of WotD "${wordText}" got a bonus of ${wotdSessionPoints} points!`, variant: "default"});
           } catch (error) { console.error("Error awarding WotD claimer bonus:", error); }
         }
-      } else { // WotD is NOT in the master dictionary (rare, or new WotD)
+      } else { 
         wotdSessionPoints = actualWordOfTheDayPoints || (wordText.length * 5); 
         const definitionForSubmission = actualWordOfTheDayDefinition || `Definition for Word of the Day: ${wordText}`;
         const frequencyForSubmission = actualWordOfTheDayPoints ? Math.max(1, actualWordOfTheDayPoints / Math.max(MIN_WORD_LENGTH, wordText.length)) : 3;
-        await saveSubmissionToFirestore(wordText, definitionForSubmission, frequencyForSubmission, true); // Submitted for review, ownership assigned on approval
+        await saveSubmissionToFirestore(wordText, definitionForSubmission, frequencyForSubmission, true); 
       }
 
       toast({ title: "Word of the Day!", description: `You found "${wordText}" for ${wotdSessionPoints} base points! (Bonus applied at end)`, className: "bg-accent text-accent-foreground" });
@@ -421,11 +419,11 @@ export default function HomePage() {
       return;
     }
 
-    if (approvedWordDetails) { // Word is in master dictionary, not WotD
+    if (approvedWordDetails) { 
       const points = calculateWordScore(wordText, approvedWordDetails.frequency);
       let newlyClaimedRegularWord = false;
 
-      if (!approvedWordDetails.originalSubmitterUID) { // Unowned regular word
+      if (!approvedWordDetails.originalSubmitterUID) { 
         const wordDocRef = doc(firestore, MASTER_WORDS_COLLECTION, wordText);
         await updateDoc(wordDocRef, {
           originalSubmitterUID: currentUser.uid,
@@ -435,9 +433,9 @@ export default function HomePage() {
         setNewlyOwnedWordsThisSession(prev => [...prev, wordText]);
         setApprovedWords(prevMap => new Map(prevMap).set(wordText, {...approvedWordDetails, originalSubmitterUID: currentUser.uid}));
         toast({ title: "Word Claimed!", description: `You've claimed ownership of "${wordText}"! It's worth ${points} points.`, variant: "default" });
-      } else if (approvedWordDetails.originalSubmitterUID === currentUser.uid) { // Already owned by current user
+      } else if (approvedWordDetails.originalSubmitterUID === currentUser.uid) { 
         toast({ title: "Word Found!", description: `"${wordText}" is worth ${points} points.`, variant: "default" });
-      } else { // Owned by someone else
+      } else { 
          try {
           const claimerProfileRef = doc(firestore, "Users", approvedWordDetails.originalSubmitterUID);
            await updateDoc(claimerProfileRef, { overallPersistentScore: increment(points) });
@@ -476,16 +474,16 @@ export default function HomePage() {
       return;
     }
 
-    // Word not in approved or rejected lists, open review dialog
     setWordToReview(wordText);
     setShowSubmitForReviewDialog(true);
   };
 
-  const fetchWordDataAndSubmit = async (wordToSubmit: string) => {
+  const fetchWordDataAndSubmit = async (wordToSubmitFromDialog: string) => {
+    const wordToSubmit = wordToSubmitFromDialog.toUpperCase(); 
     setIsSubmittingForReview(true);
     toast({ title: "Checking Word...", description: `Verifying "${wordToSubmit}"...` });
 
-    const rejectedDetails = rejectedWords.get(wordToSubmit.toUpperCase());
+    const rejectedDetails = rejectedWords.get(wordToSubmit);
     if (rejectedDetails) {
          toast({
           title: "Already Known",
@@ -626,7 +624,7 @@ export default function HomePage() {
       await fetchWordDataAndSubmit(wordToReview);
     } else {
       if (wordToReview) {
-         toast({ title: "Not Submitted", description: `"${wordToReview}" was not submitted.`, variant: "default" });
+         toast({ title: "Not Submitted", description: `"${wordToReview.toUpperCase()}" was not submitted.`, variant: "default" });
       }
       handleClearWord(); 
     }
@@ -807,13 +805,13 @@ export default function HomePage() {
         guessedWotD={guessedWotD}
         onShare={() => {
           setShowDebrief(false);
-          setShareableGameDate(currentPuzzleDate); // Set the game date for sharing
+          setShareableGameDate(currentPuzzleDate); 
           setShowShareModal(true);
         }}
         userProfile={userProfile} 
         circleId={userProfile?.activeCircleId} 
-        circleName={userProfile?.activeCircleId ? "Your Circle" : undefined} // Placeholder, fetch actual name if needed
-        newlyOwnedWords={newlyOwnedWordsThisSession} // Pass newly owned words
+        circleName={userProfile?.activeCircleId ? "Your Circle" : undefined} 
+        newlyOwnedWords={newlyOwnedWordsThisSession} 
       />
       
       <ShareMomentDialog
@@ -823,8 +821,8 @@ export default function HomePage() {
           score: finalDailyScore,
           guessedWotD: guessedWotD,
           wordsFoundCount: submittedWords.length,
-          date: shareableGameDate, // Use the stored game date
-          circleName: userProfile?.activeCircleId ? "CircleNamePlaceholder" : undefined, // Add circle name if available
+          date: shareableGameDate, 
+          circleName: userProfile?.activeCircleId ? "CircleNamePlaceholder" : undefined, 
         }}
       />
 
