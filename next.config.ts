@@ -25,6 +25,20 @@ const nextConfig: NextConfig = {
       },
     ],
   },
+  async headers() {
+    return [
+      {
+        // Apply these headers to all routes in your application.
+        source: '/:path*',
+        headers: [
+          {
+            key: 'Permissions-Policy',
+            value: 'clipboard-write=(self)',
+          },
+        ],
+      },
+    ];
+  },
 };
 
 export default nextConfig;

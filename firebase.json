@@ -1,3 +1,4 @@
+
 {
       "hosting": {
         "apphosting": {
@@ -10,6 +11,17 @@
               "serviceId": "lexiverse-lexiverse-tkufa-europe-west4",
               "region": "europe-west4"
             }
+          }
+        ],
+        "headers": [
+          {
+            "source": "**",
+            "headers": [
+              {
+                "key": "Permissions-Policy",
+                "value": "clipboard-write=(self)"
+              }
+            ]
           }
         ]
         // Other hosting configurations
