@@ -10,19 +10,13 @@ import { Lightbulb, MessageSquarePlus, Send, X, Bot, User, Loader2 } from 'lucid
 import { handleUserSuggestion, type HandleSuggestionInput, type HandleSuggestionOutput } from '@/ai/flows/handle-suggestion-flow';
 import { cn } from '@/lib/utils';
 import { useAuth } from '@/contexts/AuthContext';
-import { firestore } from '@/lib/firebase';
-import { doc, getDoc } from 'firebase/firestore';
-import type { SystemSettings } from '@/types';
+// Firebase and SystemSettings imports for UI Tone removed as it's no longer used.
 
 interface Message {
   id: string;
   text: string;
   sender: 'user' | 'bot';
 }
-
-const SYSTEM_SETTINGS_COLLECTION = "SystemConfiguration";
-const GAME_SETTINGS_DOC_ID = "gameSettings";
-const DEFAULT_UI_TONE = 5; // Neutral friendly
 
 export function SuggestionsBot() {
   const [isOpen, setIsOpen] = useState(false);
@@ -31,41 +25,20 @@ export function SuggestionsBot() {
   const [isLoading, setIsLoading] = useState(false);
   const scrollAreaRef = useRef<HTMLDivElement>(null);
   const { currentUser } = useAuth();
-  const [currentUiTone, setCurrentUiTone] = useState<number>(DEFAULT_UI_TONE);
-  const [isLoadingTone, setIsLoadingTone] = useState(false);
-
-  const fetchUiTone = useCallback(async () => {
-    setIsLoadingTone(true);
-    try {
-      const settingsDocRef = doc(firestore, SYSTEM_SETTINGS_COLLECTION, GAME_SETTINGS_DOC_ID);
-      const settingsSnap = await getDoc(settingsDocRef);
-      if (settingsSnap.exists()) {
-        const settingsData = settingsSnap.data() as SystemSettings;
-        setCurrentUiTone(settingsData.uiTone ?? DEFAULT_UI_TONE);
-      } else {
-        setCurrentUiTone(DEFAULT_UI_TONE);
-      }
-    } catch (error) {
-      console.error("Error fetching UI tone for bot:", error);
-      setCurrentUiTone(DEFAULT_UI_TONE); // Default on error
-    } finally {
-      setIsLoadingTone(false);
-    }
-  }, []);
+  // currentUiTone and isLoadingTone states removed.
+  // fetchUiTone function removed.
 
   useEffect(() => {
     if (isOpen) {
-      fetchUiTone();
-      if (messages.length === 0 && !isLoading && !isLoadingTone) {
-        // Initial welcome message from the bot (can be adapted by AI based on fetched tone later if desired)
+      // fetchUiTone removed
+      if (messages.length === 0 && !isLoading) {
         setMessages([{ id: crypto.randomUUID(), text: "Hi there! I'm the LexiVerse suggestions bot. Have any ideas to make the game better? Let me know!", sender: 'bot' }]);
       }
     }
-  }, [isOpen, messages.length, isLoading, isLoadingTone, fetchUiTone]);
+  }, [isOpen, messages.length, isLoading]); // Removed isLoadingTone and fetchUiTone from dependencies
 
 
   useEffect(() => {
-    // Auto-scroll to bottom
     if (scrollAreaRef.current) {
       const scrollableViewport = scrollAreaRef.current.querySelector('div[data-radix-scroll-area-viewport]');
       if (scrollableViewport) {
@@ -81,7 +54,7 @@ export function SuggestionsBot() {
   };
 
   const handleSendMessage = async () => {
-    if (!inputValue.trim() || isLoadingTone) return; // Prevent sending if tone is still loading
+    if (!inputValue.trim()) return; // Removed isLoadingTone check
 
     const currentSuggestionText = inputValue;
     const userMessage: Message = {
@@ -90,14 +63,13 @@ export function SuggestionsBot() {
       sender: 'user',
     };
 
-    // Prepare conversation history *before* adding the new user message to the UI state
     const historyForFlow = messages.map(m => ({
         role: m.sender === 'user' ? 'user' : 'model',
         content: m.text,
     }));
 
-    setMessages((prev) => [...prev, userMessage]); // Update UI with user's message
-    setInputValue(''); // Clear input
+    setMessages((prev) => [...prev, userMessage]);
+    setInputValue('');
     setIsLoading(true);
 
     try {
@@ -105,7 +77,7 @@ export function SuggestionsBot() {
         userId: currentUser?.uid,
         suggestionText: currentSuggestionText,
         conversationHistory: historyForFlow,
-        uiTone: currentUiTone, // Pass the fetched UI tone
+        // uiTone removed from input
       };
       const result: HandleSuggestionOutput = await handleUserSuggestion(flowInput);
       const botMessage: Message = {
@@ -153,12 +125,7 @@ export function SuggestionsBot() {
           <CardContent className="flex-grow p-0 overflow-hidden">
             <ScrollArea className="h-full p-4" ref={scrollAreaRef}>
               <div className="space-y-4">
-                {isLoadingTone && messages.length === 0 && (
-                    <div className="flex items-center justify-center py-4">
-                        <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
-                        <p className="ml-2 text-sm text-muted-foreground">Loading bot settings...</p>
-                    </div>
-                )}
+                {/* Removed isLoadingTone check */}
                 {messages.map((msg) => (
                   <div
                     key={msg.id}
@@ -199,11 +166,11 @@ export function SuggestionsBot() {
                 placeholder="Type your suggestion..."
                 value={inputValue}
                 onChange={handleInputChange}
-                onKeyPress={(e) => e.key === 'Enter' && !isLoading && !isLoadingTone && handleSendMessage()}
-                disabled={isLoading || isLoadingTone}
+                onKeyPress={(e) => e.key === 'Enter' && !isLoading && handleSendMessage()} // Removed isLoadingTone check
+                disabled={isLoading} // Removed isLoadingTone check
                 className="flex-grow"
               />
-              <Button onClick={handleSendMessage} disabled={isLoading || isLoadingTone || !inputValue.trim()} size="icon">
+              <Button onClick={handleSendMessage} disabled={isLoading || !inputValue.trim()} size="icon"> {/* Removed isLoadingTone check */}
                 <Send className="h-5 w-5" />
               </Button>
             </div>
@@ -213,5 +180,3 @@ export function SuggestionsBot() {
     </>
   );
 }
-
-    

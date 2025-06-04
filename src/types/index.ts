@@ -111,7 +111,7 @@ export interface RejectedWordType {
 
 export interface SystemSettings {
   lastForcedResetTimestamp?: Timestamp;
-  uiTone?: number; // Scale from 1 (jovial) to 10 (obsequious/formal). Default can be 5 (neutral friendly).
+  // uiTone?: number; // Removed uiTone
   // Add other global settings here
 }
 
