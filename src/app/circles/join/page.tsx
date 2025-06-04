@@ -50,7 +50,7 @@ function JoinCircleFormContent() {
 
   async function onSubmit(values: JoinCircleFormValues) {
     if (!currentUser || !userProfile) {
-      toast({ title: "Authentication Required", description: "You must be logged in to join a circle.", variant: "destructive" });
+      toast({ title: "Authentication Required", description: "Hello new friend, to join a circle, please first Login or register by clicking the button below.", variant: "destructive" });
       router.push(`/auth/login?inviteCode=${values.inviteCode}&redirect=/circles/join%3Fcode=${values.inviteCode}`);
       return;
     }
