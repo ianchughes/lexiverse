@@ -25,8 +25,9 @@ interface ShareMomentDialogProps {
     score: number;
     guessedWotD: boolean;
     wordsFoundCount: number;
-    date: string;
+    date: string; // YYYY-MM-DD format
     circleName?: string;
+    newlyClaimedWordsCount: number; // Added this
   };
 }
 
@@ -39,7 +40,7 @@ export function ShareMomentDialog({ isOpen, onOpenChange, gameData }: ShareMomen
   useEffect(() => {
     if (isOpen && !shareContent && !isLoading) {
       setIsLoading(true);
-      generateShareableMoment(gameData)
+      generateShareableMoment(gameData) // gameData now includes newlyClaimedWordsCount
         .then((content) => {
           setShareContent(content);
         })
@@ -50,7 +51,7 @@ export function ShareMomentDialog({ isOpen, onOpenChange, gameData }: ShareMomen
             description: "Could not generate shareable moment. Please try again.",
             variant: "destructive",
           });
-          onOpenChange(false); // Close dialog on error
+          // onOpenChange(false); // Consider if dialog should close on error
         })
         .finally(() => {
           setIsLoading(false);
@@ -117,10 +118,8 @@ export function ShareMomentDialog({ isOpen, onOpenChange, gameData }: ShareMomen
                   data-ai-hint="game score card"
                 />
               )}
-              <div className="p-4">
-                <p className="text-center text-lg font-medium text-foreground">
-                  {shareContent.shareableText}
-                </p>
+              <div className="p-4 whitespace-pre-line text-center text-lg font-medium text-foreground">
+                {shareContent.shareableText}
               </div>
             </CardContent>
             <CardFooter className="flex flex-col sm:flex-row gap-2 p-4 bg-secondary/30">
@@ -137,7 +136,7 @@ export function ShareMomentDialog({ isOpen, onOpenChange, gameData }: ShareMomen
         )}
         
         {!isLoading && !shareContent && (
-           <div className="text-center py-8 text-muted-foreground">No content to display.</div>
+           <div className="text-center py-8 text-muted-foreground">No content to display. Please try reopening this dialog.</div>
         )}
 
         <DialogFooter className="mt-4">

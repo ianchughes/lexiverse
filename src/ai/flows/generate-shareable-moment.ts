@@ -18,12 +18,13 @@ const GenerateShareableMomentInputSchema = z.object({
   wordsFoundCount: z.number().describe('The number of words found by the player.'),
   circleName: z.string().optional().describe('The name of the player\'s circle, if any.'),
   date: z.string().describe('The date of the game session in YYYY-MM-DD format.'),
+  newlyClaimedWordsCount: z.number().optional().describe('Number of new words claimed this session.'),
 });
 export type GenerateShareableMomentInput = z.infer<typeof GenerateShareableMomentInputSchema>;
 
 const GenerateShareableMomentOutputSchema = z.object({
-  shareableText: z.string().describe('A concise and engaging text summary of the game results, suitable for social media (e.g., Twitter, Mastodon). Should include score, words found, WotD status, and tastefully use emojis. Should end with a call to action to play LexiVerse and include #LexiVerse hashtag.'),
-  imageUri: z.string().describe('The data URI of the generated shareable image. The image should be visually appealing, relevant to LexiVerse, and could include elements like the game logo, score, words found, date, and WotD status overlaid in a clean font like Inter.'),
+  shareableText: z.string().describe('A concise and engaging text summary of the game results, formatted for social media sharing. Must use specified multi-line structure and emojis.'),
+  imageUri: z.string().describe('The data URI of the generated shareable image. The image should be visually appealing, relevant to LexiVerse, and could include elements like the game logo, score, words found, date, WotD status, and new words claimed, overlaid in a clean font like Inter.'),
 });
 export type GenerateShareableMomentOutput = z.infer<typeof GenerateShareableMomentOutputSchema>;
 
@@ -45,34 +46,50 @@ const shareableMomentPrompt = ai.definePrompt({
   },
   prompt: `You are a creative social media manager for LexiVerse, a daily word puzzle game. Generate a shareable moment for a player based on their game performance.
 
-Player's Game Data for {{date}}:
+Player's Game Data:
+- Date: {{date}} (This is in YYYY-MM-DD format)
 - Score: {{{score}}}
 - Words Found: {{{wordsFoundCount}}}
-- Guessed Word of the Day: {{#if guessedWotD}}Yes! 🎉{{else}}No 🤔{{/if}}
+- Guessed Word of the Day: {{#if guessedWotD}}Yes{{else}}No{{/if}}
 {{#if circleName}}- Playing with Circle: {{{circleName}}} 🤝{{/if}}
+{{#if newlyClaimedWordsCount}}- New Words Claimed: {{{newlyClaimedWordsCount}}}{{/if}}
 
 Your Task:
 1.  **Shareable Text (for social media):**
-    *   Craft a short, engaging, and concise text summary (under 280 characters).
-    *   It should be exciting and make others want to play.
-    *   Include: player's score, number of words found, and Word of the Day status.
-    *   Use emojis tastefully to enhance the message (e.g., ✨, 💡, 🏆).
-    *   The text MUST end with a call to action like "Play LexiVerse daily!" and include the hashtag #LexiVerse.
-    *   Example style: "LexiVerse {{date}}: Scored {{{score}}} points & found {{{wordsFoundCount}}} words! {{#if guessedWotD}}Nailed the WotD! 🥳{{else}}Missed the WotD today. 😅{{/if}} Join the fun! Play LexiVerse daily! #LexiVerse"
+    *   Craft an engaging, multi-line text summary suitable for social media.
+    *   **Format the date provided as {{date}} (YYYY-MM-DD) into dd/mm/yyyy format for the output.**
+    *   The structure MUST be exactly as follows, including line breaks and emojis:
+        LexiVerse Results! 🗓️ [dd/mm/yyyy formatted date]
+
+        🏆 {{score}} Points
+        ✍️ {{wordsFoundCount}} Words Found
+        💡 Word of the Day: {{#if guessedWotD}}Guessed! 🎉{{else}}Missed 😥{{/if}}
+        {{#if newlyClaimedWordsCount}}{{#if (gt newlyClaimedWordsCount 0)}}✨ {{newlyClaimedWordsCount}} new words claimed!{{/if}}{{/if}}
+
+        Join the fun & challenge your lexicon! Play LexiVerse daily! #LexiVerse
+    *   The line "✨ X new words claimed!" should ONLY be included if 'newlyClaimedWordsCount' is greater than 0.
+    *   The text MUST end with the call to action and #LexiVerse hashtag.
 
 2.  **Shareable Image (imageUri):**
     *   Generate an image to accompany the social media post.
     *   The image should be visually appealing and themed around LexiVerse (e.g., abstract letter patterns, a subtle representation of a brain, a stylized lexicon or dictionary).
     *   Overlay the following information clearly onto the image using a clean, readable white 'Inter' font:
         *   LexiVerse logo (a simple "LV" or "LexiVerse" text is fine if a logo isn't available)
-        *   Date: {{date}}
+        *   Date: {{date}} (Keep as YYYY-MM-DD for the image)
         *   Score: {{score}}
         *   Words Found: {{wordsFoundCount}}
         *   WotD Status: {{#if guessedWotD}}Guessed! ✅{{else}}Missed ❌{{/if}}
+        {{#if newlyClaimedWordsCount}}{{#if (gt newlyClaimedWordsCount 0)}}*   New Words Claimed: {{newlyClaimedWordsCount}}{{/if}}{{/if}} (Include this line in the image ONLY if newlyClaimedWordsCount > 0)
     *   The image must be a data URI: 'data:<mimetype>;base64,<encoded_data>'.
 
 Return the response in the specified JSON format with 'shareableText' and 'imageUri' fields.
 `,
+  templateFormat: "handlebars",
+  model: {
+    helpers: {
+      gt: (a: number, b: number) => a > b,
+    }
+  }
 });
 
 const generateShareableMomentFlow = ai.defineFlow(
@@ -82,23 +99,25 @@ const generateShareableMomentFlow = ai.defineFlow(
     outputSchema: GenerateShareableMomentOutputSchema,
   },
   async (input) => {
+    const fallbackText = `LexiVerse Results! 🗓️ ${input.date.split('-').reverse().join('/')}\n\n🏆 ${input.score} Points\n✍️ ${input.wordsFoundCount} Words Found\n💡 Word of the Day: ${input.guessedWotD ? 'Guessed! 🎉' : 'Missed 😥'}\n${input.newlyClaimedWordsCount && input.newlyClaimedWordsCount > 0 ? `✨ ${input.newlyClaimedWordsCount} new words claimed!\n` : ''}\nJoin the fun & challenge your lexicon! Play LexiVerse daily! #LexiVerse`;
+    const fallbackImage = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII="; // Placeholder
+
     try {
       const { output, history } = await shareableMomentPrompt(input);
       
       if (!output || !output.imageUri || !output.shareableText) {
-          console.error("[generateShareableMomentFlow] AI failed to generate complete shareable moment. Output or history:", output, history);
-          const fallbackText = `I played LexiVerse on ${input.date}! Scored ${input.score}, found ${input.wordsFoundCount} words. ${input.guessedWotD ? 'Got the Word of the Day! 🎉' : 'Missed the WotD. 😥'} Play LexiVerse! #LexiVerse`;
-          const fallbackImage = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII="; // Placeholder
+          console.error("[generateShareableMomentFlow] AI failed to generate complete shareable moment. Output:", output, "History:", history);
           return { 
               shareableText: output?.shareableText || fallbackText, 
               imageUri: output?.imageUri || fallbackImage 
           };
       }
-      return output;
+      // Ensure shareableText has line breaks if the AI missed them (it should follow the prompt)
+      const formattedText = output.shareableText.replace(/\\n/g, '\n');
+      return { ...output, shareableText: formattedText };
+
     } catch (flowError: any) {
         console.error(`[generateShareableMomentFlow] Error executing shareableMomentPrompt. Message: ${flowError.message}. Stack: ${flowError.stack}. Full error:`, flowError);
-        const fallbackText = `LexiVerse results for ${input.date}: ${input.score}pts, ${input.wordsFoundCount} words. WotD: ${input.guessedWotD ? 'Yes!' : 'No'}. #LexiVerse`;
-        const fallbackImage = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII="; // Placeholder
         return { 
             shareableText: fallbackText, 
             imageUri: fallbackImage 
@@ -106,4 +125,3 @@ const generateShareableMomentFlow = ai.defineFlow(
     }
   }
 );
-

@@ -15,7 +15,7 @@ import type { SeedingLetter, SubmittedWord, GameState, WordSubmission, SystemSet
 import { useToast } from '@/hooks/use-toast';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { PlayCircle, Check, AlertTriangle, Send, Loader2, ThumbsDown, Users, BellRing, LogIn, UserPlus, Clock, Key, Star, UsersRound, Gift, Info, Handshake, Trophy } from 'lucide-react'; 
+import { PlayCircle, Check, AlertTriangle, Send, Loader2, ThumbsDown, Users, BellRing, LogIn, UserPlus, Clock, Key, Star, UsersRound, Gift, Info, Handshake, Trophy } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardHeader, CardContent, CardTitle, CardDescription } from '@/components/ui/card';
 import { firestore, auth } from '@/lib/firebase';
@@ -37,6 +37,7 @@ const MOCK_SEEDING_LETTERS_CHARS: string[] = ['L', 'E', 'X', 'I', 'V', 'R', 'S',
 const SYSTEM_SETTINGS_COLLECTION = "SystemConfiguration";
 const GAME_SETTINGS_DOC_ID = "gameSettings";
 const LOCALSTORAGE_LAST_PLAYED_KEY = 'lexiverse_last_played_date';
+const LEXIVERSE_LAST_SESSION_RESULTS_KEY = 'lexiverse_last_session_results';
 const LOCALSTORAGE_LAST_RESET_ACK_KEY = 'lexiverse_last_reset_acknowledged_timestamp';
 const WORD_SUBMISSIONS_QUEUE = "WordSubmissionsQueue";
 const MASTER_WORDS_COLLECTION = "Words";
@@ -52,8 +53,12 @@ export default function HomePage() {
   const [timeLeft, setTimeLeft] = useState(DAILY_GAME_DURATION);
   const [gameState, setGameState] = useState<GameState>('idle');
   const [sessionScore, setSessionScore] = useState(0);
-  const [finalDailyScore, setFinalDailyScore] = useState(0);
-  const [guessedWotD, setGuessedWotD] = useState(false);
+  const [finalDailyScoreForDebrief, setFinalDailyScoreForDebrief] = useState(0);
+  const [guessedWotDForDebrief, setGuessedWotDForDebrief] = useState(false);
+  const [wordsFoundCountForDebrief, setWordsFoundCountForDebrief] = useState(0);
+  const [newlyOwnedWordsForDebrief, setNewlyOwnedWordsForDebrief] = useState<string[]>([]);
+
+
   const [showDebrief, setShowDebrief] = useState(false);
   const [showShareModal, setShowShareModal] = useState(false);
   const [showSubmitForReviewDialog, setShowSubmitForReviewDialog] = useState(false);
@@ -134,6 +139,9 @@ export default function HomePage() {
         setActualWordOfTheDayPoints(MOCK_WORD_OF_THE_DAY_TEXT.length * 5);
     }
 
+    let userCanPlayToday = true;
+    const todayAsDateString = new Date().toDateString();
+
     try {
         const settingsDocRef = doc(firestore, SYSTEM_SETTINGS_COLLECTION, GAME_SETTINGS_DOC_ID);
         const settingsSnap = await getDoc(settingsDocRef);
@@ -148,25 +156,45 @@ export default function HomePage() {
             
             if (serverResetTimestamp.toMillis() > localResetAckTime) {
               localStorage.removeItem(LOCALSTORAGE_LAST_PLAYED_KEY);
+              localStorage.removeItem(LEXIVERSE_LAST_SESSION_RESULTS_KEY);
               localStorage.setItem(LOCALSTORAGE_LAST_RESET_ACK_KEY, serverResetTimestamp.toMillis().toString());
               toast({ title: "Game Reset", description: "Admin has reset the daily game. You can play again!" });
+              userCanPlayToday = true;
             }
           }
         }
       } catch (error) {
         console.error("Error checking for admin reset:", error);
       }
-
-      const lastPlayedStorage = localStorage.getItem(LOCALSTORAGE_LAST_PLAYED_KEY);
-      const todayAsDateString = new Date().toDateString(); 
-      if (lastPlayedStorage === todayAsDateString) {
-        setHasPlayedToday(true);
-        setGameState('cooldown');
-      } else {
-        setHasPlayedToday(false);
-        setGameState('idle'); 
+      
+      if (userCanPlayToday) { // Only check session results if not force-reset
+        const storedSessionResultsJSON = localStorage.getItem(LEXIVERSE_LAST_SESSION_RESULTS_KEY);
+        if (storedSessionResultsJSON) {
+          try {
+            const storedResults = JSON.parse(storedSessionResultsJSON);
+            // Check if stored results are for today's puzzle date
+            if (storedResults.puzzleDateGMT === puzzleDate && storedResults.dateString === todayAsDateString) {
+              setFinalDailyScoreForDebrief(storedResults.score);
+              setWordsFoundCountForDebrief(storedResults.wordsFoundCount);
+              setGuessedWotDForDebrief(storedResults.guessedWotD);
+              setNewlyOwnedWordsForDebrief(storedResults.newlyOwnedWords || []);
+              setShareableGameDate(storedResults.puzzleDateGMT); // For sharing
+              setShowDebrief(true);
+              userCanPlayToday = false; // They "played" by viewing results
+            } else {
+              // Stored results are old, clear them
+              localStorage.removeItem(LEXIVERSE_LAST_SESSION_RESULTS_KEY);
+            }
+          } catch (e) {
+            console.error("Error parsing stored session results:", e);
+            localStorage.removeItem(LEXIVERSE_LAST_SESSION_RESULTS_KEY); // Clear corrupted data
+          }
+        }
       }
-      setCurrentPuzzleDate(puzzleDate); 
+
+      setHasPlayedToday(!userCanPlayToday);
+      setGameState(userCanPlayToday ? 'idle' : 'debrief'); // Go to debrief if already played
+      setCurrentPuzzleDate(puzzleDate);
       setIsLoadingInitialState(false);
 
   }, [toast]);
@@ -197,13 +225,7 @@ export default function HomePage() {
     }, 1000);
     return () => clearInterval(timerId);
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [gameState, timeLeft]); 
-
-  useEffect(() => {
-    if (gameState === 'debrief' && !showDebrief && !showShareModal) {
-      setGameState('idle');
-    }
-  }, [gameState, showDebrief, showShareModal]);
+  }, [gameState]); 
 
   useEffect(() => {
     if (currentUser && userProfile && !isLoadingAuth && (userProfile.hasSeenWelcomeInstructions === false || userProfile.hasSeenWelcomeInstructions === undefined)) {
@@ -237,7 +259,7 @@ export default function HomePage() {
         toast({title: "Login Required", description: "Please log in or register to play.", variant: "default"});
         return;
     }
-    if (hasPlayedToday) {
+    if (hasPlayedToday && !showDebrief) { // Allow starting if only debrief is showing from stored results
       toast({ title: "Already Played", description: "You've already played today. Come back tomorrow!", variant: "default" });
       return;
     }
@@ -248,12 +270,14 @@ export default function HomePage() {
     setCurrentWord([]);
     setSubmittedWords([]);
     setSessionScore(0);
-    setGuessedWotD(false);
+    // Reset debrief states for a new game
+    setGuessedWotDForDebrief(false); 
     setTimeLeft(DAILY_GAME_DURATION);
     setGameState('playing');
     setNewlyOwnedWordsThisSession([]); 
     const todayGMTStr = format(new Date(), 'yyyy-MM-dd');
     setCurrentPuzzleDate(todayGMTStr); 
+    setShareableGameDate(todayGMTStr);
     if(currentPuzzleDate !== todayGMTStr || actualWordOfTheDayText === null) {
         initializeGameData(todayGMTStr);
     }
@@ -275,18 +299,39 @@ export default function HomePage() {
   };
 
   const handleGameEnd = async () => {
-    setGameState('debrief');
+    setGameState('debrief'); // Transition to debrief state
     let finalScore = sessionScore;
-    
-    if (guessedWotD && actualWordOfTheDayText ) { 
-      finalScore = Math.round(finalScore * 2); 
+    let wotdGuessedThisSession = false;
+    if (submittedWords.some(sw => sw.isWotD)) {
+      finalScore = Math.round(finalScore * 2);
+      wotdGuessedThisSession = true;
     }
 
     const roundedFinalScore = Math.round(finalScore);
-    setFinalDailyScore(roundedFinalScore);
+
+    // Set states for DailyDebriefDialog
+    setFinalDailyScoreForDebrief(roundedFinalScore);
+    setWordsFoundCountForDebrief(submittedWords.length);
+    setGuessedWotDForDebrief(wotdGuessedThisSession);
+    setNewlyOwnedWordsForDebrief([...newlyOwnedWordsThisSession]);
+
     setShowDebrief(true);
-    setHasPlayedToday(true);
-    localStorage.setItem(LOCALSTORAGE_LAST_PLAYED_KEY, new Date().toDateString()); 
+    setHasPlayedToday(true); // Mark as played
+    
+    const todayAsDateString = new Date().toDateString();
+    localStorage.setItem(LOCALSTORAGE_LAST_PLAYED_KEY, todayAsDateString); 
+
+    // Save session results to local storage
+    const sessionResultsToStore = {
+        puzzleDateGMT: currentPuzzleDate,
+        dateString: todayAsDateString,
+        score: roundedFinalScore,
+        wordsFoundCount: submittedWords.length,
+        guessedWotD: wotdGuessedThisSession,
+        newlyOwnedWords: [...newlyOwnedWordsThisSession],
+    };
+    localStorage.setItem(LEXIVERSE_LAST_SESSION_RESULTS_KEY, JSON.stringify(sessionResultsToStore));
+
 
     if (currentUser && userProfile) {
         const userDocRef = doc(firestore, "Users", currentUser.uid);
@@ -297,7 +342,7 @@ export default function HomePage() {
         } else {
             const todayGMTDate = new Date(currentPuzzleDate + "T00:00:00Z"); 
             
-            if (guessedWotD) { 
+            if (wotdGuessedThisSession) { 
                 if (userProfile.lastPlayedDate_GMT) {
                     const lastPlayedDate = new Date(userProfile.lastPlayedDate_GMT + "T00:00:00Z");
                     const expectedYesterday = new Date(todayGMTDate);
@@ -382,7 +427,6 @@ export default function HomePage() {
     const approvedWordDetails = approvedWords.get(wordText);
 
     if (isTheWotDString) {
-      setGuessedWotD(true);
       let wotdSessionPoints = 0;
       let newlyClaimedWotD = false;
 
@@ -701,31 +745,6 @@ export default function HomePage() {
     );
   }
   
-  if (gameState === 'cooldown') {
-    return (
-      <div className="flex flex-col items-center justify-center text-center h-full py-12">
-        <AlertTriangle className="w-16 h-16 text-primary mb-4" />
-        <h1 className="text-3xl font-headline mb-4">Patience, Word Smith!</h1>
-        <p className="text-xl text-muted-foreground mb-8">
-          You've already played today's LexiVerse puzzle.
-        </p>
-        <p className="text-lg">A new challenge awaits tomorrow or when an admin resets the day.</p>
-         {pendingInvitesCount > 0 && (
-          <Alert className="mt-8 max-w-md mx-auto text-left">
-            <BellRing className="h-5 w-5" />
-            <AlertTitle>You have Circle Invitations!</AlertTitle>
-            <AlertDescription>
-              You have {pendingInvitesCount} pending circle invitation(s).
-              <Button asChild variant="link" className="p-0 ml-1 h-auto">
-                <Link href="/notifications">View Invites</Link>
-              </Button>
-            </AlertDescription>
-          </Alert>
-        )}
-      </div>
-    );
-  }
-
   return (
     <div className="flex flex-col items-center justify-center p-2 md:p-4">
       <WelcomeInstructionsDialog
@@ -734,7 +753,7 @@ export default function HomePage() {
         onConfirm={handleCloseWelcomeInstructions}
       />
 
-      {pendingInvitesCount > 0 && gameState === 'idle' && !showWelcomeInstructionsModal && (
+      {pendingInvitesCount > 0 && gameState === 'idle' && !showWelcomeInstructionsModal && !showDebrief && (
         <Alert className="mb-6 max-w-xl mx-auto text-left">
             <BellRing className="h-5 w-5" />
             <AlertTitle>You have Circle Invitations!</AlertTitle>
@@ -747,7 +766,7 @@ export default function HomePage() {
         </Alert>
       )}
 
-      {gameState === 'idle' && !showWelcomeInstructionsModal && (
+      {gameState === 'idle' && !showWelcomeInstructionsModal && !showDebrief && (
         <div className="text-center space-y-6">
           <h1 className="text-4xl md:text-5xl font-headline text-primary">Welcome to LexiVerse!</h1>
           <p className="text-lg md:text-xl text-muted-foreground max-w-xl mx-auto">
@@ -755,7 +774,7 @@ export default function HomePage() {
             Points are awarded based on word rarity and length. WotD gets 2x final score bonus.
             Claimed words give their original submitter a bonus!
           </p>
-          <Button size="lg" onClick={startGame} className="font-semibold text-lg py-3 px-8" disabled={isLoadingAuth && !currentUser}>
+          <Button size="lg" onClick={startGame} className="font-semibold text-lg py-3 px-8" disabled={isLoadingAuth && !currentUser || hasPlayedToday}>
             <PlayCircle className="mr-2 h-6 w-6" /> Start Today's Game
           </Button>
         </div>
@@ -769,7 +788,7 @@ export default function HomePage() {
             </div>
             <GameTimer timeLeft={timeLeft} />
             <div className="w-1/3 flex justify-end">
-              {guessedWotD && (
+              {submittedWords.some(sw => sw.isWotD) && (
                 <Badge variant="default" className="bg-accent text-accent-foreground py-2 px-3 text-sm">
                   <Check className="h-5 w-5 mr-1" /> WotD Found!
                 </Badge>
@@ -799,30 +818,34 @@ export default function HomePage() {
 
       <DailyDebriefDialog
         isOpen={showDebrief}
-        onOpenChange={setShowDebrief}
-        score={finalDailyScore}
-        wordsFoundCount={submittedWords.length}
-        guessedWotD={guessedWotD}
+        onOpenChange={(open) => {
+            setShowDebrief(open);
+            if (!open) setGameState('idle'); // Return to idle if dialog closed and played today
+        }}
+        score={finalDailyScoreForDebrief}
+        wordsFoundCount={wordsFoundCountForDebrief}
+        guessedWotD={guessedWotDForDebrief}
         onShare={() => {
-          setShowDebrief(false);
+          setShowDebrief(false); // Close debrief before showing share
           setShareableGameDate(currentPuzzleDate); 
           setShowShareModal(true);
         }}
         userProfile={userProfile} 
         circleId={userProfile?.activeCircleId} 
         circleName={userProfile?.activeCircleId ? "Your Circle" : undefined} 
-        newlyOwnedWords={newlyOwnedWordsThisSession} 
+        newlyOwnedWords={newlyOwnedWordsForDebrief} 
       />
       
       <ShareMomentDialog
         isOpen={showShareModal}
         onOpenChange={setShowShareModal}
         gameData={{
-          score: finalDailyScore,
-          guessedWotD: guessedWotD,
-          wordsFoundCount: submittedWords.length,
+          score: finalDailyScoreForDebrief,
+          guessedWotD: guessedWotDForDebrief,
+          wordsFoundCount: wordsFoundCountForDebrief,
           date: shareableGameDate, 
-          circleName: userProfile?.activeCircleId ? "CircleNamePlaceholder" : undefined, 
+          circleName: userProfile?.activeCircleId ? "CircleNamePlaceholder" : undefined,
+          newlyClaimedWordsCount: newlyOwnedWordsForDebrief.length,
         }}
       />
 
@@ -857,3 +880,4 @@ export default function HomePage() {
     </div>
   );
 }
+
