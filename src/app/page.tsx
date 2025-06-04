@@ -90,7 +90,7 @@ export default function HomePage() {
       let effectiveWotDText = MOCK_WORD_OF_THE_DAY_TEXT;
       let currentSeedingChars = MOCK_SEEDING_LETTERS_CHARS;
       let wotdDefinition: string | null = "A fun word puzzle game.";
-      let wotdPointsFromConfig: number | null = MOCK_WORD_OF_THE_DAY_TEXT.length * 5;
+      let wotdPointsFromConfig: number | null = calculateWordScore(MOCK_WORD_OF_THE_DAY_TEXT, 3); // Default freq for calc
 
 
       if (puzzleSnap.exists()) {
@@ -98,7 +98,7 @@ export default function HomePage() {
         effectiveWotDText = puzzleData.wordOfTheDayText.toUpperCase();
         currentSeedingChars = puzzleData.seedingLetters.toUpperCase().split('');
         wotdDefinition = puzzleData.wordOfTheDayDefinition || `Definition for ${effectiveWotDText}`;
-        wotdPointsFromConfig = puzzleData.wordOfTheDayPoints;
+        wotdPointsFromConfig = puzzleData.wordOfTheDayPoints; // This is admin-set, used as fallback if WotD not in dictionary
       } else {
         toast({ title: "Puzzle Data Missing", description: "Using default puzzle for today.", variant: "default"});
       }
@@ -136,7 +136,7 @@ export default function HomePage() {
         setSeedingLetters(initialLetters);
         setActualWordOfTheDayText(MOCK_WORD_OF_THE_DAY_TEXT);
         setActualWordOfTheDayDefinition("A fun word puzzle game.");
-        setActualWordOfTheDayPoints(MOCK_WORD_OF_THE_DAY_TEXT.length * 5);
+        setActualWordOfTheDayPoints(calculateWordScore(MOCK_WORD_OF_THE_DAY_TEXT, 3));
     }
 
     let userCanPlayToday = true;
@@ -222,7 +222,7 @@ export default function HomePage() {
       });
     }, 1000);
     return () => clearInterval(timerId);
-  }, [gameState, timeLeft]); // Added timeLeft to dependencies, handleGameEnd is stable
+  }, [gameState, timeLeft]); 
 
   useEffect(() => {
     if (currentUser && userProfile && !isLoadingAuth && (userProfile.hasSeenWelcomeInstructions === false || userProfile.hasSeenWelcomeInstructions === undefined)) {
@@ -442,17 +442,18 @@ export default function HomePage() {
             await updateDoc(claimerProfileRef, { overallPersistentScore: increment(wotdSessionPoints) });
             toast({ title: "WotD Claimer Bonus!", description: `Original submitter of WotD "${wordText}" got a bonus of ${wotdSessionPoints} points!`, variant: "default"});
           } catch (error) { console.error("Error awarding WotD claimer bonus:", error); }
+        } else { // WotD already owned by current player
+             toast({ title: "Word of the Day!", description: `You found "${wordText}" for ${wotdSessionPoints} base points! (Bonus applied at end)`, className: "bg-accent text-accent-foreground" });
         }
       } else { 
-        wotdSessionPoints = actualWordOfTheDayPoints || (wordText.length * 5); 
+        // WotD is not in dictionary, use admin-set points, submit for review
+        wotdSessionPoints = actualWordOfTheDayPoints || calculateWordScore(wordText, 3); // Fallback to calc with avg freq
         const definitionForSubmission = actualWordOfTheDayDefinition || `Definition for Word of the Day: ${wordText}`;
-        const frequencyForSubmission = actualWordOfTheDayPoints ? Math.max(1, actualWordOfTheDayPoints / Math.max(MIN_WORD_LENGTH, wordText.length)) : 3;
+        const frequencyForSubmission = actualWordOfTheDayPoints ? Math.max(1, actualWordOfTheDayPoints / Math.max(MIN_WORD_LENGTH, wordText.length)) : 3; // Estimate freq
         await saveSubmissionToFirestore(wordText, definitionForSubmission, frequencyForSubmission, true); 
+        // Assuming saveSubmissionToFirestore handles the toast for "sent for review"
       }
 
-      if(!newlyClaimedWotD) { // Only show generic WotD if not already shown "Amazing" toast
-        toast({ title: "Word of the Day!", description: `You found "${wordText}" for ${wotdSessionPoints} base points! (Bonus applied at end)`, className: "bg-accent text-accent-foreground" });
-      }
       setSessionScore((prev) => prev + wotdSessionPoints);
       setSubmittedWords((prev) => [...prev, { id: crypto.randomUUID(), text: wordText, points: wotdSessionPoints, isWotD: true, newlyOwned: newlyClaimedWotD }]);
       handleClearWord();
@@ -472,7 +473,7 @@ export default function HomePage() {
         newlyClaimedRegularWord = true;
         setNewlyOwnedWordsThisSession(prev => [...prev, wordText]);
         setApprovedWords(prevMap => new Map(prevMap).set(wordText, {...approvedWordDetails, originalSubmitterUID: currentUser.uid}));
-        toast({ title: "Amazing!", description: `You own "${wordText}"! It's worth ${points} points.`, variant: "default" });
+        toast({ title: "Amazing!", description: `You own "${wordText}"! It's worth ${points} points.` });
       } else if (approvedWordDetails.originalSubmitterUID === currentUser.uid) { 
         toast({ title: "Word Found!", description: `"${wordText}" is worth ${points} points.`, variant: "default" });
       } else { 
@@ -495,7 +496,7 @@ export default function HomePage() {
     const rejectedWordDetails = rejectedWords.get(wordText);
     if (rejectedWordDetails) {
       if (rejectedWordDetails.rejectionType === 'Gibberish') {
-        const pointsDeducted = wordText.length; 
+        const pointsDeducted = calculateWordScore(wordText, 7); // Assume high frequency for gibberish penalty calc
         setSessionScore(prev => prev - pointsDeducted); 
         toast({
           title: "Word Rejected",
@@ -543,10 +544,10 @@ export default function HomePage() {
       
       if (mockApiSuccess) {
         const mockDefinition = `A simulated definition for ${wordToSubmit}.`;
-        const mockFrequency = parseFloat((Math.random() * 6 + 1).toFixed(2));
+        const mockFrequency = parseFloat((Math.random() * 6 + 1).toFixed(2)); // Random Zipf 1-7
         await saveSubmissionToFirestore(wordToSubmit, mockDefinition, mockFrequency);
       } else {
-        const pointsDeducted = wordToSubmit.length;
+        const pointsDeducted = calculateWordScore(wordToSubmit, 7); // Assume high frequency for penalty calc
         setSessionScore(prev => prev - pointsDeducted);
         toast({
           title: "Word Not Recognized (Simulated)",
@@ -568,7 +569,7 @@ export default function HomePage() {
         }
       });
       if (!response.ok) {
-        const pointsDeducted = wordToSubmit.length;
+        const pointsDeducted = calculateWordScore(wordToSubmit, 7); // Assume high frequency for penalty
         setSessionScore(prev => prev - pointsDeducted);
         let errorDescription = `Error verifying "${wordToSubmit}": ${response.statusText}. ${pointsDeducted} points deducted.`;
         if (response.status === 404){
@@ -585,18 +586,18 @@ export default function HomePage() {
       }
       const data = await response.json();
       const definition = data.results?.[0]?.definition || "No definition found.";
-      let frequency = 1; 
+      let frequency = 3.5; // Default to a mid-range frequency if not found
       if (data.frequencyDetails?.[0]?.zipf) {
         frequency = parseFloat(data.frequencyDetails[0].zipf);
-      } else if (data.frequency) { 
-        frequency = parseFloat(data.frequency);
+      } else if (data.frequency && typeof data.frequency === 'number') { 
+        frequency = data.frequency; // Direct frequency if available
       }
-      if (isNaN(frequency) || frequency <= 0) frequency = 1;
+      if (isNaN(frequency) || frequency <= 0) frequency = 3.5; // Fallback if parsing fails
       
       await saveSubmissionToFirestore(wordToSubmit, definition, frequency);
 
     } catch (error: any) {
-       const pointsDeducted = wordToSubmit.length;
+       const pointsDeducted = calculateWordScore(wordToSubmit, 7);
        setSessionScore(prev => prev - pointsDeducted);
        toast({ 
           title: "Word Verification Failed", 
@@ -840,7 +841,7 @@ export default function HomePage() {
           guessedWotD: guessedWotDForDebrief,
           wordsFoundCount: wordsFoundCountForDebrief,
           date: shareableGameDate, 
-          circleName: userProfile?.activeCircleId ? "Your Circle" : undefined, // Placeholder for circle name
+          circleName: userProfile?.activeCircleId ? "Your Circle" : undefined, 
           newlyClaimedWordsCount: newlyOwnedWordsForDebrief.length,
         }}
       />
