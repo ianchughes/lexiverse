@@ -5,6 +5,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { firestore } from '@/lib/firebase';
 import { collection, getDocs, doc, updateDoc, setDoc, deleteDoc, Timestamp } from 'firebase/firestore';
 import type { UserProfile, AdminRoleDoc, UserRole, AccountStatus, UserProfileWithRole } from '@/types';
+import { useAuth } from '@/contexts/AuthContext'; // Import useAuth
 
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -13,24 +14,27 @@ import { Badge } from "@/components/ui/badge";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { useToast } from '@/hooks/use-toast';
-import { MoreHorizontal, UserCog, UserCheck, UserX, ShieldCheck, ShieldOff, Star, Eye } from 'lucide-react';
+import { MoreHorizontal, UserCog, UserCheck, UserX, ShieldCheck, ShieldOff, Star, Eye, Trash2, Loader2 } from 'lucide-react'; // Added Trash2, Loader2
 import { Input } from '@/components/ui/input';
 import { Skeleton } from '@/components/ui/skeleton';
-import { Dialog, DialogClose, DialogContent as DialogContentComponent, DialogDescription as DialogDescriptionComponent, DialogFooter as DialogFooterComponent, DialogHeader as DialogHeaderComponent, DialogTitle as DialogTitleComponent } from "@/components/ui/dialog"; // Renamed to avoid conflicts
+import { Dialog, DialogClose, DialogContent as DialogContentComponent, DialogDescription as DialogDescriptionComponent, DialogFooter as DialogFooterComponent, DialogHeader as DialogHeaderComponent, DialogTitle as DialogTitleComponent } from "@/components/ui/dialog"; 
 import { ScrollArea } from '@/components/ui/scroll-area';
+import { adminDeleteUserAndReleaseWordsAction } from './actions';
 
 
 export default function UserManagementPage() {
   const { toast } = useToast();
+  const { currentUser: actingAdmin } = useAuth(); // Get current admin user
   const [users, setUsers] = useState<UserProfileWithRole[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
   
   const [selectedUser, setSelectedUser] = useState<UserProfileWithRole | null>(null);
-  const [actionType, setActionType] = useState<'changeRole' | 'changeStatus' | null>(null);
+  const [actionType, setActionType] = useState<'changeRole' | 'changeStatus' | 'deleteUser' | null>(null); // Added 'deleteUser'
   const [newRole, setNewRole] = useState<UserRole | null>(null);
   const [newStatus, setNewStatus] = useState<AccountStatus | null>(null);
   const [isAlertDialogOpen, setIsAlertDialogOpen] = useState(false);
+  const [isProcessingAction, setIsProcessingAction] = useState(false); // For disabling buttons during async
 
   const [hasMounted, setHasMounted] = useState(false);
 
@@ -72,16 +76,17 @@ export default function UserManagementPage() {
     fetchUsersAndRoles();
   }, [fetchUsersAndRoles]);
 
-  const openConfirmationDialog = (user: UserProfileWithRole, type: 'changeRole' | 'changeStatus', value: UserRole | AccountStatus) => {
+  const openConfirmationDialog = (user: UserProfileWithRole, type: 'changeRole' | 'changeStatus' | 'deleteUser', value?: UserRole | AccountStatus) => {
     setSelectedUser(user);
     setActionType(type);
-    if (type === 'changeRole') setNewRole(value as UserRole);
-    if (type === 'changeStatus') setNewStatus(value as AccountStatus);
+    if (type === 'changeRole' && value) setNewRole(value as UserRole);
+    if (type === 'changeStatus' && value) setNewStatus(value as AccountStatus);
     setIsAlertDialogOpen(true);
   };
 
   const handleConfirmAction = async () => {
-    if (!selectedUser || !actionType) return;
+    if (!selectedUser || !actionType || !actingAdmin) return;
+    setIsProcessingAction(true);
 
     try {
       if (actionType === 'changeRole' && newRole) {
@@ -96,12 +101,20 @@ export default function UserManagementPage() {
         const userDocRef = doc(firestore, "Users", selectedUser.uid);
         await updateDoc(userDocRef, { accountStatus: newStatus });
         toast({ title: "Success", description: `${selectedUser.username}'s status updated to ${newStatus}.` });
+      } else if (actionType === 'deleteUser') {
+        const result = await adminDeleteUserAndReleaseWordsAction({ userIdToDelete: selectedUser.uid, actingAdminId: actingAdmin.uid });
+        if (result.success) {
+          toast({ title: "User Deleted", description: `${selectedUser.username} has been deleted and their words released.` });
+        } else {
+          throw new Error(result.error || "Failed to delete user.");
+        }
       }
       fetchUsersAndRoles(); 
-    } catch (error) {
-      console.error("Error updating user:", error);
-      toast({ title: "Error", description: "Failed to update user.", variant: "destructive" });
+    } catch (error: any) {
+      console.error("Error updating/deleting user:", error);
+      toast({ title: "Error", description: `Failed to ${actionType} user: ${error.message}`, variant: "destructive" });
     } finally {
+      setIsProcessingAction(false);
       setIsAlertDialogOpen(false);
       setSelectedUser(null);
       setActionType(null);
@@ -131,6 +144,15 @@ export default function UserManagementPage() {
     user.email.toLowerCase().includes(searchTerm.toLowerCase()) ||
     user.uid.toLowerCase().includes(searchTerm.toLowerCase())
   );
+  
+  const getDialogDescription = () => {
+    if (!selectedUser || !actionType) return "";
+    if (actionType === 'changeRole') return `Are you sure you want to change ${selectedUser.username}'s role to ${newRole}? This action can impact user access and permissions.`;
+    if (actionType === 'changeStatus') return `Are you sure you want to change ${selectedUser.username}'s status to ${newStatus}?`;
+    if (actionType === 'deleteUser') return `Are you sure you want to permanently delete ${selectedUser.username} (${selectedUser.uid})? This will remove their profile, release their owned words, and remove them from all circles. This action cannot be undone.`;
+    return "Are you sure?";
+  };
+
 
   return (
     <div className="space-y-6">
@@ -160,9 +182,12 @@ export default function UserManagementPage() {
         </CardHeader>
         <CardContent>
           {isLoading ? (
-            <p>Loading users...</p>
+            <div className="flex justify-center items-center py-10">
+                <Loader2 className="h-8 w-8 animate-spin text-primary" />
+                <p className="ml-2 text-muted-foreground">Loading users...</p>
+            </div>
           ) : filteredUsers.length === 0 ? (
-            <p className="text-muted-foreground">No users found{searchTerm ? ' matching your search' : ''}.</p>
+            <p className="text-muted-foreground text-center py-10">No users found{searchTerm ? ' matching your search' : ''}.</p>
           ) : (
             <Table>
               <TableHeader>
@@ -196,21 +221,21 @@ export default function UserManagementPage() {
                     <TableCell className="text-right">
                       <DropdownMenu>
                         <DropdownMenuTrigger asChild>
-                          <Button variant="ghost" size="icon">
-                            <MoreHorizontal className="h-4 w-4" />
+                          <Button variant="ghost" size="icon" disabled={isProcessingAction && selectedUser?.uid === user.uid}>
+                            {isProcessingAction && selectedUser?.uid === user.uid ? <Loader2 className="h-4 w-4 animate-spin" /> : <MoreHorizontal className="h-4 w-4" />}
                           </Button>
                         </DropdownMenuTrigger>
                         <DropdownMenuContent align="end">
                           <DropdownMenuLabel>Actions for {user.username}</DropdownMenuLabel>
                           <DropdownMenuSeparator />
                           <DropdownMenuLabel>Set Role</DropdownMenuLabel>
-                          <DropdownMenuItem onClick={() => openConfirmationDialog(user, 'changeRole', 'admin')} disabled={user.role === 'admin'}>
+                          <DropdownMenuItem onClick={() => openConfirmationDialog(user, 'changeRole', 'admin')} disabled={user.role === 'admin' || user.uid === actingAdmin?.uid}>
                             <ShieldCheck className="mr-2 h-4 w-4" /> Make Admin
                           </DropdownMenuItem>
-                          <DropdownMenuItem onClick={() => openConfirmationDialog(user, 'changeRole', 'moderator')} disabled={user.role === 'moderator'}>
+                          <DropdownMenuItem onClick={() => openConfirmationDialog(user, 'changeRole', 'moderator')} disabled={user.role === 'moderator' || user.uid === actingAdmin?.uid}>
                              <UserCog className="mr-2 h-4 w-4" /> Make Moderator
                           </DropdownMenuItem>
-                          <DropdownMenuItem onClick={() => openConfirmationDialog(user, 'changeRole', 'user')} disabled={user.role === 'user'}>
+                          <DropdownMenuItem onClick={() => openConfirmationDialog(user, 'changeRole', 'user')} disabled={user.role === 'user' || user.uid === actingAdmin?.uid}>
                              <ShieldOff className="mr-2 h-4 w-4" /> Make User (Remove Admin/Mod)
                           </DropdownMenuItem>
                           <DropdownMenuSeparator />
@@ -218,11 +243,19 @@ export default function UserManagementPage() {
                            <DropdownMenuItem onClick={() => openConfirmationDialog(user, 'changeStatus', 'Active')} disabled={user.accountStatus === 'Active'}>
                             <UserCheck className="mr-2 h-4 w-4" /> Set Active
                           </DropdownMenuItem>
-                          <DropdownMenuItem onClick={() => openConfirmationDialog(user, 'changeStatus', 'Blocked')} disabled={user.accountStatus === 'Blocked'}>
+                          <DropdownMenuItem onClick={() => openConfirmationDialog(user, 'changeStatus', 'Blocked')} disabled={user.accountStatus === 'Blocked' || user.uid === actingAdmin?.uid}>
                             <UserX className="mr-2 h-4 w-4" /> Set Blocked
                           </DropdownMenuItem>
                            <DropdownMenuItem onClick={() => openConfirmationDialog(user, 'changeStatus', 'PendingVerification')} disabled={user.accountStatus === 'PendingVerification'}>
                             Set Pending Verification
+                          </DropdownMenuItem>
+                          <DropdownMenuSeparator />
+                           <DropdownMenuItem 
+                            onClick={() => openConfirmationDialog(user, 'deleteUser')} 
+                            className="text-destructive focus:text-destructive"
+                            disabled={user.uid === actingAdmin?.uid} // Prevent admin from deleting self
+                           >
+                            <Trash2 className="mr-2 h-4 w-4" /> Delete User
                           </DropdownMenuItem>
                         </DropdownMenuContent>
                       </DropdownMenu>
@@ -236,20 +269,24 @@ export default function UserManagementPage() {
       </Card>
 
       {selectedUser && (
-        <AlertDialog open={isAlertDialogOpen} onOpenChange={setIsAlertDialogOpen}>
+        <AlertDialog open={isAlertDialogOpen} onOpenChange={(open) => { if (!isProcessingAction) setIsAlertDialogOpen(open); }}>
           <AlertDialogContent>
             <AlertDialogHeader>
-              <AlertDialogTitle>Confirm Action</AlertDialogTitle>
+              <AlertDialogTitle>Confirm Action: {actionType?.replace(/([A-Z])/g, ' $1').trim()}</AlertDialogTitle>
               <AlertDialogDescription>
-                Are you sure you want to 
-                {actionType === 'changeRole' && ` change ${selectedUser.username}'s role to ${newRole}`}
-                {actionType === 'changeStatus' && ` change ${selectedUser.username}'s status to ${newStatus}`}?
-                This action can impact user access and permissions.
+                {getDialogDescription()}
               </AlertDialogDescription>
             </AlertDialogHeader>
             <AlertDialogFooter>
-              <AlertDialogCancel onClick={() => setIsAlertDialogOpen(false)}>Cancel</AlertDialogCancel>
-              <AlertDialogAction onClick={handleConfirmAction} className={ (actionType === 'changeRole' && newRole !== 'user') || (actionType === 'changeStatus' && newStatus === 'Blocked') ? "bg-destructive hover:bg-destructive/90 text-destructive-foreground" : ""}>
+              <AlertDialogCancel onClick={() => setIsAlertDialogOpen(false)} disabled={isProcessingAction}>Cancel</AlertDialogCancel>
+              <AlertDialogAction 
+                onClick={handleConfirmAction} 
+                disabled={isProcessingAction}
+                className={ actionType === 'deleteUser' || (actionType === 'changeStatus' && newStatus === 'Blocked') || (actionType === 'changeRole' && (newRole === 'admin' || newRole === 'moderator')) 
+                               ? (actionType === 'deleteUser' || (actionType === 'changeStatus' && newStatus === 'Blocked') ? "bg-destructive hover:bg-destructive/90 text-destructive-foreground" : "bg-orange-500 hover:bg-orange-600 text-white") 
+                               : "" }
+              >
+                {isProcessingAction ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null} 
                 Yes, Confirm
               </AlertDialogAction>
             </AlertDialogFooter>
@@ -257,8 +294,9 @@ export default function UserManagementPage() {
         </AlertDialog>
       )}
        <p className="text-xs text-muted-foreground text-center">
-            User role and status changes are made directly to Firestore.
+            User role, status changes, and deletions are made directly to Firestore. Deleting a user also releases their owned words and removes them from circles.
         </p>
     </div>
   );
 }
+
