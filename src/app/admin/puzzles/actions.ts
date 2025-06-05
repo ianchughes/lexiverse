@@ -2,7 +2,7 @@
 'use server';
 
 import { firestore } from '@/lib/firebase';
-import { doc, setDoc, getDoc, Timestamp, collection, getDocs, deleteDoc, updateDoc, query, orderBy, writeBatch, serverTimestamp, WriteBatch } from 'firebase/firestore';
+import { doc, setDoc, getDoc, Timestamp, collection, getDocs, deleteDoc, updateDoc, query, orderBy, writeBatch, serverTimestamp, WriteBatch, where } from 'firebase/firestore';
 import type { DailyPuzzle, AdminPuzzleFormState, ClientPuzzleSuggestion, GeneratePuzzleSuggestionsOutput } from '@/types';
 import { format, addDays, startOfTomorrow } from 'date-fns';
 import { logAdminAction } from '@/lib/auditLogger';
@@ -182,10 +182,9 @@ export async function adminSaveGeneratedPuzzlesAction(payload: AdminSaveGenerate
             if (!existingPuzzleDates.has(dateStr)) {
                 const docId = dateStr;
                 const puzzleDocRef = doc(firestore, DAILY_PUZZLES_COLLECTION, docId);
-                // This object is for Firestore, so puzzleDateGMT should be a Timestamp
                 const firestorePuzzleData = {
                     id: docId,
-                    puzzleDateGMT: Timestamp.fromDate(tempCurrentDate), // Correctly a Timestamp for Firestore
+                    puzzleDateGMT: Timestamp.fromDate(tempCurrentDate), 
                     wordOfTheDayText: suggestion.wordOfTheDayText.toUpperCase(),
                     wordOfTheDayPoints: suggestion.wordOfTheDayText.length * 10,
                     seedingLetters: suggestion.seedingLetters.toUpperCase(),
@@ -193,13 +192,13 @@ export async function adminSaveGeneratedPuzzlesAction(payload: AdminSaveGenerate
                     wordOfTheDayDefinition: suggestion.wordOfTheDayDefinition || "Definition from AI suggestion.",
                 };
                 batch.set(puzzleDocRef, firestorePuzzleData);
-                existingPuzzleDates.add(dateStr); // Add to set to avoid collisions within the same batch
+                existingPuzzleDates.add(dateStr); 
                 savedCount++;
                 assignedDate = true;
-                currentDate = addDays(tempCurrentDate, 1); // Update the main currentDate for the next puzzle
+                currentDate = addDays(tempCurrentDate, 1); 
                 savedPuzzleDetails.push(`${dateStr} (WotD: ${suggestion.wordOfTheDayText})`);
             } else {
-                tempCurrentDate = addDays(tempCurrentDate, 1); // Try next day
+                tempCurrentDate = addDays(tempCurrentDate, 1); 
             }
             attempts++;
         }
