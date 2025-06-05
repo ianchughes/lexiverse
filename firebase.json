@@ -3,7 +3,7 @@
       "hosting": {
         "apphosting": {
           "backend": "lexiverse-lexiverse-tkufa-europe-west4"
-      },"public": "lexiverse/public",
+      },
       "headers": [{
             "source": "**",
             "headers": [
