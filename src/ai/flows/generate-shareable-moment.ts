@@ -37,7 +37,8 @@ const shareableMomentPrompt = ai.definePrompt({
   model: 'googleai/gemini-2.0-flash-exp', // Specifies the LLM model
   config: {
     responseModalities: ['TEXT', 'IMAGE'],
-    handlebars: { // Configuration for Handlebars templating
+    templateFormat: "handlebars", // Moved templateFormat here
+    handlebars: { 
       helpers: {
         gt: (a: number, b: number) => a > b,
       },
@@ -89,9 +90,7 @@ Your Task:
 
 Return the response in the specified JSON format with 'shareableText' and 'imageUri' fields.
 `,
-  templateFormat: "handlebars",
-  // The problematic duplicate 'model' key for helpers has been removed.
-  // Helpers are now intended to be passed via the 'config.handlebars.helpers' object above.
+  // templateFormat: "handlebars", // Removed from here
 });
 
 const generateShareableMomentFlow = ai.defineFlow(
@@ -128,3 +127,4 @@ const generateShareableMomentFlow = ai.defineFlow(
     }
   }
 );
+
