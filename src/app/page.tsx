@@ -19,7 +19,7 @@ import { PlayCircle, Check, AlertTriangle, Send, Loader2, ThumbsDown, Users, Bel
 import { Badge } from '@/components/ui/badge';
 import { Card, CardHeader, CardContent, CardTitle, CardDescription } from '@/components/ui/card';
 import { firestore, auth } from '@/lib/firebase';
-import { collection, addDoc, serverTimestamp, doc, getDoc, updateDoc, increment, Timestamp, writeBatch, getDocs, query, where } from 'firebase/firestore';
+import { collection, addDoc, serverTimestamp, doc, getDoc, updateDoc, increment, Timestamp, writeBatch, getDocs, query, where, setDoc } from 'firebase/firestore';
 import { format } from 'date-fns';
 import { useAuth } from '@/contexts/AuthContext';
 import { updateUserCircleDailyScoresAction } from '@/app/circles/actions';
@@ -450,8 +450,8 @@ export default function HomePage() {
         wotdSessionPoints = actualWordOfTheDayPoints || calculateWordScore(wordText, 3); // Fallback to calc with avg freq
         const definitionForSubmission = actualWordOfTheDayDefinition || `Definition for Word of the Day: ${wordText}`;
         const frequencyForSubmission = actualWordOfTheDayPoints ? Math.max(1, actualWordOfTheDayPoints / Math.max(MIN_WORD_LENGTH, wordText.length)) : 3; // Estimate freq
-        await saveSubmissionToFirestore(wordText, definitionForSubmission, frequencyForSubmission, true); 
-        // Assuming saveSubmissionToFirestore handles the toast for "sent for review"
+        // For WotD not in dictionary, it should still go to manual queue
+        await saveWordToSubmissionQueue(wordText, definitionForSubmission, frequencyForSubmission, true); 
       }
 
       setSessionScore((prev) => prev + wotdSessionPoints);
@@ -496,7 +496,7 @@ export default function HomePage() {
     const rejectedWordDetails = rejectedWords.get(wordText);
     if (rejectedWordDetails) {
       if (rejectedWordDetails.rejectionType === 'Gibberish') {
-        const pointsDeducted = calculateWordScore(wordText, 7); // Assume high frequency for gibberish penalty calc
+        const pointsDeducted = calculateWordScore(wordText, 7); 
         setSessionScore(prev => prev - pointsDeducted); 
         toast({
           title: "Word Rejected",
@@ -515,93 +515,96 @@ export default function HomePage() {
       return;
     }
 
+    // Word not in approvedWords or rejectedWords, prompt for WordsAPI check & claim
     setWordToReview(wordText);
     setShowSubmitForReviewDialog(true);
   };
 
-  const fetchWordDataAndSubmit = async (wordToSubmitFromDialog: string) => {
-    const wordToSubmit = wordToSubmitFromDialog.toUpperCase(); 
-    setIsSubmittingForReview(true);
-    toast({ title: "Checking Word...", description: `Verifying "${wordToSubmit}"...` });
-
-    const rejectedDetails = rejectedWords.get(wordToSubmit);
-    if (rejectedDetails) {
-         toast({
-          title: "Already Known",
-          description: `"${wordToSubmit}" is already known to be ${rejectedDetails.rejectionType === 'Gibberish' ? 'invalid' : 'not allowed'}. No submission needed.`,
-          variant: "default"
-        });
+  const fetchWordDataAndClaimOrPenalize = async (wordToProcess: string) => {
+    const wordKey = wordToProcess.toUpperCase(); 
+    if (!currentUser) {
+        toast({ title: "Error", description: "User not authenticated.", variant: "destructive" });
         setIsSubmittingForReview(false);
         handleClearWord();
         return;
     }
+    setIsSubmittingForReview(true);
+    toast({ title: "Checking Word...", description: `Verifying "${wordKey}"...` });
 
     const apiKey = process.env.NEXT_PUBLIC_WORDSAPI_KEY;
     if (!apiKey || apiKey === "YOUR_WORDSAPI_KEY_PLACEHOLDER" || apiKey.length < 10) {
       console.warn("WordsAPI key not configured or is placeholder. Simulating API call for submission.");
-      await new Promise(resolve => setTimeout(resolve, 1500)); 
-      const mockApiSuccess = Math.random() > 0.2; 
-      
-      if (mockApiSuccess) {
-        const mockDefinition = `A simulated definition for ${wordToSubmit}.`;
-        const mockFrequency = parseFloat((Math.random() * 6 + 1).toFixed(2)); // Random Zipf 1-7
-        await saveSubmissionToFirestore(wordToSubmit, mockDefinition, mockFrequency);
-      } else {
-        const pointsDeducted = calculateWordScore(wordToSubmit, 7); // Assume high frequency for penalty calc
-        setSessionScore(prev => prev - pointsDeducted);
-        toast({
-          title: "Word Not Recognized (Simulated)",
-          description: `"${wordToSubmit}" could not be verified. ${pointsDeducted} points deducted.`,
-          variant: "destructive"
-        });
-      }
+      // Fallback: Put word in submission queue if API key is missing
+      await new Promise(resolve => setTimeout(resolve, 1500));
+      await saveWordToSubmissionQueue(wordKey, `Definition for ${wordKey} (simulated)`, 3.5, false);
       setIsSubmittingForReview(false);
       handleClearWord();
       return;
     }
 
     try {
-      const response = await fetch(`https://wordsapiv1.p.rapidapi.com/words/${wordToSubmit.toLowerCase()}`, {
+      const response = await fetch(`https://wordsapiv1.p.rapidapi.com/words/${wordKey.toLowerCase()}`, {
         method: 'GET',
         headers: {
           'X-RapidAPI-Key': apiKey,
           'X-RapidAPI-Host': 'wordsapiv1.p.rapidapi.com'
         }
       });
-      if (!response.ok) {
-        const pointsDeducted = calculateWordScore(wordToSubmit, 7); // Assume high frequency for penalty
+      if (!response.ok) { // Word not found by WordsAPI
+        const pointsDeducted = calculateWordScore(wordKey, 7); 
         setSessionScore(prev => prev - pointsDeducted);
-        let errorDescription = `Error verifying "${wordToSubmit}": ${response.statusText}. ${pointsDeducted} points deducted.`;
+        let errorDescription = `Error verifying "${wordKey}": ${response.statusText}. ${pointsDeducted} points deducted.`;
         if (response.status === 404){
-           errorDescription = `"${wordToSubmit}" was not found by our dictionary service. ${pointsDeducted} points deducted.`;
+           errorDescription = `"${wordKey}" was not recognized by our dictionary. ${pointsDeducted} points deducted.`;
         }
         toast({
-            title: "Word Verification Failed",
+            title: "Word Not Recognized",
             description: errorDescription,
             variant: "destructive"
         });
-        setIsSubmittingForReview(false);
-        handleClearWord();
-        return; 
-      }
-      const data = await response.json();
-      const definition = data.results?.[0]?.definition || "No definition found.";
-      let frequency = 3.5; // Default to a mid-range frequency if not found
-      if (data.frequencyDetails?.[0]?.zipf) {
-        frequency = parseFloat(data.frequencyDetails[0].zipf);
-      } else if (data.frequency && typeof data.frequency === 'number') { 
-        frequency = data.frequency; // Direct frequency if available
-      }
-      if (isNaN(frequency) || frequency <= 0) frequency = 3.5; // Fallback if parsing fails
-      
-      await saveSubmissionToFirestore(wordToSubmit, definition, frequency);
+      } else { // Word found by WordsAPI - Auto-approve and score
+        const data = await response.json();
+        const definition = data.results?.[0]?.definition || "No definition provided.";
+        let frequency = 3.5; 
+        if (data.frequencyDetails?.[0]?.zipf) {
+          frequency = parseFloat(data.frequencyDetails[0].zipf);
+        } else if (data.frequency && typeof data.frequency === 'number') { 
+          frequency = data.frequency;
+        }
+        if (isNaN(frequency) || frequency <= 0) frequency = 3.5;
+        
+        const points = calculateWordScore(wordKey, frequency);
 
+        const wordDocRef = doc(firestore, MASTER_WORDS_COLLECTION, wordKey);
+        const newMasterWordEntry: MasterWordType = {
+            wordText: wordKey,
+            definition: definition,
+            frequency: frequency,
+            status: 'Approved',
+            addedByUID: currentUser.uid, 
+            dateAdded: serverTimestamp() as Timestamp,
+            originalSubmitterUID: currentUser.uid,
+            puzzleDateGMTOfSubmission: currentPuzzleDate,
+        };
+        await setDoc(wordDocRef, newMasterWordEntry);
+
+        setSessionScore((prev) => prev + points);
+        setSubmittedWords((prev) => [...prev, { id: crypto.randomUUID(), text: wordKey, points, isWotD: false, newlyOwned: true }]);
+        setApprovedWords(prevMap => new Map(prevMap).set(wordKey, newMasterWordEntry));
+        setNewlyOwnedWordsThisSession(prev => [...prev, wordKey]);
+
+        toast({
+          title: "Word Claimed!",
+          description: `You found and claimed "${wordKey}" for ${points} points! It's now in the dictionary.`,
+          className: "bg-green-100 text-green-700 dark:bg-green-700 dark:text-green-100"
+        });
+      }
     } catch (error: any) {
-       const pointsDeducted = calculateWordScore(wordToSubmit, 7);
+       const pointsDeducted = calculateWordScore(wordKey, 7);
        setSessionScore(prev => prev - pointsDeducted);
        toast({ 
           title: "Word Verification Failed", 
-          description: `${error.message || `Could not verify "${wordToSubmit}"`}. ${pointsDeducted} points deducted.`, 
+          description: `${error.message || `Could not verify "${wordKey}"`}. ${pointsDeducted} points deducted.`, 
           variant: "destructive" 
         });
     } finally {
@@ -610,14 +613,12 @@ export default function HomePage() {
     }
   };
 
-  const saveSubmissionToFirestore = async (wordText: string, definition: string, frequency: number, isWotDClaim: boolean = false) => {
+  const saveWordToSubmissionQueue = async (wordText: string, definition: string, frequency: number, isWotDClaim: boolean = false) => {
     if (!currentUser) {
         toast({ title: "Authentication Error", description: "You must be logged in to submit words.", variant: "destructive" });
         return;
     }
-
     const wordUpperCase = wordText.toUpperCase();
-
     const q = query(
         collection(firestore, WORD_SUBMISSIONS_QUEUE),
         where("wordText", "==", wordUpperCase),
@@ -625,15 +626,10 @@ export default function HomePage() {
     );
     const querySnapshot = await getDocs(q);
     if (!querySnapshot.empty) {
-        toast({
-            title: "Already Pending",
-            description: `"${wordUpperCase}" is already pending review.`,
-            variant: "default"
-        });
+        toast({ title: "Already Pending", description: `"${wordUpperCase}" is already pending review.`, variant: "default" });
         handleClearWord(); 
         return;
     }
-
     const newSubmission: Omit<WordSubmission, 'id' | 'submittedTimestamp'> = { 
         wordText: wordUpperCase,
         definition: definition,
@@ -644,17 +640,10 @@ export default function HomePage() {
         isWotDClaim: isWotDClaim, 
     };
     try {
-        await addDoc(collection(firestore, WORD_SUBMISSIONS_QUEUE), {
-            ...newSubmission,
-            submittedTimestamp: serverTimestamp()
-        });
-        toast({
-        title: "Word Submitted!",
-        description: `"${wordText}" has been sent for review.`,
-        variant: "default"
-        });
+        await addDoc(collection(firestore, WORD_SUBMISSIONS_QUEUE), { ...newSubmission, submittedTimestamp: serverTimestamp() });
+        toast({ title: "Word Submitted!", description: `"${wordText}" has been sent for admin review.`, variant: "default" });
     } catch (error) {
-        console.error("Error submitting word to Firestore:", error);
+        console.error("Error submitting word to queue:", error);
         toast({ title: "Submission Failed", description: "Could not save your word submission. Please try again.", variant: "destructive" });
     }
   }
@@ -662,10 +651,10 @@ export default function HomePage() {
   const handleSubmitForReviewConfirm = async (submit: boolean) => {
     setShowSubmitForReviewDialog(false);
     if (submit && wordToReview) {
-      await fetchWordDataAndSubmit(wordToReview);
+      await fetchWordDataAndClaimOrPenalize(wordToReview);
     } else {
       if (wordToReview) {
-         toast({ title: "Not Submitted", description: `"${wordToReview.toUpperCase()}" was not submitted.`, variant: "default" });
+         toast({ title: "Not Submitted", description: `"${wordToReview.toUpperCase()}" was not submitted for checking.`, variant: "default" });
       }
       handleClearWord(); 
     }
@@ -780,13 +769,13 @@ export default function HomePage() {
       {gameState === 'playing' && (
         <div className="w-full max-w-2xl mx-auto">
           <div className="flex flex-col sm:flex-row justify-between items-center gap-2 mb-4 w-full">
-            <div className="sm:w-1/3 text-center sm:text-left">
+            <div className="sm:w-1/3 text-center sm:text-left order-1 sm:order-1">
                 <Badge variant="outline" className="text-lg px-3 py-1">Score: {sessionScore}</Badge>
             </div>
-            <div className="sm:w-1/3 flex justify-center">
+            <div className="sm:w-1/3 flex justify-center order-2 sm:order-2">
                 <GameTimer timeLeft={timeLeft} />
             </div>
-            <div className="sm:w-1/3 text-center sm:text-right min-h-[38px] flex justify-center sm:justify-end items-center">
+            <div className="sm:w-1/3 text-center sm:text-right min-h-[38px] flex justify-center sm:justify-end items-center order-3 sm:order-3">
               {submittedWords.some(sw => sw.isWotD) && (
                 <Badge variant="default" className="bg-accent text-accent-foreground py-2 px-3 text-sm">
                   <Check className="h-5 w-5 mr-1" /> WotD Found!
@@ -851,11 +840,10 @@ export default function HomePage() {
       <AlertDialog open={showSubmitForReviewDialog} onOpenChange={setShowSubmitForReviewDialog}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Submit Word for Review?</AlertDialogTitle>
+            <AlertDialogTitle>Unknown Word: "{wordToReview.toUpperCase()}"</AlertDialogTitle>
             <AlertDialogDescription>
-              The word "{wordToReview.toUpperCase()}" is not in our current dictionary.
-              Would you like to check its validity and submit it for review?
-              If approved, you might "own" this word!
+              This word isn't in our dictionary yet. Would you like to check if it's a real word and claim it?
+              If valid, it'll be added and you'll get points! If not, points may be deducted.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
@@ -867,9 +855,9 @@ export default function HomePage() {
               disabled={isSubmittingForReview}
               className="bg-primary text-primary-foreground hover:bg-primary/90"
             >
-              {isSubmittingForReview ? (<><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Submitting...</>) : (
+              {isSubmittingForReview ? (<><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Checking...</>) : (
                 <>
-                  <Send className="mr-2 h-4 w-4" /> Yes, Check &amp; Submit
+                  <Send className="mr-2 h-4 w-4" /> Yes, Check & Claim
                 </>
               )}
             </AlertDialogAction>
@@ -879,5 +867,3 @@ export default function HomePage() {
     </div>
   );
 }
-
-    
