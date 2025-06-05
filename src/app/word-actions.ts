@@ -9,11 +9,12 @@ import {
   getDoc,
   getDocs,
   query,
-  where, 
+  where,
   writeBatch,
   serverTimestamp,
   Timestamp,
   runTransaction,
+  updateDoc, // Added updateDoc
 } from 'firebase/firestore';
 import type { MasterWordType, UserProfile, WordTransfer, WordTransferStatus, AppNotification } from '@/types';
 
@@ -209,3 +210,4 @@ export async function respondToWordTransferAction(payload: RespondToWordTransfer
     return { success: false, error: error.message || "Failed to respond to word transfer." };
   }
 }
+
