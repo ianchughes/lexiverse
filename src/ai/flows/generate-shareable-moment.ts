@@ -71,9 +71,9 @@ Your Task:
     *   The text MUST end with the call to action and #LexiVerse hashtag.
 
 2.  **Shareable Image (imageUri):**
-    *   Generate an image to accompany the social media post.
+    *   Generate an image to accompany the social media post. The image should have an aspect ratio of approximately 2:1 (e.g., 1000x500 pixels, wider than tall).
     *   The image should be visually appealing and themed around LexiVerse (e.g., abstract letter patterns, a subtle representation of a brain, a stylized lexicon or dictionary).
-    *   Overlay the following information clearly onto the image using a clean, readable white 'Inter' font:
+    *   Overlay the following information clearly onto the image using a clean, readable white 'Inter' font. Ensure the text is well-distributed or centered, making good use of the available image space and avoiding excessive empty areas.
         *   LexiVerse logo (a simple "LV" or "LexiVerse" text is fine if a logo isn't available)
         *   Date: {{date}} (Keep as YYYY-MM-DD for the image)
         *   Score: {{score}}
@@ -100,7 +100,8 @@ const generateShareableMomentFlow = ai.defineFlow(
   },
   async (input) => {
     const fallbackText = `LexiVerse Results! 🗓️ ${input.date.split('-').reverse().join('/')}\n\n🏆 ${input.score} Points\n✍️ ${input.wordsFoundCount} Words Found\n💡 Word of the Day: ${input.guessedWotD ? 'Guessed! 🎉' : 'Missed 😥'}\n${input.newlyClaimedWordsCount && input.newlyClaimedWordsCount > 0 ? `✨ ${input.newlyClaimedWordsCount} new words claimed!\n` : ''}\nJoin the fun & challenge your lexicon! Play LexiVerse daily! #LexiVerse`;
-    const fallbackImage = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII="; // Placeholder
+    // A slightly more appealing placeholder image (2:1 ratio)
+    const fallbackImage = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAfQAAAH0CAYAAADL1t+KAAAAAXNSR0IArs4c6QAAAIRlWElmTU0AKgAAAAgABQESAAMAAAABAAEAAAEaAAUAAAABAAAASgEbAAUAAAABAAAAUgEoAAMAAAABAAIAAIdpAAQAAAABAAAAWgAAAAAAAACQAAAAAQAAAJAAAAABUGFpbnQuTkVUIHY0LjMuMTIAAAACoAIABAAAAAEAAAH0oAMABAAAAAEAAAH0AAAAALG3iDIAAAAFSURBVHgB7cEBAQAAAIIg/69uSEABAAAAAAAAAAAAAAA+A44rAAEFj07xAAAAAElFTkSuQmCC";
 
     try {
       const { output, history } = await shareableMomentPrompt(input);

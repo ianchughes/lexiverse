@@ -27,7 +27,7 @@ interface ShareMomentDialogProps {
     wordsFoundCount: number;
     date: string; // YYYY-MM-DD format
     circleName?: string;
-    newlyClaimedWordsCount: number; // Added this
+    newlyClaimedWordsCount: number;
   };
 }
 
@@ -40,7 +40,7 @@ export function ShareMomentDialog({ isOpen, onOpenChange, gameData }: ShareMomen
   useEffect(() => {
     if (isOpen && !shareContent && !isLoading) {
       setIsLoading(true);
-      generateShareableMoment(gameData) // gameData now includes newlyClaimedWordsCount
+      generateShareableMoment(gameData)
         .then((content) => {
           setShareContent(content);
         })
@@ -51,14 +51,12 @@ export function ShareMomentDialog({ isOpen, onOpenChange, gameData }: ShareMomen
             description: "Could not generate shareable moment. Please try again.",
             variant: "destructive",
           });
-          // onOpenChange(false); // Consider if dialog should close on error
         })
         .finally(() => {
           setIsLoading(false);
         });
     }
     if (!isOpen) {
-      // Reset state when dialog is closed
       setShareContent(null);
       setHasCopied(false);
     }
@@ -74,7 +72,13 @@ export function ShareMomentDialog({ isOpen, onOpenChange, gameData }: ShareMomen
         })
         .catch(err => {
           console.error("Failed to copy text: ", err);
-          toast({ title: "Error", description: "Could not copy text.", variant: "destructive" });
+          let description = "Could not copy link.";
+          if (err instanceof Error && err.name === 'NotAllowedError') {
+            description = "Clipboard permission denied. Please allow clipboard access in your browser settings.";
+          } else if (err instanceof Error) {
+            description = `Could not copy link: ${err.message}. Check console for details.`;
+          }
+          toast({title: "Error", description: description, variant: "destructive"});
         });
     }
   };
@@ -89,45 +93,48 @@ export function ShareMomentDialog({ isOpen, onOpenChange, gameData }: ShareMomen
 
   return (
     <Dialog open={isOpen} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-lg bg-card text-card-foreground">
-        <DialogHeader>
-          <DialogTitle className="text-2xl font-headline text-center text-primary">Share Your Achievement!</DialogTitle>
-          <DialogDescription className="text-center text-muted-foreground">
+      <DialogContent className="sm:max-w-md bg-card text-card-foreground p-4">
+        <DialogHeader className="pb-2 text-center">
+          <DialogTitle className="text-xl font-headline text-primary">Share Your Achievement!</DialogTitle>
+          <DialogDescription className="text-muted-foreground text-sm">
             Let the world know how you did in LexiVerse today!
           </DialogDescription>
         </DialogHeader>
 
         {isLoading && (
-          <div className="space-y-4 py-4">
-            <Skeleton className="h-48 w-full rounded-lg" />
-            <Skeleton className="h-6 w-3/4 mx-auto" />
-            <Skeleton className="h-10 w-full" />
+          <div className="space-y-3 py-2">
+            <Skeleton className="h-40 w-full rounded-lg" /> {/* Slightly smaller skeleton for image */}
+            <Skeleton className="h-5 w-3/4 mx-auto" /> {/* Skeleton for text */}
+            <Skeleton className="h-9 w-full" /> {/* Skeleton for buttons */}
           </div>
         )}
 
         {shareContent && !isLoading && (
-          <Card className="mt-4 overflow-hidden shadow-lg">
+          <Card className="mt-2 overflow-hidden shadow-md border-none">
             <CardContent className="p-0">
               {shareContent.imageUri && (
-                <Image
-                  src={shareContent.imageUri}
-                  alt="LexiVerse Shareable Moment"
-                  width={500}
-                  height={250}
-                  className="w-full object-cover"
-                  data-ai-hint="game score card"
-                />
+                 <div className="bg-muted/30 aspect-[2/1] overflow-hidden rounded-t-md">
+                    <Image
+                      src={shareContent.imageUri}
+                      alt="LexiVerse Shareable Moment"
+                      width={500}
+                      height={250}
+                      className="w-full h-full object-cover"
+                      data-ai-hint="game score card"
+                      priority // Eager load the image as it's key content
+                    />
+                  </div>
               )}
-              <div className="p-4 whitespace-pre-line text-center text-lg font-medium text-foreground">
+              <div className="p-3 whitespace-pre-line text-center text-base font-medium text-foreground">
                 {shareContent.shareableText}
               </div>
             </CardContent>
-            <CardFooter className="flex flex-col sm:flex-row gap-2 p-4 bg-secondary/30">
-              <Button onClick={handleCopyToClipboard} variant="outline" className="w-full sm:w-auto">
+            <CardFooter className="flex flex-col sm:flex-row gap-2 p-3 bg-secondary/20">
+              <Button onClick={handleCopyToClipboard} variant="outline" className="w-full sm:w-auto text-sm">
                 {hasCopied ? <Check className="mr-2 h-4 w-4" /> : <Copy className="mr-2 h-4 w-4" />}
                 {hasCopied ? 'Copied!' : 'Copy Text'}
               </Button>
-              <Button onClick={handleShareToTwitter} className="w-full sm:w-auto bg-primary text-primary-foreground hover:bg-primary/90">
+              <Button onClick={handleShareToTwitter} className="w-full sm:w-auto bg-primary text-primary-foreground hover:bg-primary/90 text-sm">
                 <Twitter className="mr-2 h-4 w-4" />
                 Share on X
               </Button>
@@ -136,14 +143,13 @@ export function ShareMomentDialog({ isOpen, onOpenChange, gameData }: ShareMomen
         )}
         
         {!isLoading && !shareContent && (
-           <div className="text-center py-8 text-muted-foreground">No content to display. Please try reopening this dialog.</div>
+           <div className="text-center py-6 text-muted-foreground">No content to display. Please try reopening this dialog.</div>
         )}
 
-        <DialogFooter className="mt-4">
-          <Button variant="outline" onClick={() => onOpenChange(false)}  className="w-full">Close</Button>
+        <DialogFooter className="mt-3">
+          <Button variant="outline" onClick={() => onOpenChange(false)}  className="w-full text-sm">Close</Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>
   );
 }
-
