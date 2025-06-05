@@ -1,5 +1,6 @@
 
 import type {NextConfig} from 'next';
+import webpack from 'webpack'; // Import webpack
 
 const nextConfig: NextConfig = {
   /* config options here */
@@ -38,6 +39,19 @@ const nextConfig: NextConfig = {
         ],
       },
     ];
+  },
+  webpack: (config, { isServer }) => {
+    // Add IgnorePlugin for @opentelemetry/exporter-jaeger
+    // This helps suppress "Module not found" warnings if Jaeger is not used.
+    config.plugins.push(
+      new webpack.IgnorePlugin({
+        resourceRegExp: /@opentelemetry\/exporter-jaeger/,
+      })
+    );
+    // You could add more IgnorePlugin instances for other optional OpenTelemetry exporters
+    // if similar warnings appear for them (e.g., otlp-grpc, otlp-http).
+
+    return config;
   },
 };
 
