@@ -66,7 +66,9 @@ Bot: "More colors, got it! Could you tell me a bit more about where you'd like t
 
 Respond to the user's suggestion: "{{{suggestionText}}}"
 Bot:`,
-  templateFormat: "handlebars",
+  config: {
+    templateFormat: "handlebars",
+  }
 });
 
 const handleSuggestionFlow = ai.defineFlow(
