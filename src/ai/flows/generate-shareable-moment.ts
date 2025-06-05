@@ -34,21 +34,21 @@ export async function generateShareableMoment(input: GenerateShareableMomentInpu
 
 const shareableMomentPrompt = ai.definePrompt({
   name: 'shareableMomentPrompt',
-  model: 'googleai/gemini-2.0-flash-exp', // Specifies the LLM model
-  config: {
-    responseModalities: ['TEXT', 'IMAGE'],
-    templateFormat: "handlebars", 
-    handlebars: { 
-      helpers: {
-        gt: (a: number, b: number) => a > b,
-      },
-    },
-  },
   input: {
     schema: GenerateShareableMomentInputSchema,
   },
   output: {
     schema: GenerateShareableMomentOutputSchema,
+  },
+  config: {
+    model: 'googleai/gemini-2.0-flash-exp', // Specifies the LLM model
+    responseModalities: ['TEXT', 'IMAGE'],
+    templateFormat: "handlebars",
+    handlebars: {
+      helpers: {
+        gt: (a: number, b: number) => a > b,
+      },
+    },
   },
   prompt: `You are a creative social media manager for LexiVerse, a daily word puzzle game. Generate a shareable moment for a player based on their game performance.
 
