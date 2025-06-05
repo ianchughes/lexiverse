@@ -224,10 +224,10 @@ export default function UserManagementPage() {
                     <TableCell>{getStatusBadge(user.accountStatus)}</TableCell>
                     <TableCell>{getRoleBadge(user.role)}</TableCell>
                     <TableCell>
-                      {user.dateCreated instanceof Timestamp 
+                      {user.dateCreated instanceof Timestamp
                         ? user.dateCreated.toDate().toLocaleDateString()
-                        : user.dateCreated?.seconds 
-                        ? new Date(user.dateCreated.seconds * 1000).toLocaleDateString()
+                        : (user.dateCreated as any)?.seconds // Use 'as any' to bypass 'never' type for .seconds access
+                        ? new Date((user.dateCreated as any).seconds * 1000).toLocaleDateString()
                         : 'N/A'}
                     </TableCell>
                     <TableCell className="text-right">
@@ -313,3 +313,4 @@ export default function UserManagementPage() {
     </div>
   );
 }
+
