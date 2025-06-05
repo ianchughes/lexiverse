@@ -572,11 +572,11 @@ export default function WordManagementPage() {
                       <TableCell className="text-center">{word.calculatedScore ?? 'N/A'}</TableCell>
                       <TableCell>
                         {word.originalSubmitterUsername ? (
-                          <span className="text-sm" title={word.originalSubmitterUID}>
+                          <span className="text-sm" title={word.originalSubmitterUID ?? undefined}>
                             {word.originalSubmitterUsername} <Star className="h-3 w-3 ml-1 fill-amber-400 text-amber-500 inline"/>
                           </span>
                         ) : word.originalSubmitterUID ? (
-                           <span className="font-mono text-xs text-muted-foreground" title={word.originalSubmitterUID}>
+                           <span className="font-mono text-xs text-muted-foreground" title={word.originalSubmitterUID ?? undefined}>
                             {word.originalSubmitterUID.substring(0,10)}... (No Username)
                           </span>
                         ) : (
