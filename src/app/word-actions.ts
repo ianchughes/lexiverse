@@ -9,7 +9,7 @@ import {
   getDoc,
   getDocs,
   query,
-  where,
+  where, // Added where
   writeBatch,
   serverTimestamp,
   Timestamp,
