@@ -15,7 +15,7 @@ import type { SeedingLetter, SubmittedWord, GameState, WordSubmission, SystemSet
 import { useToast } from '@/hooks/use-toast';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { PlayCircle, Check, AlertTriangle, Send, Loader2, ThumbsDown, Users, BellRing, LogIn, UserPlus, Clock, Key, Star, UsersRound, Gift, Info, Handshake, Trophy } from 'lucide-react';
+import { PlayCircle, Check, AlertTriangle, Send, Loader2, ThumbsDown, Users, BellRing, LogIn, UserPlus, Clock, Key, Star, UsersRound, Gift, Info, Handshake, Trophy, Gem, Zap, Users2, CheckSquare } from 'lucide-react'; // Added new icons
 import { Badge } from '@/components/ui/badge';
 import { Card, CardHeader, CardContent, CardTitle, CardDescription } from '@/components/ui/card';
 import { firestore, auth } from '@/lib/firebase';
@@ -90,7 +90,7 @@ export default function HomePage() {
       let effectiveWotDText = MOCK_WORD_OF_THE_DAY_TEXT;
       let currentSeedingChars = MOCK_SEEDING_LETTERS_CHARS;
       let wotdDefinition: string | null = "A fun word puzzle game.";
-      let wotdPointsFromConfig: number | null = calculateWordScore(MOCK_WORD_OF_THE_DAY_TEXT, 3); // Default freq for calc
+      let wotdPointsFromConfig: number | null = calculateWordScore(MOCK_WORD_OF_THE_DAY_TEXT, 3);
 
 
       if (puzzleSnap.exists()) {
@@ -98,7 +98,7 @@ export default function HomePage() {
         effectiveWotDText = puzzleData.wordOfTheDayText.toUpperCase();
         currentSeedingChars = puzzleData.seedingLetters.toUpperCase().split('');
         wotdDefinition = puzzleData.wordOfTheDayDefinition || `Definition for ${effectiveWotDText}`;
-        wotdPointsFromConfig = puzzleData.wordOfTheDayPoints; // This is admin-set, used as fallback if WotD not in dictionary
+        wotdPointsFromConfig = puzzleData.wordOfTheDayPoints;
       } else {
         toast({ title: "Puzzle Data Missing", description: "Using default puzzle for today.", variant: "default"});
       }
@@ -442,15 +442,13 @@ export default function HomePage() {
             await updateDoc(claimerProfileRef, { overallPersistentScore: increment(wotdSessionPoints) });
             toast({ title: "WotD Claimer Bonus!", description: `Original submitter of WotD "${wordText}" got a bonus of ${wotdSessionPoints} points!`, variant: "default"});
           } catch (error) { console.error("Error awarding WotD claimer bonus:", error); }
-        } else { // WotD already owned by current player
+        } else { 
              toast({ title: "Word of the Day!", description: `You found "${wordText}" for ${wotdSessionPoints} base points! (Bonus applied at end)`, className: "bg-accent text-accent-foreground" });
         }
       } else { 
-        // WotD is not in dictionary, use admin-set points, submit for review
-        wotdSessionPoints = actualWordOfTheDayPoints || calculateWordScore(wordText, 3); // Fallback to calc with avg freq
+        wotdSessionPoints = actualWordOfTheDayPoints || calculateWordScore(wordText, 3); 
         const definitionForSubmission = actualWordOfTheDayDefinition || `Definition for Word of the Day: ${wordText}`;
-        const frequencyForSubmission = actualWordOfTheDayPoints ? Math.max(1, actualWordOfTheDayPoints / Math.max(MIN_WORD_LENGTH, wordText.length)) : 3; // Estimate freq
-        // For WotD not in dictionary, it should still go to manual queue
+        const frequencyForSubmission = actualWordOfTheDayPoints ? Math.max(1, actualWordOfTheDayPoints / Math.max(MIN_WORD_LENGTH, wordText.length)) : 3;
         await saveWordToSubmissionQueue(wordText, definitionForSubmission, frequencyForSubmission, true); 
       }
 
@@ -515,7 +513,6 @@ export default function HomePage() {
       return;
     }
 
-    // Word not in approvedWords or rejectedWords, prompt for WordsAPI check & claim
     setWordToReview(wordText);
     setShowSubmitForReviewDialog(true);
   };
@@ -534,7 +531,6 @@ export default function HomePage() {
     const apiKey = process.env.NEXT_PUBLIC_WORDSAPI_KEY;
     if (!apiKey || apiKey === "YOUR_WORDSAPI_KEY_PLACEHOLDER" || apiKey.length < 10) {
       console.warn("WordsAPI key not configured or is placeholder. Simulating API call for submission.");
-      // Fallback: Put word in submission queue if API key is missing
       await new Promise(resolve => setTimeout(resolve, 1500));
       await saveWordToSubmissionQueue(wordKey, `Definition for ${wordKey} (simulated)`, 3.5, false);
       setIsSubmittingForReview(false);
@@ -550,7 +546,7 @@ export default function HomePage() {
           'X-RapidAPI-Host': 'wordsapiv1.p.rapidapi.com'
         }
       });
-      if (!response.ok) { // Word not found by WordsAPI
+      if (!response.ok) {
         const pointsDeducted = calculateWordScore(wordKey, 7); 
         setSessionScore(prev => prev - pointsDeducted);
         let errorDescription = `Error verifying "${wordKey}": ${response.statusText}. ${pointsDeducted} points deducted.`;
@@ -562,7 +558,7 @@ export default function HomePage() {
             description: errorDescription,
             variant: "destructive"
         });
-      } else { // Word found by WordsAPI - Auto-approve and score
+      } else { 
         const data = await response.json();
         const definition = data.results?.[0]?.definition || "No definition provided.";
         let frequency = 3.5; 
@@ -677,46 +673,46 @@ export default function HomePage() {
     return (
       <div className="flex flex-col items-center justify-center text-center h-full py-10 md:py-16 px-4">
         <h1 className="text-3xl sm:text-4xl md:text-5xl lg:text-6xl font-headline text-primary mb-4 sm:mb-6">
-          ⚡ LexiVerse: Your 90-Second Word Revolution! ⚡
+          LexiVerse: Mint Words. Own the Game. Earn Forever! 🚀
         </h1>
-        <p className="text-base sm:text-lg md:text-xl text-muted-foreground max-w-2xl mx-auto mb-8 sm:mb-10">
-          Dive into a thrilling daily word puzzle where speed meets strategy! Uncover words from 9 daily letters, "claim" your unique discoveries to earn ongoing points, and team up with friends in Circles. Can you conquer the lexicon in just 90 seconds?
+        <p className="text-base sm:text-lg md:text-xl text-muted-foreground max-w-3xl mx-auto mb-8 sm:mb-10 leading-relaxed">
+          Welcome to LexiVerse, the daily 90-second word dash with a revolutionary twist! Find words from 9 mystery letters. Be the FIRST to discover a new word (not yet in our game), get it approved, and you "MINT" it as your own! From that moment on, every time any other player, on any day, guesses your minted word, YOU earn the points too – build your word empire and watch your score grow even when you're not playing! Plus, nail the Word of the Day to double your daily score and team up in Circles to dominate the leaderboards!
         </p>
         
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-6 max-w-3xl mx-auto mb-10 sm:mb-12 text-left">
-          <Card className="bg-card/70 p-4 rounded-lg shadow-md flex items-start space-x-3">
-            <Clock className="h-8 w-8 text-accent mt-1 flex-shrink-0" />
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 max-w-4xl mx-auto mb-10 sm:mb-12 text-left">
+          <Card className="bg-card/70 p-5 rounded-lg shadow-md flex items-start space-x-4">
+            <Gem className="h-10 w-10 text-accent mt-1 flex-shrink-0" />
             <div>
-              <h3 className="font-semibold text-lg text-card-foreground">Daily 90s Blitz</h3>
-              <p className="text-sm text-muted-foreground">A fresh, fast-paced word challenge every single day!</p>
+              <h3 className="font-semibold text-xl text-card-foreground">Mint & Own Words</h3>
+              <p className="text-sm text-muted-foreground">Your unique word discoveries become yours! Get them approved and earn ongoing points automatically when others find them. This is your word legacy!</p>
             </div>
           </Card>
-          <Card className="bg-card/70 p-4 rounded-lg shadow-md flex items-start space-x-3">
-            <Key className="h-8 w-8 text-accent mt-1 flex-shrink-0" />
+          <Card className="bg-card/70 p-5 rounded-lg shadow-md flex items-start space-x-4">
+            <Zap className="h-10 w-10 text-accent mt-1 flex-shrink-0" />
             <div>
-              <h3 className="font-semibold text-lg text-card-foreground">Own Your Words</h3>
-              <p className="text-sm text-muted-foreground">Be the first to find and "own" rare words. Earn points every time others guess them!</p>
+              <h3 className="font-semibold text-xl text-card-foreground">Daily 90-Second Blitz</h3>
+              <p className="text-sm text-muted-foreground">A fresh, thrilling 9-letter puzzle drops every day at 00:00 GMT. Fast fingers, sharp mind!</p>
             </div>
           </Card>
-          <Card className="bg-card/70 p-4 rounded-lg shadow-md flex items-start space-x-3">
-            <Star className="h-8 w-8 text-accent mt-1 flex-shrink-0" />
+          <Card className="bg-card/70 p-5 rounded-lg shadow-md flex items-start space-x-4">
+            <Star className="h-10 w-10 text-accent mt-1 flex-shrink-0" />
             <div>
-              <h3 className="font-semibold text-lg text-card-foreground">Word of the Day Bonus</h3>
-              <p className="text-sm text-muted-foreground">Find the special 6-9 letter word to DOUBLE your entire daily score!</p>
+              <h3 className="font-semibold text-xl text-card-foreground">Word of the Day Jackpot</h3>
+              <p className="text-sm text-muted-foreground">Find the special 6-9 letter word and your entire daily score gets DOUBLED!</p>
             </div>
           </Card>
-          <Card className="bg-card/70 p-4 rounded-lg shadow-md flex items-start space-x-3">
-            <UsersRound className="h-8 w-8 text-accent mt-1 flex-shrink-0" />
+          <Card className="bg-card/70 p-5 rounded-lg shadow-md flex items-start space-x-4">
+            <Users2 className="h-10 w-10 text-accent mt-1 flex-shrink-0" />
             <div>
-              <h3 className="font-semibold text-lg text-card-foreground">Circle Up & Compete</h3>
-              <p className="text-sm text-muted-foreground">Create or join Circles, combine scores with friends, and aim for weekly glory!</p>
+              <h3 className="font-semibold text-xl text-card-foreground">Circle Up & Conquer</h3>
+              <p className="text-sm text-muted-foreground">Create or join Circles. Your scores and your friends' scores combine for weekly glory and bragging rights!</p>
             </div>
           </Card>
         </div>
 
-        <Button className="text-base font-semibold py-2.5 px-6 sm:text-lg sm:py-3 sm:px-8 rounded-lg shadow-lg hover:shadow-xl transition-shadow duration-200" asChild>
+        <Button className="text-base font-semibold py-3 px-8 sm:text-lg sm:py-4 sm:px-10 rounded-lg shadow-lg hover:shadow-xl transition-shadow duration-200" asChild>
           <Link href="/auth/register">
-            <Gift className="mr-2 h-5 sm:h-6 w-5 sm:w-6" /> Sign Up Free & Start Your Word Legacy!
+            <Gift className="mr-2 h-5 sm:h-6 w-5 sm:w-6" /> Sign Up Free & Start Minting Your Word Empire!
           </Link>
         </Button>
          <p className="mt-4">
@@ -725,7 +721,7 @@ export default function HomePage() {
           </Button>
         </p>
         <p className="mt-6 text-sm text-muted-foreground">
-          A new puzzle awaits every day at 00:00 GMT!
+          All submitted words are validated. Own unique additions to the LexiVerse!
         </p>
       </div>
     );
@@ -867,4 +863,3 @@ export default function HomePage() {
     </div>
   );
 }
-
