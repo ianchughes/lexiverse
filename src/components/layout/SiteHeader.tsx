@@ -1,9 +1,9 @@
 
 'use client';
 import Link from 'next/link';
-import { BookText, Users, LogIn, LogOut, UserCircle, ShieldCheck, Bell } from 'lucide-react';
+import { BookText, Users, LogIn, LogOut, UserCircle, ShieldCheck, Bell, FileText, Award, Sparkles } from 'lucide-react'; // Added FileText, Award, Sparkles
 import { useAuth } from '@/contexts/AuthContext';
-import { auth } from '@/lib/firebase';
+import { auth, firestore } from '@/lib/firebase'; // Added firestore
 import { signOut } from 'firebase/auth';
 import { useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
@@ -16,15 +16,87 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
+import React, { useEffect, useState, useRef } from 'react'; // Added useEffect, useState, useRef
+import { collection, query, where, getDocs } from 'firebase/firestore'; // Added Firestore imports
+
+const LOCALSTORAGE_OWNED_WORDS_COUNT_KEY = 'lexiverse_owned_words_count';
 
 export function SiteHeader() {
   const { currentUser, userProfile, userRole, isLoadingAuth } = useAuth();
   const router = useRouter();
 
+  const [ownedWordsCount, setOwnedWordsCount] = useState<number | null>(null);
+  const [showOwnedWordsSparkle, setShowOwnedWordsSparkle] = useState(false);
+  const [initialScoreOnLoad, setInitialScoreOnLoad] = useState<number | null>(null);
+  const [pointsGainedDisplay, setPointsGainedDisplay] = useState<number>(0);
+
+  const initialScoreCaptured = useRef(false);
+
+  useEffect(() => {
+    if (currentUser && !isLoadingAuth) {
+      const fetchOwnedWords = async () => {
+        try {
+          const q = query(collection(firestore, "Words"), where("originalSubmitterUID", "==", currentUser.uid));
+          const querySnapshot = await getDocs(q);
+          const currentCount = querySnapshot.size;
+          setOwnedWordsCount(currentCount);
+
+          if (typeof window !== 'undefined') {
+            const storedCountStr = localStorage.getItem(LOCALSTORAGE_OWNED_WORDS_COUNT_KEY);
+            if (storedCountStr !== null) {
+              const storedCount = parseInt(storedCountStr, 10);
+              if (currentCount > storedCount) {
+                setShowOwnedWordsSparkle(true);
+                setTimeout(() => setShowOwnedWordsSparkle(false), 3000); // Sparkle for 3 seconds
+              }
+            }
+            localStorage.setItem(LOCALSTORAGE_OWNED_WORDS_COUNT_KEY, currentCount.toString());
+          }
+        } catch (error) {
+          console.error("Error fetching owned words count:", error);
+        }
+      };
+      fetchOwnedWords();
+    } else if (!currentUser && !isLoadingAuth) {
+      setOwnedWordsCount(null);
+      setShowOwnedWordsSparkle(false);
+      if (typeof window !== 'undefined') {
+        localStorage.removeItem(LOCALSTORAGE_OWNED_WORDS_COUNT_KEY);
+      }
+    }
+  }, [currentUser, isLoadingAuth]);
+
+  useEffect(() => {
+    if (userProfile && !isLoadingAuth && !initialScoreCaptured.current) {
+      setInitialScoreOnLoad(userProfile.overallPersistentScore);
+      initialScoreCaptured.current = true;
+    }
+  }, [userProfile, isLoadingAuth]);
+
+  useEffect(() => {
+    if (userProfile && initialScoreOnLoad !== null) {
+      const gained = userProfile.overallPersistentScore - initialScoreOnLoad;
+      if (gained > 0) {
+        setPointsGainedDisplay(gained);
+      } else {
+        setPointsGainedDisplay(0); // Reset if score decreased or is same
+      }
+    }
+  }, [userProfile, initialScoreOnLoad]);
+
+
   const handleSignOut = async () => {
     try {
       await signOut(auth);
-      router.push('/'); // Redirect to home or login page
+      setOwnedWordsCount(null);
+      setShowOwnedWordsSparkle(false);
+      setInitialScoreOnLoad(null);
+      setPointsGainedDisplay(0);
+      initialScoreCaptured.current = false;
+      if (typeof window !== 'undefined') {
+        localStorage.removeItem(LOCALSTORAGE_OWNED_WORDS_COUNT_KEY);
+      }
+      router.push('/');
     } catch (error) {
       console.error("Error signing out: ", error);
     }
@@ -44,18 +116,34 @@ export function SiteHeader() {
           <span className="font-headline text-2xl font-bold text-primary">LexiVerse</span>
         </Link>
 
-        <nav className="flex items-center space-x-3">
-          <Button variant="ghost" asChild className="text-muted-foreground hover:text-primary">
+        <nav className="flex items-center space-x-2 sm:space-x-3">
+          {currentUser && userProfile && ownedWordsCount !== null && (
+            <Button variant="ghost" asChild className="text-muted-foreground hover:text-primary px-2 sm:px-3">
+              <Link href="/profile" className="flex items-center">
+                <FileText className="mr-1 h-4 sm:h-5 w-4 sm:w-5" />
+                <span className="hidden sm:inline">Words Owned:</span> 
+                <span className="ml-1 font-semibold">{ownedWordsCount}</span>
+                {showOwnedWordsSparkle && <Sparkles className="ml-1 h-4 w-4 text-yellow-400 animate-pulse" />}
+              </Link>
+            </Button>
+          )}
+           {currentUser && userProfile && pointsGainedDisplay > 0 && (
+            <div className="flex items-center text-xs sm:text-sm text-green-600 bg-green-100 dark:bg-green-700 dark:text-green-200 px-2 py-1 rounded-md">
+              <Award className="mr-1 h-3 sm:h-4 w-3 sm:w-4" />
+              <span>+{pointsGainedDisplay} pts today!</span>
+            </div>
+          )}
+
+          <Button variant="ghost" asChild className="text-muted-foreground hover:text-primary px-2 sm:px-3">
             <Link href="/circles">
-              <Users className="mr-1 h-5 w-5" /> Circles
+              <Users className="mr-1 h-4 sm:h-5 w-4 sm:w-5" /> 
+              <span className="hidden sm:inline">Circles</span>
             </Link>
           </Button>
           
-          {/* Placeholder for notifications */}
           {currentUser && (
              <Button variant="ghost" size="icon" className="text-muted-foreground hover:text-primary relative" onClick={() => router.push('/notifications')}>
               <Bell className="h-5 w-5" />
-              {/* Add a badge for unread notifications later */}
             </Button>
           )}
 
@@ -64,12 +152,12 @@ export function SiteHeader() {
           ) : currentUser && userProfile ? (
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
-                <Button variant="ghost" className="relative h-8 w-auto px-2 rounded-full">
+                <Button variant="ghost" className="relative h-8 w-auto px-1 sm:px-2 rounded-full">
                    <Avatar className="h-8 w-8">
                     <AvatarImage src={currentUser.photoURL || undefined} alt={userProfile.username || 'User'} />
                     <AvatarFallback>{getInitials(userProfile.username)}</AvatarFallback>
                   </Avatar>
-                  <span className="ml-2 hidden sm:inline">{userProfile.username}</span>
+                  <span className="ml-1 sm:ml-2 hidden sm:inline">{userProfile.username}</span>
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent className="w-56" align="end" forceMount>
@@ -109,4 +197,3 @@ export function SiteHeader() {
     </header>
   );
 }
-

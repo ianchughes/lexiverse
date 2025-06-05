@@ -14,7 +14,7 @@ import { WelcomeInstructionsDialog } from '@/components/game/WelcomeInstructions
 import type { SeedingLetter, SubmittedWord, GameState, WordSubmission, SystemSettings, MasterWordType, RejectedWordType, UserProfile, CircleInvite, DailyPuzzle } from '@/types';
 import { useToast } from '@/hooks/use-toast';
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { PlayCircle, Check, AlertTriangle, Loader2, ThumbsDown, Users, BellRing, LogIn, UserPlus, Clock, Key, Star, UsersRound, Gift, Info, Handshake, Trophy, Gem, Zap, Users2, CheckSquare } from 'lucide-react'; 
+import { PlayCircle, Check, AlertTriangle, Loader2, ThumbsDown, Users, BellRing, LogIn, UserPlus, Clock, Key, Star, UsersRound, Gift, Info, Handshake, Trophy, Gem, Zap, Users2, CheckSquare } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardHeader, CardContent, CardTitle, CardDescription } from '@/components/ui/card';
 import { firestore, auth } from '@/lib/firebase';
@@ -63,7 +63,7 @@ export default function HomePage() {
   const [hasPlayedToday, setHasPlayedToday] = useState(false);
   const [wordInvalidFlash, setWordInvalidFlash] = useState(false);
   const [shareableGameDate, setShareableGameDate] = useState('');
-  const [isProcessingWord, setIsProcessingWord] = useState(false); // Renamed from isSubmittingForReview
+  const [isProcessingWord, setIsProcessingWord] = useState(false);
   const [currentPuzzleDate, setCurrentPuzzleDate] = useState<string>(format(new Date(), 'yyyy-MM-dd'));
   const [isLoadingInitialState, setIsLoadingInitialState] = useState(true);
 
@@ -410,7 +410,7 @@ export default function HomePage() {
       return;
     }
     
-    setIsProcessingWord(true); // Start processing indicator
+    setIsProcessingWord(true);
 
     let isTheWotDString = false;
     if (actualWordOfTheDayText && wordText === actualWordOfTheDayText.toUpperCase()) {
@@ -419,7 +419,6 @@ export default function HomePage() {
 
     const approvedWordDetails = approvedWords.get(wordText);
 
-    // Handle WotD logic
     if (isTheWotDString) {
       let wotdSessionPoints = 0;
       let newlyClaimedWotD = false;
@@ -459,7 +458,6 @@ export default function HomePage() {
       return;
     }
 
-    // Handle Approved Regular Words
     if (approvedWordDetails) { 
       const points = calculateWordScore(wordText, approvedWordDetails.frequency);
       let newlyClaimedRegularWord = false;
@@ -494,7 +492,6 @@ export default function HomePage() {
       return;
     }
 
-    // Handle Rejected Words
     const rejectedWordDetails = rejectedWords.get(wordText);
     if (rejectedWordDetails) {
       if (rejectedWordDetails.rejectionType === 'Gibberish') {
@@ -518,20 +515,24 @@ export default function HomePage() {
       return;
     }
     
-    // Word not in local lists, proceed to WordsAPI & Wiktionary check
     const apiKey = process.env.NEXT_PUBLIC_WORDSAPI_KEY;
     if (!apiKey || apiKey === "YOUR_WORDSAPI_KEY_PLACEHOLDER" || apiKey.length < 10) {
       console.warn("WordsAPI key not configured. Falling back to Wiktionary check.");
-      // Directly check Wiktionary
-      const wiktionaryResult = await checkWiktionary({ word: wordText });
-      if (wiktionaryResult.exists && wiktionaryResult.definition) {
-        const bonusPoints = 20;
-        setSessionScore(prev => prev + bonusPoints);
-        toast({ title: "Great Word!", description: `You've found a great word, I'm giving you ${bonusPoints} extra points and sending it off to be evaluated.`, className: "bg-green-100 text-green-700 dark:bg-green-700 dark:text-green-100" });
-        await saveWordToSubmissionQueue(wordText, wiktionaryResult.definition, 3.5, false); // Using a default frequency
-      } else {
-        toast({ title: "Unknown Word", description: `"${wordText}" was not found in our dictionaries.`, variant: "default" });
-        triggerInvalidWordFlash();
+      try {
+        const wiktionaryResult = await checkWiktionary({ word: wordText });
+        if (wiktionaryResult.exists && wiktionaryResult.definition) {
+          const bonusPoints = 20;
+          setSessionScore(prev => prev + bonusPoints);
+          toast({ title: "Great Word!", description: `You've found a great word, I'm giving you ${bonusPoints} extra points and sending it off to be evaluated.`, className: "bg-green-100 text-green-700 dark:bg-green-700 dark:text-green-100" });
+          await saveWordToSubmissionQueue(wordText, wiktionaryResult.definition, 3.5, false);
+        } else {
+          toast({ title: "Unknown Word", description: `"${wordText}" was not found in our dictionaries.`, variant: "default" });
+          triggerInvalidWordFlash();
+        }
+      } catch (wiktionaryError) {
+        console.error("Error during Wiktionary check (fallback):", wiktionaryError);
+        toast({ title: "Your word has gone off for moderation.", variant: "default" });
+        await saveWordToSubmissionQueue(wordText, "Wiktionary check failed, requires manual review.", 3.0, false);
       }
       handleClearWord();
       setIsProcessingWord(false);
@@ -544,7 +545,7 @@ export default function HomePage() {
         headers: { 'X-RapidAPI-Key': apiKey, 'X-RapidAPI-Host': 'wordsapiv1.p.rapidapi.com' }
       });
 
-      if (response.ok) { // Word found in WordsAPI
+      if (response.ok) {
         const data = await response.json();
         const definition = data.results?.[0]?.definition || "No definition provided.";
         let frequency = 3.5; 
@@ -570,18 +571,24 @@ export default function HomePage() {
         setNewlyOwnedWordsThisSession(prev => [...prev, wordText]);
         toast({ title: "Word Claimed!", description: `You found and claimed "${wordText}" for ${points} points!`, className: "bg-green-100 text-green-700 dark:bg-green-700 dark:text-green-100"});
       
-      } else if (response.status === 404) { // Word NOT found in WordsAPI, try Wiktionary
-        const wiktionaryResult = await checkWiktionary({ word: wordText });
-        if (wiktionaryResult.exists && wiktionaryResult.definition) {
-          const bonusPoints = 20;
-          setSessionScore(prev => prev + bonusPoints);
-          toast({ title: "Great Word!", description: `You've found a great word, I'm giving you ${bonusPoints} extra points and sending it off to be evaluated.`, className: "bg-green-100 text-green-700 dark:bg-green-700 dark:text-green-100" });
-          await saveWordToSubmissionQueue(wordText, wiktionaryResult.definition, 3.5, false);
-        } else {
-          toast({ title: "Unknown Word", description: `"${wordText}" was not found in our dictionaries.`, variant: "default" });
-          triggerInvalidWordFlash();
+      } else if (response.status === 404) {
+        try {
+          const wiktionaryResult = await checkWiktionary({ word: wordText });
+          if (wiktionaryResult.exists && wiktionaryResult.definition) {
+            const bonusPoints = 20;
+            setSessionScore(prev => prev + bonusPoints);
+            toast({ title: "Great Word!", description: `You've found a great word, I'm giving you ${bonusPoints} extra points and sending it off to be evaluated.`, className: "bg-green-100 text-green-700 dark:bg-green-700 dark:text-green-100" });
+            await saveWordToSubmissionQueue(wordText, wiktionaryResult.definition, 3.5, false);
+          } else {
+            toast({ title: "Unknown Word", description: `"${wordText}" was not found in our dictionaries.`, variant: "default" });
+            triggerInvalidWordFlash();
+          }
+        } catch (wiktionaryError) {
+          console.error("Error during Wiktionary check (main path):", wiktionaryError);
+          toast({ title: "Your word has gone off for moderation.", variant: "default" });
+          await saveWordToSubmissionQueue(wordText, "Wiktionary check failed, requires manual review.", 3.0, false);
         }
-      } else { // Other WordsAPI error
+      } else {
         toast({ title: "Validation Error", description: `Could not verify "${wordText}" (API error). Try again or contact support.`, variant: "destructive"});
         triggerInvalidWordFlash();
       }
@@ -614,7 +621,7 @@ export default function HomePage() {
     const newSubmission: Omit<WordSubmission, 'id' | 'submittedTimestamp'> = { 
         wordText: wordUpperCase,
         definition: definition || "No definition provided.",
-        frequency: frequency || 3.5, // Default frequency if not provided
+        frequency: frequency || 3.5, 
         status: 'PendingModeratorReview',
         submittedByUID: currentUser.uid,
         puzzleDateGMT: currentPuzzleDate,
@@ -622,7 +629,11 @@ export default function HomePage() {
     };
     try {
         await addDoc(collection(firestore, WORD_SUBMISSIONS_QUEUE), { ...newSubmission, submittedTimestamp: serverTimestamp() });
-        toast({ title: "Word Submitted!", description: `"${wordText}" has been sent for admin review.`, variant: "default" });
+        // Do not toast "Word Submitted!" here if it's a fallback, the specific fallback toast is already shown.
+        // Only toast if it's a direct submission from a successful check.
+        if (definition && !definition.startsWith("Wiktionary check failed")) {
+            toast({ title: "Word Submitted!", description: `"${wordText}" has been sent for admin review.`, variant: "default" });
+        }
     } catch (error) {
         console.error("Error submitting word to queue:", error);
         toast({ title: "Submission Failed", description: "Could not save your word submission. Please try again.", variant: "destructive" });
@@ -808,4 +819,3 @@ export default function HomePage() {
     </div>
   );
 }
-
