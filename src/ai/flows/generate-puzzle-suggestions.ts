@@ -81,7 +81,7 @@ const generatePuzzleSuggestionsFlow = ai.defineFlow(
     outputSchema: GeneratePuzzleSuggestionsOutputSchema,
   },
   async (input) => {
-    let rawOutputFromPrompt: z.infer<typeof GeneratePuzzleSuggestionsOutputSchemaRelaxedInternal> | null | undefined;
+    let rawOutputFromPrompt: z.infer<typeof GeneratePuzzleSuggestionsOutputSchemaRelaxedInternal> | null = null;
     try {
       const { output } = await puzzleGenerationPrompt(input);
       rawOutputFromPrompt = output;
