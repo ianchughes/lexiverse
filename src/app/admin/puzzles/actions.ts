@@ -52,8 +52,8 @@ export async function adminCreateDailyPuzzleAction(payload: AdminCreatePuzzlePay
 
     const createdPuzzle: DailyPuzzle = {
       id: docId,
-      ...puzzleData,
-      puzzleDateGMT: puzzleData.puzzleDateGMT,
+      ...puzzleData, // puzzleDateGMT here is still a Date object from AdminPuzzleFormState
+      puzzleDateGMT: puzzleData.puzzleDateGMT, // Ensure this remains a Date object for the return type
       wordOfTheDayText: puzzleData.wordOfTheDayText.toUpperCase(),
       seedingLetters: puzzleData.seedingLetters.toUpperCase(),
       wordOfTheDayDefinition: newPuzzleForFirestore.wordOfTheDayDefinition,
@@ -75,20 +75,21 @@ interface AdminUpdatePuzzlePayload {
 export async function adminUpdateDailyPuzzleAction(payload: AdminUpdatePuzzlePayload): Promise<{ success: boolean; puzzle?: DailyPuzzle; error?: string }> {
   const { puzzleId, puzzleData, actingAdminId } = payload;
   try {
-    if (!puzzleData.puzzleDateGMT) {
+    if (!puzzleData.puzzleDateGMT) { // This date is from the form, used for returning the updated puzzle
       return { success: false, error: "Puzzle date is required for update." };
     }
     // WotD uniqueness check should be handled client-side or added here if crucial for update.
 
     const puzzleDocRef = doc(firestore, DAILY_PUZZLES_COLLECTION, puzzleId);
-    const dataToUpdate: Partial<DailyPuzzle> & { wordOfTheDayDefinition?: string } = {
+    // Note: We are not updating puzzleDateGMT in Firestore here. If we were, it would need conversion.
+    const dataToUpdateForFirestore: Partial<Omit<DailyPuzzle, 'puzzleDateGMT' | 'id'>> & { wordOfTheDayDefinition?: string } = {
       wordOfTheDayText: puzzleData.wordOfTheDayText.toUpperCase(),
       wordOfTheDayPoints: puzzleData.wordOfTheDayPoints,
       seedingLetters: puzzleData.seedingLetters.toUpperCase(),
       status: puzzleData.status,
       wordOfTheDayDefinition: puzzleData.wordOfTheDayDefinition || "No definition provided by admin.",
     };
-    await updateDoc(puzzleDocRef, dataToUpdate);
+    await updateDoc(puzzleDocRef, dataToUpdateForFirestore);
 
     await logAdminAction({
       actingAdminId,
@@ -101,11 +102,11 @@ export async function adminUpdateDailyPuzzleAction(payload: AdminUpdatePuzzlePay
     
     const updatedPuzzle: DailyPuzzle = {
       id: puzzleId,
-      ...puzzleData,
-      puzzleDateGMT: puzzleData.puzzleDateGMT,
+      ...puzzleData, // puzzleDateGMT here is still a Date object from AdminPuzzleFormState
+      puzzleDateGMT: puzzleData.puzzleDateGMT, // Ensure this remains a Date for the return type
       wordOfTheDayText: puzzleData.wordOfTheDayText.toUpperCase(),
       seedingLetters: puzzleData.seedingLetters.toUpperCase(),
-      wordOfTheDayDefinition: dataToUpdate.wordOfTheDayDefinition,
+      wordOfTheDayDefinition: dataToUpdateForFirestore.wordOfTheDayDefinition,
     };
     return { success: true, puzzle: updatedPuzzle };
 
@@ -181,16 +182,17 @@ export async function adminSaveGeneratedPuzzlesAction(payload: AdminSaveGenerate
             if (!existingPuzzleDates.has(dateStr)) {
                 const docId = dateStr;
                 const puzzleDocRef = doc(firestore, DAILY_PUZZLES_COLLECTION, docId);
-                const newPuzzleForFirestore: Omit<DailyPuzzle, 'id'> & { id: string } = {
+                // This object is for Firestore, so puzzleDateGMT should be a Timestamp
+                const firestorePuzzleData = {
                     id: docId,
-                    puzzleDateGMT: Timestamp.fromDate(tempCurrentDate),
+                    puzzleDateGMT: Timestamp.fromDate(tempCurrentDate), // Correctly a Timestamp for Firestore
                     wordOfTheDayText: suggestion.wordOfTheDayText.toUpperCase(),
                     wordOfTheDayPoints: suggestion.wordOfTheDayText.length * 10,
                     seedingLetters: suggestion.seedingLetters.toUpperCase(),
-                    status: 'Upcoming',
+                    status: 'Upcoming' as const,
                     wordOfTheDayDefinition: suggestion.wordOfTheDayDefinition || "Definition from AI suggestion.",
                 };
-                batch.set(puzzleDocRef, newPuzzleForFirestore);
+                batch.set(puzzleDocRef, firestorePuzzleData);
                 existingPuzzleDates.add(dateStr); // Add to set to avoid collisions within the same batch
                 savedCount++;
                 assignedDate = true;
@@ -240,7 +242,7 @@ export async function adminFillPuzzleGapsAction(payload: AdminFillPuzzleGapsPayl
             const data = docSnap.data();
             allPuzzlesFromFirestore.push({
                 id: docSnap.id,
-                puzzleDateGMT: (data.puzzleDateGMT as Timestamp).toDate(),
+                puzzleDateGMT: (data.puzzleDateGMT as Timestamp).toDate(), // Convert to Date for DailyPuzzle type
                 wordOfTheDayText: data.wordOfTheDayText,
                 wordOfTheDayPoints: data.wordOfTheDayPoints,
                 seedingLetters: data.seedingLetters,
@@ -279,7 +281,7 @@ export async function adminFillPuzzleGapsAction(payload: AdminFillPuzzleGapsPayl
 
         for (const puzzleToMove of upcomingPuzzlesToReDate) {
             const originalPuzzleDateStr = puzzleToMove.id;
-            let targetDateForThisPuzzle = new Date(currentDateToFill.getTime());
+            let targetDateForThisPuzzle = new Date(currentDateToFill.getTime()); // This is a JS Date
             let targetDateStr = format(targetDateForThisPuzzle, 'yyyy-MM-dd');
 
             // Ensure targetDateStr is not an existing 'Active' or 'Expired' puzzle or an already assigned new slot
@@ -292,13 +294,13 @@ export async function adminFillPuzzleGapsAction(payload: AdminFillPuzzleGapsPayl
                 const oldDocRef = doc(firestore, DAILY_PUZZLES_COLLECTION, originalPuzzleDateStr);
                 const newDocRef = doc(firestore, DAILY_PUZZLES_COLLECTION, targetDateStr);
 
-                const newPuzzleDataForFirestore = {
+                const newPuzzleDataForFirestore = { // Object for Firestore
                     id: targetDateStr,
                     wordOfTheDayText: puzzleToMove.wordOfTheDayText.toUpperCase(),
                     wordOfTheDayPoints: puzzleToMove.wordOfTheDayPoints,
                     seedingLetters: puzzleToMove.seedingLetters.toUpperCase(),
                     status: 'Upcoming' as const,
-                    puzzleDateGMT: Timestamp.fromDate(targetDateForThisPuzzle),
+                    puzzleDateGMT: Timestamp.fromDate(targetDateForThisPuzzle), // Convert JS Date to Timestamp for Firestore
                     wordOfTheDayDefinition: puzzleToMove.wordOfTheDayDefinition || "No definition provided.",
                 };
 
@@ -307,7 +309,7 @@ export async function adminFillPuzzleGapsAction(payload: AdminFillPuzzleGapsPayl
                 movedCount++;
                 movedPuzzleDetails.push(`Moved ${originalPuzzleDateStr} to ${targetDateStr}`);
 
-                // Update local map for next iteration
+                // Update local map for next iteration (ensure puzzleDateGMT is Date for DailyPuzzle type)
                 currentPuzzlesById.delete(originalPuzzleDateStr);
                 currentPuzzlesById.set(targetDateStr, { ...puzzleToMove, id: targetDateStr, puzzleDateGMT: targetDateForThisPuzzle, status: 'Upcoming' });
             }
@@ -365,8 +367,10 @@ export async function adminReseedUpcomingPuzzlesAction(payload: AdminReseedPuzzl
         const reseededPuzzleIds: string[] = [];
 
         upcomingPuzzlesSnap.forEach(docSnap => {
-            const puzzle = docSnap.data() as DailyPuzzle;
-            const newSeedingLetters = generateNewSeedingLettersInternal(puzzle.wordOfTheDayText);
+            // We don't strictly need to cast to DailyPuzzle here if we only access common fields
+            // but if we do, ensure puzzleDateGMT conversion is handled if used.
+            const puzzleData = docSnap.data(); 
+            const newSeedingLetters = generateNewSeedingLettersInternal(puzzleData.wordOfTheDayText);
             batch.update(docSnap.ref, { seedingLetters: newSeedingLetters });
             reseededCount++;
             reseededPuzzleIds.push(docSnap.id);
