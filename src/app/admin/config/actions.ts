@@ -2,7 +2,7 @@
 'use server';
 
 import { firestore } from '@/lib/firebase';
-import { doc, setDoc, serverTimestamp } from 'firebase/firestore';
+import { doc, setDoc, serverTimestamp, Timestamp } from 'firebase/firestore'; // Added Timestamp import
 import type { SystemSettings } from '@/types';
 import { logAdminAction } from '@/lib/auditLogger';
 
@@ -22,7 +22,7 @@ export async function adminForceDailyResetAction(payload: AdminForceDailyResetPa
   try {
     const settingsDocRef = doc(firestore, SYSTEM_SETTINGS_COLLECTION, GAME_SETTINGS_DOC_ID);
     const newSettings: Partial<SystemSettings> = {
-      lastForcedResetTimestamp: serverTimestamp(),
+      lastForcedResetTimestamp: serverTimestamp() as Timestamp, // Cast to Timestamp
     };
     await setDoc(settingsDocRef, newSettings, { merge: true });
 
