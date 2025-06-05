@@ -363,11 +363,8 @@ export default function HomePage() {
             wotdStreakCount: newStreakCount, 
         });
         
-        // Commit user profile updates first
         await batch.commit();
         
-        // Then, update scores for ALL circles the user is a member of.
-        // The server action handles iterating through the user's memberships.
         await updateUserCircleDailyScoresAction({
             userId: currentUser.uid,
             puzzleDateGMT: currentPuzzleDate,
@@ -679,14 +676,14 @@ export default function HomePage() {
   if (!currentUser) {
     return (
       <div className="flex flex-col items-center justify-center text-center h-full py-10 md:py-16 px-4">
-        <h1 className="text-4xl sm:text-5xl md:text-6xl font-headline text-primary mb-4 sm:mb-6">
+        <h1 className="text-3xl sm:text-4xl md:text-5xl lg:text-6xl font-headline text-primary mb-4 sm:mb-6">
           ⚡ LexiVerse: Your 90-Second Word Revolution! ⚡
         </h1>
-        <p className="text-lg sm:text-xl text-muted-foreground max-w-2xl mx-auto mb-8 sm:mb-10">
+        <p className="text-base sm:text-lg md:text-xl text-muted-foreground max-w-2xl mx-auto mb-8 sm:mb-10">
           Dive into a thrilling daily word puzzle where speed meets strategy! Uncover words from 9 daily letters, "claim" your unique discoveries to earn ongoing points, and team up with friends in Circles. Can you conquer the lexicon in just 90 seconds?
         </p>
         
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 max-w-3xl mx-auto mb-10 sm:mb-12 text-left">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-6 max-w-3xl mx-auto mb-10 sm:mb-12 text-left">
           <Card className="bg-card/70 p-4 rounded-lg shadow-md flex items-start space-x-3">
             <Clock className="h-8 w-8 text-accent mt-1 flex-shrink-0" />
             <div>
@@ -735,7 +732,7 @@ export default function HomePage() {
   }
   
   return (
-    <div className="flex flex-col items-center justify-center p-2 md:p-4">
+    <div className="flex flex-col items-center justify-center p-4 pt-8 md:p-8 md:pt-12">
       <WelcomeInstructionsDialog
         isOpen={showWelcomeInstructionsModal}
         onOpenChange={setShowWelcomeInstructionsModal}
@@ -756,9 +753,9 @@ export default function HomePage() {
       )}
 
       {gameState === 'idle' && !showWelcomeInstructionsModal && !showDebrief && (
-        <div className="text-center space-y-6">
-          <h1 className="text-4xl md:text-5xl font-headline text-primary">Welcome to LexiVerse!</h1>
-          <p className="text-lg md:text-xl text-muted-foreground max-w-xl mx-auto">
+        <div className="text-center space-y-4 sm:space-y-6 w-full max-w-lg">
+          <h1 className="text-3xl sm:text-4xl md:text-5xl font-headline text-primary">Welcome to LexiVerse!</h1>
+          <p className="text-md sm:text-lg text-muted-foreground">
             Find as many {MIN_WORD_LENGTH}+ letter words as you can in {DAILY_GAME_DURATION} seconds.
             Points are awarded based on word rarity and length. WotD gets 2x final score bonus.
             Claimed words give their original submitter a bonus!
@@ -870,3 +867,4 @@ export default function HomePage() {
     </div>
   );
 }
+
