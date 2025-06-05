@@ -37,7 +37,7 @@ const shareableMomentPrompt = ai.definePrompt({
   model: 'googleai/gemini-2.0-flash-exp', // Specifies the LLM model
   config: {
     responseModalities: ['TEXT', 'IMAGE'],
-    templateFormat: "handlebars", // Moved templateFormat here
+    templateFormat: "handlebars", 
     handlebars: { 
       helpers: {
         gt: (a: number, b: number) => a > b,
@@ -90,7 +90,6 @@ Your Task:
 
 Return the response in the specified JSON format with 'shareableText' and 'imageUri' fields.
 `,
-  // templateFormat: "handlebars", // Removed from here
 });
 
 const generateShareableMomentFlow = ai.defineFlow(
@@ -105,10 +104,10 @@ const generateShareableMomentFlow = ai.defineFlow(
     const fallbackImage = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAfQAAAH0CAYAAADL1t+KAAAAAXNSR0IArs4c6QAAAIRlWElmTU0AKgAAAAgABQESAAMAAAABAAEAAAEaAAUAAAABAAAASgEbAAUAAAABAAAAUgEoAAMAAAABAAIAAIdpAAQAAAABAAAAWgAAAAAAAACQAAAAAQAAAJAAAAABUGFpbnQuTkVUIHY0LjMuMTIAAAACoAIABAAAAAEAAAH0oAMABAAAAAEAAAH0AAAAALG3iDIAAAAFSURBVHgB7cEBAQAAAIIg/69uSEABAAAAAAAAAAAAAAA+A44rAAEFj07xAAAAAElFTkSuQmCC";
 
     try {
-      const { output, history } = await shareableMomentPrompt(input);
+      const { output } = await shareableMomentPrompt(input);
       
       if (!output || !output.imageUri || !output.shareableText) {
-          console.error("[generateShareableMomentFlow] AI failed to generate complete shareable moment. Output:", output, "History:", history);
+          console.error("[generateShareableMomentFlow] AI failed to generate complete shareable moment. Output:", output);
           return { 
               shareableText: output?.shareableText || fallbackText, 
               imageUri: output?.imageUri || fallbackImage 

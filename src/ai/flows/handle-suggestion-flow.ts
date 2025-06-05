@@ -79,11 +79,11 @@ const handleSuggestionFlow = ai.defineFlow(
     let botResponseText = "Thanks for your suggestion! I'll make sure our team sees it."; 
 
     try {
-      const { output, history } = await suggestionPrompt(input); 
+      const { output } = await suggestionPrompt(input); 
       if (output?.response) {
         botResponseText = output.response;
       } else {
-        console.warn("[handleSuggestionFlow] AI did not return a response. Using fallback. History:", history);
+        console.warn("[handleSuggestionFlow] AI did not return a response. Using fallback.");
       }
     } catch (flowError: any) {
       console.error(`[handleSuggestionFlow] Error executing suggestionPrompt: ${flowError.message}`, flowError);
