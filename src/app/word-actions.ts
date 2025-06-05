@@ -9,7 +9,7 @@ import {
   getDoc,
   getDocs,
   query,
-  where, // Added where
+  where, 
   writeBatch,
   serverTimestamp,
   Timestamp,
@@ -105,7 +105,7 @@ export async function initiateWordTransferAction(payload: InitiateWordTransferPa
         isRead: false,
         link: `/notifications`, // Or a dedicated transfers page later
       };
-      transaction.set(recipientNotificationRef, { ...notificationPayload, dateCreated: serverTimestamp() });
+      transaction.set(recipientNotificationRef, { ...notificationPayload, dateCreated: serverTimestamp() as Timestamp });
       
       return { success: true, transferId: transferDocRef.id };
     });
@@ -148,7 +148,7 @@ export async function respondToWordTransferAction(payload: RespondToWordTransfer
       }
       if (transferData.expiresAt.toMillis() < Date.now()) {
         // Handle expiry implicitly by setting status to 'Expired'
-        transaction.update(transferDocRef, { status: 'Expired', respondedAt: serverTimestamp() });
+        transaction.update(transferDocRef, { status: 'Expired', respondedAt: serverTimestamp() as Timestamp });
         const wordDocRefExpired = doc(firestore, WORDS_COLLECTION, transferData.wordText);
         transaction.update(wordDocRefExpired, { pendingTransferId: null }); // Clear pending ID
         throw new Error("This transfer request has expired.");
@@ -164,14 +164,14 @@ export async function respondToWordTransferAction(payload: RespondToWordTransfer
       let notificationMessageToSender = "";
 
       if (response === 'Accepted') {
-        transaction.update(transferDocRef, { status: 'Accepted', respondedAt: serverTimestamp() });
+        transaction.update(transferDocRef, { status: 'Accepted', respondedAt: serverTimestamp() as Timestamp });
         transaction.update(wordDocRef, { 
           originalSubmitterUID: transferData.recipientUserId,
           pendingTransferId: null // Clear pending ID
         });
         notificationMessageToSender = `${transferData.recipientUsername} accepted your transfer of the word "${transferData.wordText}".`;
       } else { // Declined
-        transaction.update(transferDocRef, { status: 'Declined', respondedAt: serverTimestamp() });
+        transaction.update(transferDocRef, { status: 'Declined', respondedAt: serverTimestamp() as Timestamp });
         transaction.update(wordDocRef, { pendingTransferId: null }); // Clear pending ID
         notificationMessageToSender = `${transferData.recipientUsername} declined your transfer of the word "${transferData.wordText}".`;
       }
@@ -186,7 +186,7 @@ export async function respondToWordTransferAction(payload: RespondToWordTransfer
           isRead: false,
           link: `/profile` // Sender might check their profile to see updated ownership
       };
-      transaction.set(senderNotificationRef, { ...senderNotifPayload, dateCreated: serverTimestamp() });
+      transaction.set(senderNotificationRef, { ...senderNotifPayload, dateCreated: serverTimestamp() as Timestamp });
 
       return { success: true };
     });
@@ -196,7 +196,7 @@ export async function respondToWordTransferAction(payload: RespondToWordTransfer
     // If it's an expiry error that we threw, ensure the status is updated if transaction didn't complete it.
     if (error.message === "This transfer request has expired.") {
         try {
-            await updateDoc(transferDocRef, { status: 'Expired', respondedAt: serverTimestamp() });
+            await updateDoc(transferDocRef, { status: 'Expired', respondedAt: serverTimestamp() as Timestamp });
             const transferDataForWordUpdate = (await getDoc(transferDocRef)).data() as WordTransfer | undefined;
             if(transferDataForWordUpdate){
                  const wordDocRefExpired = doc(firestore, WORDS_COLLECTION, transferDataForWordUpdate.wordText);

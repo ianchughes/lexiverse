@@ -7,7 +7,7 @@ import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
 import { createUserWithEmailAndPassword, sendEmailVerification } from 'firebase/auth';
-import { doc, setDoc, serverTimestamp, collection, query, where, getDocs, writeBatch } from 'firebase/firestore';
+import { doc, setDoc, serverTimestamp, collection, query, where, getDocs, writeBatch, Timestamp } from 'firebase/firestore';
 import { auth, firestore } from '@/lib/firebase';
 
 import { Button } from '@/components/ui/button';
@@ -89,7 +89,7 @@ function RegisterFormContent() {
           email: values.email,
           registrationCountry: values.registrationCountry,
           overallPersistentScore: 0,
-          dateCreated: serverTimestamp(),
+          dateCreated: serverTimestamp() as Timestamp,
           accountStatus: 'Active' as 'Active', // Explicitly type
           lastPlayedDate_GMT: null,
           wotdStreakCount: 0,

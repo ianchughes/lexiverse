@@ -35,7 +35,7 @@ export async function createCircleAction(payload: CreateCirclePayload): Promise<
       circleName: payload.circleName,
       circleNameLower: payload.circleName.toLowerCase(),
       creatorUserID: payload.creatorUserID,
-      dateCreated: serverTimestamp() as any,
+      dateCreated: serverTimestamp() as Timestamp,
       status: 'Active',
       isPublic: payload.isPublic,
       publicDescription: payload.publicDescription,
@@ -48,7 +48,7 @@ export async function createCircleAction(payload: CreateCirclePayload): Promise<
       userId: payload.creatorUserID,
       username: payload.creatorUsername,
       role: 'Admin',
-      dateJoined: serverTimestamp() as any,
+      dateJoined: serverTimestamp() as Timestamp,
     };
     
     const memberDocRef = doc(firestore, 'CircleMembers', `${newCircleRef.id}_${payload.creatorUserID}`);
@@ -310,14 +310,14 @@ export async function sendCircleInviteAction(payload: SendCircleInvitePayload): 
       inviteeUserId?: string;
       inviteeEmail?: string;
       status: CircleInviteStatus;
-      dateSent: any; 
+      dateSent: Timestamp; 
     } = {
       circleId: circleId,
       circleName: circleName,
       inviterUserId: inviterUserId,
       inviterUsername: inviterUsername,
       status: finalInviteeUserId ? 'Sent' : 'SentToEmail',
-      dateSent: serverTimestamp(),
+      dateSent: serverTimestamp() as Timestamp,
     };
 
     if (finalInviteeUserId !== undefined) {
@@ -388,7 +388,7 @@ export async function respondToCircleInviteAction(payload: RespondToCircleInvite
       // --- START WRITE PHASE ---
       transaction.update(inviteRef, { 
         status: payload.responseType,
-        dateResponded: serverTimestamp(),
+        dateResponded: serverTimestamp() as Timestamp,
         inviteeUserId: payload.inviteeUserId, // Ensure inviteeUserId is set even if originally by email
       });
 
@@ -403,7 +403,7 @@ export async function respondToCircleInviteAction(payload: RespondToCircleInvite
           userId: payload.inviteeUserId,
           username: payload.inviteeUsername,
           role: 'Member',
-          dateJoined: serverTimestamp() as any,
+          dateJoined: serverTimestamp() as Timestamp,
         };
         const memberDocRef = doc(firestore, 'CircleMembers', `${inviteData.circleId}_${payload.inviteeUserId}`);
         transaction.set(memberDocRef, newMemberData);
@@ -456,7 +456,7 @@ export async function joinCircleWithInviteCodeAction(payload: JoinCircleWithInvi
       userId: payload.userId,
       username: payload.username,
       role: 'Member',
-      dateJoined: serverTimestamp() as any,
+      dateJoined: serverTimestamp() as Timestamp,
     };
     
     const batch = writeBatch(firestore);
@@ -648,7 +648,7 @@ export async function updateMemberRoleAction(payload: UpdateMemberRolePayload): 
       isRead: false,
       link: `/circles/${circleId}`,
     };
-    await addDoc(collection(firestore, 'Notifications'), { ...notificationPayload, dateCreated: serverTimestamp() });
+    await addDoc(collection(firestore, 'Notifications'), { ...notificationPayload, dateCreated: serverTimestamp() as Timestamp });
 
 
     return { success: true };
@@ -713,7 +713,7 @@ export async function removeCircleMemberAction(payload: RemoveCircleMemberPayloa
         link: `/circles`, // Link to general circles page as they are no longer part of this one
       };
       const notificationDocRef = doc(collection(firestore, 'Notifications')); // Auto-generate ID
-      transaction.set(notificationDocRef, { ...notificationPayload, dateCreated: serverTimestamp() });
+      transaction.set(notificationDocRef, { ...notificationPayload, dateCreated: serverTimestamp() as Timestamp });
 
       return { success: true };
     });
