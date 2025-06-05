@@ -13,9 +13,8 @@ import { ShareMomentDialog } from '@/components/game/ShareMomentDialog';
 import { WelcomeInstructionsDialog } from '@/components/game/WelcomeInstructionsDialog';
 import type { SeedingLetter, SubmittedWord, GameState, WordSubmission, SystemSettings, MasterWordType, RejectedWordType, UserProfile, CircleInvite, DailyPuzzle } from '@/types';
 import { useToast } from '@/hooks/use-toast';
-import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { PlayCircle, Check, AlertTriangle, Send, Loader2, ThumbsDown, Users, BellRing, LogIn, UserPlus, Clock, Key, Star, UsersRound, Gift, Info, Handshake, Trophy, Gem, Zap, Users2, CheckSquare } from 'lucide-react'; // Added new icons
+import { PlayCircle, Check, AlertTriangle, Loader2, ThumbsDown, Users, BellRing, LogIn, UserPlus, Clock, Key, Star, UsersRound, Gift, Info, Handshake, Trophy, Gem, Zap, Users2, CheckSquare } from 'lucide-react'; 
 import { Badge } from '@/components/ui/badge';
 import { Card, CardHeader, CardContent, CardTitle, CardDescription } from '@/components/ui/card';
 import { firestore, auth } from '@/lib/firebase';
@@ -25,6 +24,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { updateUserCircleDailyScoresAction } from '@/app/circles/actions';
 import Link from 'next/link';
 import { calculateWordScore } from '@/lib/scoring';
+import { checkWiktionary } from '@/ai/flows/check-wiktionary-flow';
 
 
 const DAILY_GAME_DURATION = 90;
@@ -58,15 +58,12 @@ export default function HomePage() {
   const [wordsFoundCountForDebrief, setWordsFoundCountForDebrief] = useState(0);
   const [newlyOwnedWordsForDebrief, setNewlyOwnedWordsForDebrief] = useState<string[]>([]);
 
-
   const [showDebrief, setShowDebrief] = useState(false);
   const [showShareModal, setShowShareModal] = useState(false);
-  const [showSubmitForReviewDialog, setShowSubmitForReviewDialog] = useState(false);
-  const [wordToReview, setWordToReview] = useState("");
   const [hasPlayedToday, setHasPlayedToday] = useState(false);
   const [wordInvalidFlash, setWordInvalidFlash] = useState(false);
   const [shareableGameDate, setShareableGameDate] = useState('');
-  const [isSubmittingForReview, setIsSubmittingForReview] = useState(false);
+  const [isProcessingWord, setIsProcessingWord] = useState(false); // Renamed from isSubmittingForReview
   const [currentPuzzleDate, setCurrentPuzzleDate] = useState<string>(format(new Date(), 'yyyy-MM-dd'));
   const [isLoadingInitialState, setIsLoadingInitialState] = useState(true);
 
@@ -413,6 +410,8 @@ export default function HomePage() {
       return;
     }
     
+    setIsProcessingWord(true); // Start processing indicator
+
     let isTheWotDString = false;
     if (actualWordOfTheDayText && wordText === actualWordOfTheDayText.toUpperCase()) {
       isTheWotDString = true;
@@ -420,6 +419,7 @@ export default function HomePage() {
 
     const approvedWordDetails = approvedWords.get(wordText);
 
+    // Handle WotD logic
     if (isTheWotDString) {
       let wotdSessionPoints = 0;
       let newlyClaimedWotD = false;
@@ -455,9 +455,11 @@ export default function HomePage() {
       setSessionScore((prev) => prev + wotdSessionPoints);
       setSubmittedWords((prev) => [...prev, { id: crypto.randomUUID(), text: wordText, points: wotdSessionPoints, isWotD: true, newlyOwned: newlyClaimedWotD }]);
       handleClearWord();
+      setIsProcessingWord(false);
       return;
     }
 
+    // Handle Approved Regular Words
     if (approvedWordDetails) { 
       const points = calculateWordScore(wordText, approvedWordDetails.frequency);
       let newlyClaimedRegularWord = false;
@@ -488,9 +490,11 @@ export default function HomePage() {
       setSessionScore((prev) => prev + points);
       setSubmittedWords((prev) => [...prev, { id: crypto.randomUUID(), text: wordText, points, isWotD: false, newlyOwned: newlyClaimedRegularWord }]);
       handleClearWord();
+      setIsProcessingWord(false);
       return;
     }
 
+    // Handle Rejected Words
     const rejectedWordDetails = rejectedWords.get(wordText);
     if (rejectedWordDetails) {
       if (rejectedWordDetails.rejectionType === 'Gibberish') {
@@ -510,55 +514,37 @@ export default function HomePage() {
       }
       triggerInvalidWordFlash();
       handleClearWord();
+      setIsProcessingWord(false);
       return;
     }
-
-    setWordToReview(wordText);
-    setShowSubmitForReviewDialog(true);
-  };
-
-  const fetchWordDataAndClaimOrPenalize = async (wordToProcess: string) => {
-    const wordKey = wordToProcess.toUpperCase(); 
-    if (!currentUser) {
-        toast({ title: "Error", description: "User not authenticated.", variant: "destructive" });
-        setIsSubmittingForReview(false);
-        handleClearWord();
-        return;
-    }
-    setIsSubmittingForReview(true);
-    toast({ title: "Checking Word...", description: `Verifying "${wordKey}"...` });
-
+    
+    // Word not in local lists, proceed to WordsAPI & Wiktionary check
     const apiKey = process.env.NEXT_PUBLIC_WORDSAPI_KEY;
     if (!apiKey || apiKey === "YOUR_WORDSAPI_KEY_PLACEHOLDER" || apiKey.length < 10) {
-      console.warn("WordsAPI key not configured or is placeholder. Simulating API call for submission.");
-      await new Promise(resolve => setTimeout(resolve, 1500));
-      await saveWordToSubmissionQueue(wordKey, `Definition for ${wordKey} (simulated)`, 3.5, false);
-      setIsSubmittingForReview(false);
+      console.warn("WordsAPI key not configured. Falling back to Wiktionary check.");
+      // Directly check Wiktionary
+      const wiktionaryResult = await checkWiktionary({ word: wordText });
+      if (wiktionaryResult.exists && wiktionaryResult.definition) {
+        const bonusPoints = 20;
+        setSessionScore(prev => prev + bonusPoints);
+        toast({ title: "Great Word!", description: `You've found a great word, I'm giving you ${bonusPoints} extra points and sending it off to be evaluated.`, className: "bg-green-100 text-green-700 dark:bg-green-700 dark:text-green-100" });
+        await saveWordToSubmissionQueue(wordText, wiktionaryResult.definition, 3.5, false); // Using a default frequency
+      } else {
+        toast({ title: "Unknown Word", description: `"${wordText}" was not found in our dictionaries.`, variant: "default" });
+        triggerInvalidWordFlash();
+      }
       handleClearWord();
+      setIsProcessingWord(false);
       return;
     }
 
     try {
-      const response = await fetch(`https://wordsapiv1.p.rapidapi.com/words/${wordKey.toLowerCase()}`, {
+      const response = await fetch(`https://wordsapiv1.p.rapidapi.com/words/${wordText.toLowerCase()}`, {
         method: 'GET',
-        headers: {
-          'X-RapidAPI-Key': apiKey,
-          'X-RapidAPI-Host': 'wordsapiv1.p.rapidapi.com'
-        }
+        headers: { 'X-RapidAPI-Key': apiKey, 'X-RapidAPI-Host': 'wordsapiv1.p.rapidapi.com' }
       });
-      if (!response.ok) {
-        const pointsDeducted = calculateWordScore(wordKey, 7); 
-        setSessionScore(prev => prev - pointsDeducted);
-        let errorDescription = `Error verifying "${wordKey}": ${response.statusText}. ${pointsDeducted} points deducted.`;
-        if (response.status === 404){
-           errorDescription = `"${wordKey}" was not recognized by our dictionary. ${pointsDeducted} points deducted.`;
-        }
-        toast({
-            title: "Word Not Recognized",
-            description: errorDescription,
-            variant: "destructive"
-        });
-      } else { 
+
+      if (response.ok) { // Word found in WordsAPI
         const data = await response.json();
         const definition = data.results?.[0]?.definition || "No definition provided.";
         let frequency = 3.5; 
@@ -569,47 +555,46 @@ export default function HomePage() {
         }
         if (isNaN(frequency) || frequency <= 0) frequency = 3.5;
         
-        const points = calculateWordScore(wordKey, frequency);
-
-        const wordDocRef = doc(firestore, MASTER_WORDS_COLLECTION, wordKey);
+        const points = calculateWordScore(wordText, frequency);
+        const wordDocRef = doc(firestore, MASTER_WORDS_COLLECTION, wordText);
         const newMasterWordEntry: MasterWordType = {
-            wordText: wordKey,
-            definition: definition,
-            frequency: frequency,
-            status: 'Approved',
-            addedByUID: currentUser.uid, 
-            dateAdded: serverTimestamp() as Timestamp,
-            originalSubmitterUID: currentUser.uid,
-            puzzleDateGMTOfSubmission: currentPuzzleDate,
+            wordText: wordText, definition, frequency, status: 'Approved',
+            addedByUID: currentUser.uid, dateAdded: serverTimestamp() as Timestamp,
+            originalSubmitterUID: currentUser.uid, puzzleDateGMTOfSubmission: currentPuzzleDate,
         };
         await setDoc(wordDocRef, newMasterWordEntry);
 
         setSessionScore((prev) => prev + points);
-        setSubmittedWords((prev) => [...prev, { id: crypto.randomUUID(), text: wordKey, points, isWotD: false, newlyOwned: true }]);
-        setApprovedWords(prevMap => new Map(prevMap).set(wordKey, newMasterWordEntry));
-        setNewlyOwnedWordsThisSession(prev => [...prev, wordKey]);
-
-        toast({
-          title: "Word Claimed!",
-          description: `You found and claimed "${wordKey}" for ${points} points! It's now in the dictionary.`,
-          className: "bg-green-100 text-green-700 dark:bg-green-700 dark:text-green-100"
-        });
+        setSubmittedWords((prev) => [...prev, { id: crypto.randomUUID(), text: wordText, points, isWotD: false, newlyOwned: true }]);
+        setApprovedWords(prevMap => new Map(prevMap).set(wordText, newMasterWordEntry));
+        setNewlyOwnedWordsThisSession(prev => [...prev, wordText]);
+        toast({ title: "Word Claimed!", description: `You found and claimed "${wordText}" for ${points} points!`, className: "bg-green-100 text-green-700 dark:bg-green-700 dark:text-green-100"});
+      
+      } else if (response.status === 404) { // Word NOT found in WordsAPI, try Wiktionary
+        const wiktionaryResult = await checkWiktionary({ word: wordText });
+        if (wiktionaryResult.exists && wiktionaryResult.definition) {
+          const bonusPoints = 20;
+          setSessionScore(prev => prev + bonusPoints);
+          toast({ title: "Great Word!", description: `You've found a great word, I'm giving you ${bonusPoints} extra points and sending it off to be evaluated.`, className: "bg-green-100 text-green-700 dark:bg-green-700 dark:text-green-100" });
+          await saveWordToSubmissionQueue(wordText, wiktionaryResult.definition, 3.5, false);
+        } else {
+          toast({ title: "Unknown Word", description: `"${wordText}" was not found in our dictionaries.`, variant: "default" });
+          triggerInvalidWordFlash();
+        }
+      } else { // Other WordsAPI error
+        toast({ title: "Validation Error", description: `Could not verify "${wordText}" (API error). Try again or contact support.`, variant: "destructive"});
+        triggerInvalidWordFlash();
       }
     } catch (error: any) {
-       const pointsDeducted = calculateWordScore(wordKey, 7);
-       setSessionScore(prev => prev - pointsDeducted);
-       toast({ 
-          title: "Word Verification Failed", 
-          description: `${error.message || `Could not verify "${wordKey}"`}. ${pointsDeducted} points deducted.`, 
-          variant: "destructive" 
-        });
+       toast({ title: "Validation Failed", description: `${error.message || `Could not verify "${wordText}"`}.`, variant: "destructive" });
+       triggerInvalidWordFlash();
     } finally {
-       setIsSubmittingForReview(false);
        handleClearWord();
+       setIsProcessingWord(false);
     }
   };
 
-  const saveWordToSubmissionQueue = async (wordText: string, definition: string, frequency: number, isWotDClaim: boolean = false) => {
+  const saveWordToSubmissionQueue = async (wordText: string, definition?: string, frequency?: number, isWotDClaim: boolean = false) => {
     if (!currentUser) {
         toast({ title: "Authentication Error", description: "You must be logged in to submit words.", variant: "destructive" });
         return;
@@ -628,8 +613,8 @@ export default function HomePage() {
     }
     const newSubmission: Omit<WordSubmission, 'id' | 'submittedTimestamp'> = { 
         wordText: wordUpperCase,
-        definition: definition,
-        frequency: frequency,
+        definition: definition || "No definition provided.",
+        frequency: frequency || 3.5, // Default frequency if not provided
         status: 'PendingModeratorReview',
         submittedByUID: currentUser.uid,
         puzzleDateGMT: currentPuzzleDate,
@@ -644,18 +629,6 @@ export default function HomePage() {
     }
   }
 
-  const handleSubmitForReviewConfirm = async (submit: boolean) => {
-    setShowSubmitForReviewDialog(false);
-    if (submit && wordToReview) {
-      await fetchWordDataAndClaimOrPenalize(wordToReview);
-    } else {
-      if (wordToReview) {
-         toast({ title: "Not Submitted", description: `"${wordToReview.toUpperCase()}" was not submitted for checking.`, variant: "default" });
-      }
-      handleClearWord(); 
-    }
-    setWordToReview("");
-  };
 
   const currentWordText = currentWord.map(l => l.char).join('');
   const selectedLetterIndices = currentWord.map(l => l.index);
@@ -793,7 +766,7 @@ export default function HomePage() {
             onBackspace={handleBackspace}
             canSubmit={currentWord.length >= MIN_WORD_LENGTH}
             canClearOrBackspace={currentWord.length > 0}
-            isSubmitting={isSubmittingForReview}
+            isSubmitting={isProcessingWord}
           />
           <h2 className="text-xl font-semibold mb-2 text-center">Words Found: {submittedWords.length}</h2>
           <SubmittedWordsList words={submittedWords} />
@@ -832,34 +805,6 @@ export default function HomePage() {
           newlyClaimedWordsCount: newlyOwnedWordsForDebrief.length,
         }}
       />
-
-      <AlertDialog open={showSubmitForReviewDialog} onOpenChange={setShowSubmitForReviewDialog}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Unknown Word: "{wordToReview.toUpperCase()}"</AlertDialogTitle>
-            <AlertDialogDescription>
-              This word isn't in our dictionary yet. Would you like to check if it's a real word and claim it?
-              If valid, it'll be added and you'll get points! If not, points may be deducted.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel onClick={() => handleSubmitForReviewConfirm(false)} disabled={isSubmittingForReview}>
-              No, Thanks
-            </AlertDialogCancel>
-            <AlertDialogAction 
-              onClick={() => handleSubmitForReviewConfirm(true)} 
-              disabled={isSubmittingForReview}
-              className="bg-primary text-primary-foreground hover:bg-primary/90"
-            >
-              {isSubmittingForReview ? (<><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Checking...</>) : (
-                <>
-                  <Send className="mr-2 h-4 w-4" /> Yes, Check & Claim
-                </>
-              )}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
     </div>
   );
 }
