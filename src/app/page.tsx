@@ -222,6 +222,7 @@ export default function HomePage() {
       });
     }, 1000);
     return () => clearInterval(timerId);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [gameState, timeLeft]); 
 
   useEffect(() => {
@@ -361,15 +362,17 @@ export default function HomePage() {
             lastPlayedDate_GMT: currentPuzzleDate, 
             wotdStreakCount: newStreakCount, 
         });
+        
+        // Commit user profile updates first
         await batch.commit();
         
-        if (userProfile.activeCircleId) {
-            await updateUserCircleDailyScoresAction({
-                userId: currentUser.uid,
-                puzzleDateGMT: currentPuzzleDate,
-                finalDailyScore: roundedFinalScore,
-            });
-        }
+        // Then, update scores for ALL circles the user is a member of.
+        // The server action handles iterating through the user's memberships.
+        await updateUserCircleDailyScoresAction({
+            userId: currentUser.uid,
+            puzzleDateGMT: currentPuzzleDate,
+            finalDailyScore: roundedFinalScore,
+        });
     }
   };
 
