@@ -26,6 +26,7 @@ import { Loader2, Save, AlertTriangle, ArrowLeft, Users, ShieldCheck, Crown, Use
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Separator } from '@/components/ui/separator';
+import { Badge } from '@/components/ui/badge'; // Added import for Badge
 
 const editCircleFormSchema = z.object({
   circleName: z.string().min(3, { message: "Circle name must be at least 3 characters." }).max(50, { message: "Circle name cannot exceed 50 characters." }),
