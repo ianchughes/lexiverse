@@ -34,9 +34,14 @@ export async function generateShareableMoment(input: GenerateShareableMomentInpu
 
 const shareableMomentPrompt = ai.definePrompt({
   name: 'shareableMomentPrompt',
-  model: 'googleai/gemini-2.0-flash-exp',
+  model: 'googleai/gemini-2.0-flash-exp', // Specifies the LLM model
   config: {
     responseModalities: ['TEXT', 'IMAGE'],
+    handlebars: { // Configuration for Handlebars templating
+      helpers: {
+        gt: (a: number, b: number) => a > b,
+      },
+    },
   },
   input: {
     schema: GenerateShareableMomentInputSchema,
@@ -52,7 +57,7 @@ Player's Game Data:
 - Words Found: {{{wordsFoundCount}}}
 - Guessed Word of the Day: {{#if guessedWotD}}Yes{{else}}No{{/if}}
 {{#if circleName}}- Playing with Circle: {{{circleName}}} 🤝{{/if}}
-{{#if newlyClaimedWordsCount}}- New Words Claimed: {{{newlyClaimedWordsCount}}}{{/if}}
+{{#if newlyClaimedWordsCount}}{{#if (gt newlyClaimedWordsCount 0)}}✨ {{newlyClaimedWordsCount}} new words claimed!{{/if}}{{/if}}
 
 Your Task:
 1.  **Shareable Text (for social media):**
@@ -85,11 +90,8 @@ Your Task:
 Return the response in the specified JSON format with 'shareableText' and 'imageUri' fields.
 `,
   templateFormat: "handlebars",
-  model: {
-    helpers: {
-      gt: (a: number, b: number) => a > b,
-    }
-  }
+  // The problematic duplicate 'model' key for helpers has been removed.
+  // Helpers are now intended to be passed via the 'config.handlebars.helpers' object above.
 });
 
 const generateShareableMomentFlow = ai.defineFlow(
