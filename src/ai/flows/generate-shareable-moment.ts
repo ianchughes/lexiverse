@@ -109,11 +109,17 @@ const generateShareableMomentFlow = ai.defineFlow(
 
       if (output) {
         finalText = output.shareableText ? output.shareableText.replace(/\\n/g, '\n') : fallbackText;
-        if (output.imageUri && output.imageUri.startsWith('data:image/')) {
-          finalImageUri = output.imageUri;
+        
+        if (output.imageUri && output.imageUri.startsWith('data:image/') && output.imageUri.includes(';base64,')) {
+          const parts = output.imageUri.split(';base64,');
+          // Check if there's actual content after 'base64,' and it's reasonably long
+          if (parts.length === 2 && parts[1] && parts[1].trim().length > 50) { 
+            finalImageUri = output.imageUri;
+          } else {
+            console.warn("[generateShareableMomentFlow] AI returned an imageUri that looks like a data URI but has insufficient/empty base64 data. Using fallback. URI:", output.imageUri);
+          }
         } else {
-          console.warn("[generateShareableMomentFlow] AI did not return a valid imageUri. Using fallback image. Output imageUri:", output.imageUri);
-          // finalImageUri is already fallbackImage by default
+          console.warn("[generateShareableMomentFlow] AI did not return a valid-looking imageUri (missing 'data:image/' or ';base64,', or other issues). Using fallback image. Output imageUri:", output.imageUri);
         }
       } else {
          console.error("[generateShareableMomentFlow] AI failed to generate any output (output object is null or undefined). Using fallbacks.");
@@ -133,5 +139,3 @@ const generateShareableMomentFlow = ai.defineFlow(
     }
   }
 );
-
-    

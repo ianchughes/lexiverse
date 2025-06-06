@@ -16,7 +16,7 @@ import { Card, CardContent, CardFooter } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { generateShareableMoment, type GenerateShareableMomentOutput } from '@/ai/flows/generate-shareable-moment';
 import { useToast } from '@/hooks/use-toast';
-import { Copy, Twitter, Check, Loader2 } from 'lucide-react'; // Added Loader2
+import { Copy, Twitter, Check, Loader2 } from 'lucide-react';
 
 interface ShareMomentDialogProps {
   isOpen: boolean;
@@ -103,9 +103,9 @@ export function ShareMomentDialog({ isOpen, onOpenChange, gameData }: ShareMomen
 
         {isLoading && (
           <div className="space-y-3 py-4 text-center">
-            <Skeleton className="h-44 w-full rounded-lg bg-muted/40 animate-pulse" />
-            <Skeleton className="h-6 w-3/4 mx-auto bg-muted/40 animate-pulse" />
-            <Skeleton className="h-10 w-full bg-muted/40 animate-pulse" />
+            <Skeleton className="h-44 w-full rounded-lg bg-muted/40" />
+            <Skeleton className="h-6 w-3/4 mx-auto bg-muted/40" />
+            <Skeleton className="h-10 w-full bg-muted/40" />
             <div className="flex items-center justify-center text-sm text-muted-foreground pt-2">
               <Loader2 className="mr-2 h-4 w-4 animate-spin" />
               Generating your shareable moment...
@@ -125,7 +125,6 @@ export function ShareMomentDialog({ isOpen, onOpenChange, gameData }: ShareMomen
                       height={250}
                       className="w-full h-full object-cover"
                       data-ai-hint="game score card"
-                      priority 
                     />
                   </div>
               )}
