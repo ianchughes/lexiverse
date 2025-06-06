@@ -331,7 +331,7 @@ export async function sendCircleInviteAction(payload: SendCircleInvitePayload): 
     await addDoc(collection(firestore, 'CircleInvites'), newInviteDataPayload);
 
     if (!finalInviteeUserId && finalInviteeEmail) {
-      console.log(`ACTION REQUIRED: Send email invite to ${finalInviteeEmail} for circle ${circleName}. Include invite ID for linking.`);
+      console.info(`[INFO] LexiVerse Circle Invite: Automatic email sending to new user ${finalInviteeEmail} for circle '${circleName}' is NOT IMPLEMENTED. An email sending service integration is required here. The invite will be stored in Firestore.`);
     }
 
     return { success: true };
@@ -588,10 +588,10 @@ export async function userResendCircleInviteAction(payload: UserManageInvitePayl
     });
 
     if (inviteData.status === 'SentToEmail' && inviteData.inviteeEmail) {
-      console.log(`ACTION REQUIRED (User Resend): Send email invite reminder to ${inviteData.inviteeEmail} for circle ${inviteData.circleName}. Invite ID: ${inviteId}`);
+      console.info(`[INFO] LexiVerse Circle Invite Reminder: Automatic email reminder to ${inviteData.inviteeEmail} for circle '${inviteData.circleName}' (Invite ID: ${inviteId}) is NOT IMPLEMENTED. An email sending service integration is required here.`);
     } else if (inviteData.status === 'Sent' && inviteData.inviteeUserId) {
       // Optionally, create a new in-app notification or just rely on the timestamp update.
-      console.log(`User Resend: In-app invite reminder logged for user ${inviteData.inviteeUserId} for circle ${inviteData.circleName}. Invite ID: ${inviteId}`);
+      console.info(`[INFO] LexiVerse User Resend Invite: In-app invite reminder event logged for user ${inviteData.inviteeUserId}, circle '${inviteData.circleName}'. Invite ID: ${inviteId}`);
     }
 
     return { success: true };
