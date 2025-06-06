@@ -33,7 +33,7 @@ async function getStatisticsData() {
     const masterWordsSnap = await getDocs(collection(firestore, "Words"));
     const totalMasterWords = masterWordsSnap.size;
 
-    // Total Words Pending Review
+    // Total Words Claimed and Awaiting Moderation
     const pendingReviewQuery = query(collection(firestore, "WordSubmissionsQueue"), where("status", "==", "PendingModeratorReview"));
     const pendingReviewSnap = await getDocs(pendingReviewQuery);
     const totalPendingWords = pendingReviewSnap.size;
@@ -85,7 +85,7 @@ export default async function GameStatisticsPage() {
     { title: "New Users (Last 7 Days)", value: stats.newUsersLast7Days, icon: Activity, description: "Sign-ups in the past week." },
     { title: "New Users (Last 30 Days)", value: stats.newUsersLast30Days, icon: BarChartBig, description: "Sign-ups in the past month." },
     { title: "Words in Dictionary", value: stats.totalMasterWords, icon: FileText, description: "Total approved words available." },
-    { title: "Words Pending Review", value: stats.totalPendingWords, icon: CheckSquare, description: "Submissions awaiting moderation." },
+    { title: "Words Claimed & Awaiting Moderation", value: stats.totalPendingWords, icon: CheckSquare, description: "Submissions awaiting moderation." },
     { title: "Total Circles Created", value: stats.totalCirclesCreated, icon: UsersRound, description: "All circles initiated by users." },
     { title: "Total Circle Memberships", value: stats.totalCircleMemberships, icon: CircleDot, description: "Sum of members across all circles." },
   ];
@@ -161,3 +161,4 @@ export default async function GameStatisticsPage() {
     </div>
   );
 }
+
