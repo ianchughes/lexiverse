@@ -2,7 +2,7 @@
 'use server';
 
 import { firestore } from '@/lib/firebase';
-import { collection, addDoc, serverTimestamp } from 'firebase/firestore';
+import { collection, addDoc, serverTimestamp, Timestamp } from 'firebase/firestore'; // Added Timestamp
 import type { AdminActionType, AdminAuditLogEntry } from '@/types';
 
 const ADMIN_AUDIT_LOGS_COLLECTION = "AdminAuditLogs";
