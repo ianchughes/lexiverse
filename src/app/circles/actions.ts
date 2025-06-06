@@ -7,7 +7,7 @@ import type { Circle, CircleMember, CircleInvite, UserProfile, CircleInviteStatu
 import { customAlphabet } from 'nanoid';
 
 const nanoid = customAlphabet('0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz', 10);
-
+const MAIL_COLLECTION = "mail"; // Collection the Trigger Email extension listens to
 
 interface CreateCirclePayload {
   circleName: string;
@@ -139,12 +139,9 @@ export async function leaveCircleAction(payload: CircleActionPayload): Promise<{
             if (!memberSnap.exists()) throw new Error("You are not a member of this circle.");
             
             if (circleData.creatorUserID === payload.userId && circleData.memberCount <= 1) {
-                // If the creator is the last member, they should delete the circle instead of leaving.
                 throw new Error("As the sole admin/creator, you must delete the circle instead of leaving.");
             }
             if (circleData.creatorUserID === payload.userId && circleData.memberCount > 1) {
-                // If the creator tries to leave and there are other members, prevent it unless they appoint a new admin.
-                // For simplicity now, we'll prevent it. A more complex system could allow admin transfer.
                  throw new Error("The circle creator cannot leave if other members exist. Please delete the circle or transfer ownership (feature not yet implemented).");
             }
 
@@ -172,7 +169,6 @@ export async function deleteCircleAction(payload: DeleteCirclePayload): Promise<
         if (!circleSnap.exists()) return { success: false, error: "Circle not found." };
         
         const circleData = circleSnap.data() as Circle;
-        // Only creator or an Admin can delete
         if (circleData.creatorUserID !== payload.requestingUserId) {
             const memberQuery = query(collection(firestore, 'CircleMembers'), 
                 where('circleId', '==', payload.circleId), 
@@ -191,7 +187,6 @@ export async function deleteCircleAction(payload: DeleteCirclePayload): Promise<
         const membersSnap = await getDocs(membersQuery);
         membersSnap.forEach(doc => batch.delete(doc.ref));
         
-        // Also delete associated invites
         const invitesQuery = query(collection(firestore, 'CircleInvites'), where('circleId', '==', payload.circleId));
         const invitesSnap = await getDocs(invitesQuery);
         invitesSnap.forEach(doc => batch.delete(doc.ref));
@@ -213,7 +208,7 @@ interface SendCircleInvitePayload {
   inviterUsername: string;
   inviteeUserId?: string;
   inviteeEmail?: string;
-  inviteeUsername?: string; // Target username for invitation
+  inviteeUsername?: string; 
 }
 
 export async function sendCircleInviteAction(payload: SendCircleInvitePayload): Promise<{ success: boolean; error?: string }> {
@@ -226,7 +221,6 @@ export async function sendCircleInviteAction(payload: SendCircleInvitePayload): 
     }
     const circleData = circleDocSnap.data() as Circle;
 
-    // Permission check: Inviter must be Admin or Influencer, or the circle creator
     let canInvite = false;
     if (circleData.creatorUserID === inviterUserId) {
         canInvite = true;
@@ -248,7 +242,6 @@ export async function sendCircleInviteAction(payload: SendCircleInvitePayload): 
     
     let finalInviteeUserId: string | undefined = inviteeUserId;
     let finalInviteeEmail: string | undefined = inviteeEmail?.toLowerCase();
-
 
     if (targetUsername) {
       const usersQuery = query(collection(firestore, "Users"), where("username", "==", targetUsername));
@@ -301,17 +294,9 @@ export async function sendCircleInviteAction(payload: SendCircleInvitePayload): 
             return { success: false, error: "An invite has already been sent to this user/email for this circle." };
         }
     }
-
-    const newInviteDataPayload: {
-      circleId: string;
-      circleName: string;
-      inviterUserId: string;
-      inviterUsername: string;
-      inviteeUserId?: string;
-      inviteeEmail?: string;
-      status: CircleInviteStatus;
-      dateSent: Timestamp; 
-    } = {
+    
+    const newInviteRef = doc(collection(firestore, 'CircleInvites')); // Get ref before to use ID in email
+    const newInviteDataPayload: Omit<CircleInvite, 'id'> = { // Omit 'id' because it will be newInviteRef.id
       circleId: circleId,
       circleName: circleName,
       inviterUserId: inviterUserId,
@@ -326,15 +311,32 @@ export async function sendCircleInviteAction(payload: SendCircleInvitePayload): 
     if (finalInviteeEmail !== undefined) {
       newInviteDataPayload.inviteeEmail = finalInviteeEmail;
     }
-
-
-    await addDoc(collection(firestore, 'CircleInvites'), newInviteDataPayload);
+    
+    const batch = writeBatch(firestore);
+    batch.set(newInviteRef, newInviteDataPayload);
 
     if (!finalInviteeUserId && finalInviteeEmail) {
-      console.info(`[INFO] LexiVerse Circle Invite: Automatic email sending to new user ${finalInviteeEmail} for circle '${circleName}' is NOT IMPLEMENTED. An email sending service integration is required here. The invite will be stored in Firestore.`);
+      const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://your-app-url.com'; // Fallback URL
+      const registrationLink = `${appUrl}/auth/register?inviteId=${newInviteRef.id}`;
+      const emailContent = {
+        to: [finalInviteeEmail],
+        message: {
+          subject: `You're invited to join ${circleName} on LexiVerse!`,
+          html: `
+            <p>Hi there,</p>
+            <p>${inviterUsername} has invited you to join their circle "${circleName}" on LexiVerse, the daily word puzzle game!</p>
+            <p>LexiVerse is a fun game where you find words, own your discoveries, and compete in Circles.</p>
+            <p>Click here to register and accept the invite: <a href="${registrationLink}">${registrationLink}</a></p>
+            <p>See you in LexiVerse!</p>
+          `,
+        },
+      };
+      batch.set(doc(collection(firestore, MAIL_COLLECTION)), emailContent);
     }
-
+    
+    await batch.commit();
     return { success: true };
+
   } catch (error: any) {
     console.error("Error in sendCircleInviteAction:", error);
     return { success: false, error: error.message || "Failed to send invite." };
@@ -352,10 +354,9 @@ export async function respondToCircleInviteAction(payload: RespondToCircleInvite
   const inviteRef = doc(firestore, 'CircleInvites', payload.inviteId);
   try {
     return await runTransaction(firestore, async (transaction) => {
-      // --- START READ PHASE ---
       const inviteSnap = await transaction.get(inviteRef);
       let circleSnap;
-      let inviterSnap; // Declare here to ensure it's in scope for the write phase if needed.
+      let inviterSnap; 
 
       if (!inviteSnap.exists()) {
         throw new Error("Invite not found or has expired.");
@@ -365,36 +366,29 @@ export async function respondToCircleInviteAction(payload: RespondToCircleInvite
       const circleRef = doc(firestore, 'Circles', inviteData.circleId);
       const inviterProfileRef = doc(firestore, 'Users', inviteData.inviterUserId);
       
-      // Read all necessary documents before any writes
       if (payload.responseType === 'Accepted') {
         circleSnap = await transaction.get(circleRef);
         if (!circleSnap.exists()) {
           throw new Error("The circle no longer exists.");
         }
         inviterSnap = await transaction.get(inviterProfileRef);
-        // inviterSnap existence check is done before write, if inviterSnap is used.
       }
-      // --- END READ PHASE ---
 
-      // --- START VALIDATION AND LOGIC (based on reads) ---
       if (inviteData.inviteeUserId && inviteData.inviteeUserId !== payload.inviteeUserId) {
         throw new Error("This invite is not for you.");
       }
       if (inviteData.status !== 'Sent' && inviteData.status !== 'SentToEmail') {
         throw new Error("This invite has already been responded to or is no longer valid.");
       }
-      // --- END VALIDATION ---
 
-      // --- START WRITE PHASE ---
       transaction.update(inviteRef, { 
         status: payload.responseType,
         dateResponded: serverTimestamp() as Timestamp,
-        inviteeUserId: payload.inviteeUserId, // Ensure inviteeUserId is set even if originally by email
+        inviteeUserId: payload.inviteeUserId, 
       });
 
       if (payload.responseType === 'Accepted') {
-        // Ensure circleSnap was read if we are here
-        if (!circleSnap || !circleSnap.exists()) { // Redundant if logic correct, but good safeguard.
+        if (!circleSnap || !circleSnap.exists()) { 
              throw new Error("Circle data inconsistency during transaction.");
         }
 
@@ -409,12 +403,11 @@ export async function respondToCircleInviteAction(payload: RespondToCircleInvite
         transaction.set(memberDocRef, newMemberData);
         transaction.update(circleRef, { memberCount: increment(1) });
 
-        if (inviterSnap && inviterSnap.exists()) { // Check inviterSnap from read phase if it was read
+        if (inviterSnap && inviterSnap.exists()) { 
             transaction.update(inviterProfileRef, { overallPersistentScore: increment(10) });
         }
         return { success: true, circleId: inviteData.circleId };
       }
-      // --- END WRITE PHASE ---
       return { success: true };
     });
   } catch (error: any) {
@@ -448,7 +441,7 @@ export async function joinCircleWithInviteCodeAction(payload: JoinCircleWithInvi
     const memberRef = doc(firestore, 'CircleMembers', `${circleId}_${payload.userId}`);
     const memberSnap = await getDoc(memberRef);
     if (memberSnap.exists()) {
-      return { success: true, circleId, error: "You are already a member of this circle." }; // Return success true, but with error message
+      return { success: true, circleId, error: "You are already a member of this circle." }; 
     }
     
     const newMemberData: Omit<CircleMember, 'id'> = {
@@ -508,11 +501,10 @@ export async function updateUserCircleDailyScoresAction(payload: UpdateUserDaily
   }
 }
 
-// User-initiated invite management actions
 interface UserManageInvitePayload {
   inviteId: string;
   requestingUserId: string;
-  circleId: string; // To verify admin rights on this specific circle
+  circleId: string; 
 }
 
 export async function userDeleteCircleInviteAction(payload: UserManageInvitePayload): Promise<{ success: boolean; error?: string }> {
@@ -529,7 +521,6 @@ export async function userDeleteCircleInviteAction(payload: UserManageInvitePayl
       return { success: false, error: "Invite does not belong to the specified circle." };
     }
 
-    // Verify admin permission
     const memberQuery = query(collection(firestore, 'CircleMembers'), 
       where('circleId', '==', circleId), 
       where('userId', '==', requestingUserId),
@@ -537,7 +528,6 @@ export async function userDeleteCircleInviteAction(payload: UserManageInvitePayl
     );
     const memberSnap = await getDocs(memberQuery);
     if (memberSnap.empty) {
-      // Fallback: check if the requester is the creator of the circle
       const circleDoc = await getDoc(doc(firestore, 'Circles', circleId));
       if (!circleDoc.exists() || (circleDoc.data() as Circle).creatorUserID !== requestingUserId) {
         return { success: false, error: "You don't have permission to manage invites for this circle." };
@@ -569,7 +559,6 @@ export async function userResendCircleInviteAction(payload: UserManageInvitePayl
         return { success: false, error: "Only pending invites can be resent." };
     }
 
-    // Verify admin permission (same logic as delete)
     const memberQuery = query(collection(firestore, 'CircleMembers'), 
       where('circleId', '==', circleId), 
       where('userId', '==', requestingUserId),
@@ -583,18 +572,45 @@ export async function userResendCircleInviteAction(payload: UserManageInvitePayl
       }
     }
 
-    await updateDoc(inviteRef, {
+    const batch = writeBatch(firestore);
+    batch.update(inviteRef, {
       lastReminderSentTimestamp: serverTimestamp() as Timestamp
     });
 
     if (inviteData.status === 'SentToEmail' && inviteData.inviteeEmail) {
-      console.info(`[INFO] LexiVerse Circle Invite Reminder: Automatic email reminder to ${inviteData.inviteeEmail} for circle '${inviteData.circleName}' (Invite ID: ${inviteId}) is NOT IMPLEMENTED. An email sending service integration is required here.`);
+      const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://your-app-url.com'; // Fallback URL
+      const registrationLink = `${appUrl}/auth/register?inviteId=${inviteId}`;
+      const emailContent = {
+        to: [inviteData.inviteeEmail],
+        message: {
+          subject: `Reminder: You're invited to join ${inviteData.circleName} on LexiVerse!`,
+          html: `
+            <p>Hi there,</p>
+            <p>This is a friendly reminder that ${inviteData.inviterUsername} invited you to join their circle "${inviteData.circleName}" on LexiVerse.</p>
+            <p>Click here to register and accept the invite: <a href="${registrationLink}">${registrationLink}</a></p>
+            <p>We hope to see you there!</p>
+          `,
+        },
+      };
+      batch.set(doc(collection(firestore, MAIL_COLLECTION)), emailContent);
     } else if (inviteData.status === 'Sent' && inviteData.inviteeUserId) {
-      // Optionally, create a new in-app notification or just rely on the timestamp update.
-      console.info(`[INFO] LexiVerse User Resend Invite: In-app invite reminder event logged for user ${inviteData.inviteeUserId}, circle '${inviteData.circleName}'. Invite ID: ${inviteId}`);
+      console.info(`[INFO] LexiVerse User Resend Invite: In-app invite reminder event triggered for user ${inviteData.inviteeUserId}, circle '${inviteData.circleName}'. Invite ID: ${inviteId}. Actual in-app notification system would handle this.`);
+      // Optionally: Create a new AppNotification document here if you have an in-app notification system
+      // const notificationPayload: Omit<AppNotification, 'id' | 'dateCreated'> = {
+      //   userId: inviteData.inviteeUserId,
+      //   message: `Reminder: ${inviteData.inviterUsername} invited you to join circle "${inviteData.circleName}".`,
+      //   type: 'CircleInvite', // Or a new 'CircleInviteReminder' type
+      //   relatedEntityId: inviteData.circleId,
+      //   isRead: false,
+      //   link: `/circles/${inviteData.circleId}`,
+      // };
+      // const newNotificationRef = doc(collection(firestore, 'Notifications'));
+      // batch.set(newNotificationRef, { ...notificationPayload, dateCreated: serverTimestamp() as Timestamp });
     }
-
+    
+    await batch.commit();
     return { success: true };
+
   } catch (error: any) {
     console.error("Error in userResendCircleInviteAction:", error);
     return { success: false, error: error.message || "Failed to resend invite." };
@@ -604,9 +620,9 @@ export async function userResendCircleInviteAction(payload: UserManageInvitePayl
 
 interface UpdateMemberRolePayload {
   circleId: string;
-  requestingUserId: string; // User making the change (must be Admin)
-  targetUserId: string;    // User whose role is being changed
-  newRole: 'Member' | 'Influencer'; // Allowed roles to change to/from via this action
+  requestingUserId: string; 
+  targetUserId: string;    
+  newRole: 'Member' | 'Influencer'; 
 }
 
 export async function updateMemberRoleAction(payload: UpdateMemberRolePayload): Promise<{ success: boolean; error?: string }> {
@@ -617,14 +633,12 @@ export async function updateMemberRoleAction(payload: UpdateMemberRolePayload): 
       return { success: false, error: "You cannot change your own role using this function." };
     }
 
-    // 1. Verify requestingUser is an Admin of this circle
     const requesterMemberRef = doc(firestore, 'CircleMembers', `${circleId}_${requestingUserId}`);
     const requesterMemberSnap = await getDoc(requesterMemberRef);
     if (!requesterMemberSnap.exists() || requesterMemberSnap.data()?.role !== 'Admin') {
       return { success: false, error: "You do not have permission to manage roles in this circle." };
     }
 
-    // 2. Verify targetUser is a member of this circle and not the creator trying to be demoted from Admin
     const targetMemberRef = doc(firestore, 'CircleMembers', `${circleId}_${targetUserId}`);
     const targetMemberSnap = await getDoc(targetMemberRef);
     if (!targetMemberSnap.exists()) {
@@ -635,10 +649,8 @@ export async function updateMemberRoleAction(payload: UpdateMemberRolePayload): 
         return { success: false, error: "Admin roles cannot be changed through this action. Circle creator is always an Admin."}
     }
 
-    // 3. Update the role
     await updateDoc(targetMemberRef, { role: newRole });
 
-    // Optional: Send a notification to the target user about their role change
     const circleData = (await getDoc(doc(firestore, 'Circles', circleId))).data();
     const notificationPayload: Omit<AppNotification, 'id' | 'dateCreated'> = {
       userId: targetUserId,
@@ -661,8 +673,8 @@ export async function updateMemberRoleAction(payload: UpdateMemberRolePayload): 
 
 interface RemoveCircleMemberPayload {
   circleId: string;
-  requestingUserId: string; // Admin performing the action
-  targetUserId: string;     // Member to be removed
+  requestingUserId: string; 
+  targetUserId: string;     
 }
 
 export async function removeCircleMemberAction(payload: RemoveCircleMemberPayload): Promise<{ success: boolean; error?: string }> {
@@ -694,25 +706,21 @@ export async function removeCircleMemberAction(payload: RemoveCircleMemberPayloa
       const targetMemberData = targetMemberSnap.data() as CircleMember;
 
       if (targetMemberData.role === 'Admin') {
-        // This typically means they are the creator.
-        // Admins (creators) cannot be removed by other admins (if multi-admin was a feature).
-        // For now, an Admin (creator) can't be removed by this action.
         throw new Error("The Circle Admin (creator) cannot be removed by this action.");
       }
       
       transaction.delete(targetMemberRef);
       transaction.update(circleRef, { memberCount: increment(-1) });
       
-      // Optional: Send a notification to the removed user
       const notificationPayload: Omit<AppNotification, 'id' | 'dateCreated'> = {
         userId: targetUserId,
         message: `You have been removed from the circle "${circleData.circleName}" by an admin.`,
         type: 'CircleAdminAction',
         relatedEntityId: circleId,
         isRead: false,
-        link: `/circles`, // Link to general circles page as they are no longer part of this one
+        link: `/circles`, 
       };
-      const notificationDocRef = doc(collection(firestore, 'Notifications')); // Auto-generate ID
+      const notificationDocRef = doc(collection(firestore, 'Notifications')); 
       transaction.set(notificationDocRef, { ...notificationPayload, dateCreated: serverTimestamp() as Timestamp });
 
       return { success: true };
@@ -723,3 +731,5 @@ export async function removeCircleMemberAction(payload: RemoveCircleMemberPayloa
     return { success: false, error: error.message || "Failed to remove member." };
   }
 }
+
+    
