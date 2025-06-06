@@ -1,7 +1,7 @@
 
 'use client';
 import Link from 'next/link';
-import { BookText, Users, LogIn, LogOut, UserCircle, ShieldCheck, Bell, FileText, Award, Sparkles } from 'lucide-react'; // Added FileText, Award, Sparkles
+import { BookText, Users, LogIn, LogOut, UserCircle, ShieldCheck, Bell, FileText, Award, Sparkles, BadgeCent } from 'lucide-react'; // Added BadgeCent
 import { useAuth } from '@/contexts/AuthContext';
 import { auth, firestore } from '@/lib/firebase'; // Added firestore
 import { signOut } from 'firebase/auth';
@@ -116,9 +116,22 @@ export function SiteHeader() {
           <span className="font-headline text-2xl font-bold text-primary">LexiVerse</span>
         </Link>
 
-        <nav className="flex items-center space-x-2 sm:space-x-3">
+        <nav className="flex items-center space-x-1 sm:space-x-2">
+          {currentUser && userProfile && (
+            <div className="flex items-center text-muted-foreground hover:text-primary px-1 sm:px-2 text-xs sm:text-sm">
+              <BadgeCent className="mr-1 h-4 sm:h-5 w-4 sm:w-5" />
+              <span className="hidden sm:inline">Score:</span> 
+              <span className="ml-1 font-semibold">{userProfile.overallPersistentScore}</span>
+            </div>
+          )}
+          {currentUser && userProfile && pointsGainedDisplay > 0 && (
+            <div className="flex items-center text-xs sm:text-sm text-green-600 bg-green-100 dark:bg-green-700 dark:text-green-200 px-2 py-1 rounded-md">
+              <Sparkles className="mr-1 h-3 sm:h-4 w-3 sm:w-4 text-yellow-400 animate-pulse" />
+              <span>+{pointsGainedDisplay} pts today!</span>
+            </div>
+          )}
           {currentUser && userProfile && ownedWordsCount !== null && (
-            <Button variant="ghost" asChild className="text-muted-foreground hover:text-primary px-2 sm:px-3">
+            <Button variant="ghost" asChild className="text-muted-foreground hover:text-primary px-1 sm:px-2 text-xs sm:text-sm">
               <Link href="/profile" className="flex items-center">
                 <FileText className="mr-1 h-4 sm:h-5 w-4 sm:w-5" />
                 <span className="hidden sm:inline">Words Owned:</span> 
@@ -127,17 +140,12 @@ export function SiteHeader() {
               </Link>
             </Button>
           )}
-           {currentUser && userProfile && pointsGainedDisplay > 0 && (
-            <div className="flex items-center text-xs sm:text-sm text-green-600 bg-green-100 dark:bg-green-700 dark:text-green-200 px-2 py-1 rounded-md">
-              <Award className="mr-1 h-3 sm:h-4 w-3 sm:w-4" />
-              <span>+{pointsGainedDisplay} pts today!</span>
-            </div>
-          )}
+          
 
-          <Button variant="ghost" asChild className="text-muted-foreground hover:text-primary px-2 sm:px-3">
-            <Link href="/circles">
+          <Button variant="ghost" asChild className="text-muted-foreground hover:text-primary px-1 sm:px-2">
+            <Link href="/circles" className="flex items-center">
               <Users className="mr-1 h-4 sm:h-5 w-4 sm:w-5" /> 
-              <span className="hidden sm:inline">Circles</span>
+              <span className="hidden sm:inline text-xs sm:text-sm">Circles</span>
             </Link>
           </Button>
           
@@ -154,10 +162,10 @@ export function SiteHeader() {
               <DropdownMenuTrigger asChild>
                 <Button variant="ghost" className="relative h-8 w-auto px-1 sm:px-2 rounded-full">
                    <Avatar className="h-8 w-8">
-                    <AvatarImage src={currentUser.photoURL || undefined} alt={userProfile.username || 'User'} />
+                    <AvatarImage src={currentUser.photoURL || userProfile.photoURL || undefined} alt={userProfile.username || 'User'} />
                     <AvatarFallback>{getInitials(userProfile.username)}</AvatarFallback>
                   </Avatar>
-                  <span className="ml-1 sm:ml-2 hidden sm:inline">{userProfile.username}</span>
+                  <span className="ml-1 sm:ml-2 hidden sm:inline text-xs sm:text-sm">{userProfile.username}</span>
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent className="w-56" align="end" forceMount>
