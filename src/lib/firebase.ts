@@ -1,9 +1,9 @@
 
-import { initializeApp, getApps, getApp, type FirebaseOptions } from 'firebase/app';
+import { initializeApp, getApps, getApp, type FirebaseOptions, type FirebaseApp } from 'firebase/app';
 import { getAuth } from 'firebase/auth';
 import { getFirestore } from 'firebase/firestore';
 import { getStorage } from 'firebase/storage';
-import { getAnalytics, isSupported } from "firebase/analytics"; // Import getAnalytics and isSupported
+import { getAnalytics, isSupported, type Analytics } from "firebase/analytics"; // Import getAnalytics, isSupported, and Analytics type
 
 const firebaseConfig: FirebaseOptions = {
   apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY,
@@ -16,7 +16,7 @@ const firebaseConfig: FirebaseOptions = {
 };
 
 // Initialize Firebase
-let app;
+let app: FirebaseApp; // Explicitly type app
 if (!getApps().length) {
   app = initializeApp(firebaseConfig);
 } else {
@@ -26,7 +26,7 @@ if (!getApps().length) {
 const auth = getAuth(app);
 const firestore = getFirestore(app);
 const storage = getStorage(app);
-let analytics = null;
+let analytics: Analytics | null = null; // Explicitly type analytics
 
 if (typeof window !== 'undefined') {
   isSupported().then((supported) => {
