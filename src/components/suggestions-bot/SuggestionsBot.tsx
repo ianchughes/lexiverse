@@ -64,7 +64,7 @@ export function SuggestionsBot() {
     };
 
     const historyForFlow = messages.map(m => ({
-        role: m.sender === 'user' ? 'user' : 'model',
+        role: m.sender === 'user' ? ('user' as const) : ('model' as const),
         content: m.text,
     }));
 
