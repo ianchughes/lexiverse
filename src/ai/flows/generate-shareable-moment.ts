@@ -100,22 +100,29 @@ const generateShareableMomentFlow = ai.defineFlow(
   },
   async (input) => {
     const fallbackText = `LexiVerse Results! 🗓️ ${input.date.split('-').reverse().join('/')}\n\n🏆 ${input.score} Points\n✍️ ${input.wordsFoundCount} Words Found\n💡 Word of the Day: ${input.guessedWotD ? 'Guessed! 🎉' : 'Missed 😥'}\n${input.newlyClaimedWordsCount && input.newlyClaimedWordsCount > 0 ? `✨ ${input.newlyClaimedWordsCount} new words claimed!\n` : ''}\nJoin the fun & challenge your lexicon! Play LexiVerse daily! #LexiVerse`;
-    // A slightly more appealing placeholder image (2:1 ratio)
     const fallbackImage = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAfQAAAH0CAYAAADL1t+KAAAAAXNSR0IArs4c6QAAAIRlWElmTU0AKgAAAAgABQESAAMAAAABAAEAAAEaAAUAAAABAAAASgEbAAUAAAABAAAAUgEoAAMAAAABAAIAAIdpAAQAAAABAAAAWgAAAAAAAACQAAAAAQAAAJAAAAABUGFpbnQuTkVUIHY0LjMuMTIAAAACoAIABAAAAAEAAAH0oAMABAAAAAEAAAH0AAAAALG3iDIAAAAFSURBVHgB7cEBAQAAAIIg/69uSEABAAAAAAAAAAAAAAA+A44rAAEFj07xAAAAAElFTkSuQmCC";
 
     try {
       const { output } = await shareableMomentPrompt(input);
-      
-      if (!output || !output.imageUri || !output.shareableText) {
-          console.error("[generateShareableMomentFlow] AI failed to generate complete shareable moment. Output:", output);
-          return { 
-              shareableText: output?.shareableText || fallbackText, 
-              imageUri: output?.imageUri || fallbackImage 
-          };
+      let finalImageUri = fallbackImage;
+      let finalText = fallbackText;
+
+      if (output) {
+        finalText = output.shareableText ? output.shareableText.replace(/\\n/g, '\n') : fallbackText;
+        if (output.imageUri && output.imageUri.startsWith('data:image/')) {
+          finalImageUri = output.imageUri;
+        } else {
+          console.warn("[generateShareableMomentFlow] AI did not return a valid imageUri. Using fallback image. Output imageUri:", output.imageUri);
+          // finalImageUri is already fallbackImage by default
+        }
+      } else {
+         console.error("[generateShareableMomentFlow] AI failed to generate any output (output object is null or undefined). Using fallbacks.");
       }
-      // Ensure shareableText has line breaks if the AI missed them (it should follow the prompt)
-      const formattedText = output.shareableText.replace(/\\n/g, '\n');
-      return { ...output, shareableText: formattedText };
+      
+      return { 
+          shareableText: finalText, 
+          imageUri: finalImageUri 
+      };
 
     } catch (flowError: any) {
         console.error(`[generateShareableMomentFlow] Error executing shareableMomentPrompt. Message: ${flowError.message}. Stack: ${flowError.stack}. Full error:`, flowError);
@@ -127,3 +134,4 @@ const generateShareableMomentFlow = ai.defineFlow(
   }
 );
 
+    
