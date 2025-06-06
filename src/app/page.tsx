@@ -629,8 +629,6 @@ export default function HomePage() {
     };
     try {
         await addDoc(collection(firestore, WORD_SUBMISSIONS_QUEUE), { ...newSubmission, submittedTimestamp: serverTimestamp() as Timestamp });
-        // Do not toast "Word Submitted!" here if it's a fallback, the specific fallback toast is already shown.
-        // Only toast if it's a direct submission from a successful check.
         if (definition && !definition.startsWith("Wiktionary check failed")) {
             toast({ title: "Word Submitted!", description: `"${wordText}" has been sent for admin review.`, variant: "default" });
         }
@@ -663,48 +661,48 @@ export default function HomePage() {
           Welcome to LexiVerse, the daily 90-second word dash with a revolutionary twist! Find words from 9 mystery letters. Be the FIRST to discover a new word (not yet in our game), get it approved, and you "MINT" it as your own! From that moment on, every time any other player, on any day, guesses your minted word, YOU earn the points too – build your word empire and watch your score grow even when you're not playing! Plus, nail the Word of the Day to double your daily score and team up in Circles to dominate the leaderboards!
         </p>
         
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 max-w-4xl mx-auto mb-10 sm:mb-12 text-left">
-          <Card className="bg-card/70 p-5 rounded-lg shadow-md flex items-start space-x-4">
-            <Gem className="h-10 w-10 text-accent mt-1 flex-shrink-0" />
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 sm:gap-6 max-w-4xl mx-auto mb-10 sm:mb-12 text-left">
+          <Card className="bg-card/70 p-3 sm:p-4 md:p-5 rounded-lg shadow-md flex items-start space-x-2 sm:space-x-3 md:space-x-4">
+            <Gem className="h-8 w-8 sm:h-10 sm:w-10 text-accent mt-1 flex-shrink-0" />
             <div>
-              <h3 className="font-semibold text-xl text-card-foreground">Mint & Own Words</h3>
-              <p className="text-sm text-muted-foreground">Your unique word discoveries become yours! Get them approved and earn ongoing points automatically when others find them. This is your word legacy!</p>
+              <h3 className="font-semibold text-lg sm:text-xl text-card-foreground">Mint & Own Words</h3>
+              <p className="text-xs sm:text-sm text-muted-foreground">Your unique word discoveries become yours! Get them approved and earn ongoing points automatically when others find them. This is your word legacy!</p>
             </div>
           </Card>
-          <Card className="bg-card/70 p-5 rounded-lg shadow-md flex items-start space-x-4">
-            <Zap className="h-10 w-10 text-accent mt-1 flex-shrink-0" />
+          <Card className="bg-card/70 p-3 sm:p-4 md:p-5 rounded-lg shadow-md flex items-start space-x-2 sm:space-x-3 md:space-x-4">
+            <Zap className="h-8 w-8 sm:h-10 sm:w-10 text-accent mt-1 flex-shrink-0" />
             <div>
-              <h3 className="font-semibold text-xl text-card-foreground">Daily 90-Second Blitz</h3>
-              <p className="text-sm text-muted-foreground">A fresh, thrilling 9-letter puzzle drops every day at 00:00 GMT. Fast fingers, sharp mind!</p>
+              <h3 className="font-semibold text-lg sm:text-xl text-card-foreground">Daily 90-Second Blitz</h3>
+              <p className="text-xs sm:text-sm text-muted-foreground">A fresh, thrilling 9-letter puzzle drops every day at 00:00 GMT. Fast fingers, sharp mind!</p>
             </div>
           </Card>
-          <Card className="bg-card/70 p-5 rounded-lg shadow-md flex items-start space-x-4">
-            <Star className="h-10 w-10 text-accent mt-1 flex-shrink-0" />
+          <Card className="bg-card/70 p-3 sm:p-4 md:p-5 rounded-lg shadow-md flex items-start space-x-2 sm:space-x-3 md:space-x-4">
+            <Star className="h-8 w-8 sm:h-10 sm:w-10 text-accent mt-1 flex-shrink-0" />
             <div>
-              <h3 className="font-semibold text-xl text-card-foreground">Word of the Day Jackpot</h3>
-              <p className="text-sm text-muted-foreground">Find the special 6-9 letter word and your entire daily score gets DOUBLED!</p>
+              <h3 className="font-semibold text-lg sm:text-xl text-card-foreground">Word of the Day Jackpot</h3>
+              <p className="text-xs sm:text-sm text-muted-foreground">Find the special 6-9 letter word and your entire daily score gets DOUBLED!</p>
             </div>
           </Card>
-          <Card className="bg-card/70 p-5 rounded-lg shadow-md flex items-start space-x-4">
-            <Users2 className="h-10 w-10 text-accent mt-1 flex-shrink-0" />
+          <Card className="bg-card/70 p-3 sm:p-4 md:p-5 rounded-lg shadow-md flex items-start space-x-2 sm:space-x-3 md:space-x-4">
+            <Users2 className="h-8 w-8 sm:h-10 sm:w-10 text-accent mt-1 flex-shrink-0" />
             <div>
-              <h3 className="font-semibold text-xl text-card-foreground">Circle Up & Conquer</h3>
-              <p className="text-sm text-muted-foreground">Create or join Circles. Your scores and your friends' scores combine for weekly glory and bragging rights!</p>
+              <h3 className="font-semibold text-lg sm:text-xl text-card-foreground">Circle Up & Conquer</h3>
+              <p className="text-xs sm:text-sm text-muted-foreground">Create or join Circles. Your scores and your friends' scores combine for weekly glory and bragging rights!</p>
             </div>
           </Card>
         </div>
 
-        <Button className="text-base font-semibold py-3 px-8 sm:text-lg sm:py-4 sm:px-10 rounded-lg shadow-lg hover:shadow-xl transition-shadow duration-200" asChild>
+        <Button className="text-base font-semibold py-3 px-6 sm:px-8 sm:text-lg sm:py-4 sm:px-10 rounded-lg shadow-lg hover:shadow-xl transition-shadow duration-200" asChild>
           <Link href="/auth/register">
             <Gift className="mr-2 h-5 sm:h-6 w-5 sm:w-6" /> Sign Up Free & Start Minting Your Word Empire!
           </Link>
         </Button>
          <p className="mt-4">
-          <Button variant="link" asChild className="text-base">
+          <Button variant="link" asChild className="text-sm sm:text-base">
             <Link href="/auth/login">Already have an account? Log In</Link>
           </Button>
         </p>
-        <p className="mt-6 text-sm text-muted-foreground">
+        <p className="mt-6 text-xs sm:text-sm text-muted-foreground">
           All submitted words are validated. Own unique additions to the LexiVerse!
         </p>
       </div>
@@ -819,3 +817,4 @@ export default function HomePage() {
     </div>
   );
 }
+
