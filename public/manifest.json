@@ -7,6 +7,7 @@
   "display": "standalone",
   "background_color": "#E3F2FD",
   "theme_color": "#4285F4",
+  "orientation": "portrait-primary",
   "icons": [
     {
       "src": "https://placehold.co/192x192.png",
@@ -20,6 +21,5 @@
       "type": "image/png",
       "purpose": "any maskable"
     }
-  ],
-  "orientation": "portrait-primary"
+  ]
 }
