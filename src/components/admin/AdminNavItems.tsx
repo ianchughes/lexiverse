@@ -11,10 +11,11 @@ import {
   UsersRound,
   BarChart3,
   Settings,
-  History, // Keep History for Audit Logs
+  History, 
   MailCheck,
   Lightbulb,
-  FileClock, // New icon for Changelog
+  FileClock,
+  ScrollText, // Added for Mail Log
 } from 'lucide-react';
 import {
   SidebarMenu,
@@ -31,7 +32,8 @@ const navItems = [
   { href: '/admin/circles', label: 'Circles', icon: UsersRound },
   { href: '/admin/invites', label: 'Invites', icon: MailCheck },
   { href: '/admin/suggestions', label: 'Suggestions', icon: Lightbulb },
-  { href: '/admin/changelog', label: 'Changelog', icon: FileClock }, // New Changelog Link
+  { href: '/admin/changelog', label: 'Changelog', icon: FileClock },
+  { href: '/admin/mail-log', label: 'Mail Log', icon: ScrollText }, // New Mail Log Link
   { href: '/admin/stats', label: 'Statistics', icon: BarChart3 },
   { href: '/admin/config', label: 'Configuration', icon: Settings },
   { href: '/admin/audit', label: 'Audit Logs', icon: History },
@@ -62,5 +64,3 @@ export function AdminNavItems() {
     </SidebarMenu>
   );
 }
-
-    
