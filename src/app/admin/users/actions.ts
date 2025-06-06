@@ -2,7 +2,7 @@
 'use server';
 
 import { firestore } from '@/lib/firebase';
-import { doc, deleteDoc, collection, query, where, getDocs, writeBatch, runTransaction, increment, getDoc, setDoc, updateDoc, serverTimestamp, addDoc } from 'firebase/firestore';
+import { doc, deleteDoc, collection, query, where, getDocs, writeBatch, runTransaction, increment, getDoc, setDoc, updateDoc, serverTimestamp, addDoc, Timestamp } from 'firebase/firestore';
 import type { UserProfile, AdminRoleDoc, UserRole, AccountStatus, MasterWordType, CircleMember, Circle } from '@/types';
 import { logAdminAction } from '@/lib/auditLogger';
 
@@ -210,6 +210,7 @@ export async function adminSendEmailToUserAction(payload: AdminSendEmailToUserPa
                <p>${messageBody.replace(/\n/g, '<br>')}</p>
                <p>Regards,<br/>The LexiVerse Admin Team</p>`,
       },
+      createdTimestamp: serverTimestamp(), // Add this timestamp
     };
 
     await addDoc(collection(firestore, MAIL_COLLECTION), emailContent);

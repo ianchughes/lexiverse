@@ -27,7 +27,7 @@ interface MailLogEntry {
     html?: string;
     messageId?: string;
   };
-  delivery?: {
+  delivery?: { // This whole object is added by the Trigger Email extension
     startTime?: Timestamp;
     endTime?: Timestamp;
     state?: 'PENDING' | 'PROCESSING' | 'SUCCESS' | 'ERROR' | 'RETRY';
@@ -42,7 +42,7 @@ interface MailLogEntry {
     };
     leaseExpireTime?: Timestamp;
   };
-  created?: Timestamp; // If app adds this upon creation
+  createdTimestamp?: Timestamp; // Timestamp added by your app when creating the doc
 }
 
 export default function MailLogPage() {
@@ -56,15 +56,12 @@ export default function MailLogPage() {
     setIsLoading(true);
     setError(null);
     try {
-      // The Trigger Email extension adds a `delivery.startTime`. We order by this.
-      // If `delivery.startTime` isn't always present immediately, we might need to fall back
-      // or ensure our app adds a reliable `createdTimestamp` to sort by.
-      // For now, trying with delivery.startTime, but might be an issue for PENDING emails.
-      // A more robust solution would be to add a `createdTimestamp` on the mail doc by the app.
+      // Primary sort by createdTimestamp added by the app.
+      // The 'delivery' field and its subfields are added by the extension.
       const q = query(
         collection(firestore, MAIL_LOG_COLLECTION),
-        orderBy("delivery.startTime", "desc"), // Or a specific 'created' field if you add one
-        limit(LOGS_PER_PAGE * 2) // Fetch more to see variety, can be paginated later
+        orderBy("createdTimestamp", "desc"), 
+        limit(LOGS_PER_PAGE * 2) 
       );
 
       const querySnapshot = await getDocs(q);
@@ -76,19 +73,18 @@ export default function MailLogPage() {
       setMailLogs(logs);
     } catch (err: any) {
       console.error("Error fetching mail logs:", err);
-      // If ordering by 'delivery.startTime' fails because it's not set on all docs (e.g., freshly added ones),
-      // try fetching without specific ordering or order by a field you know exists.
-      if (err.message.includes("orderByField")) {
+      // Fallback if 'createdTimestamp' ordering fails (e.g., old documents without it)
+      if (err.message.includes("orderByField") || err.message.includes("createdTimestamp")) {
         try {
-          console.warn("Failed to order by delivery.startTime, fetching without specific order.");
-          const fallbackQuery = query(collection(firestore, MAIL_LOG_COLLECTION), limit(LOGS_PER_PAGE * 2));
+          console.warn("Failed to order by createdTimestamp, fetching without specific order or by delivery.startTime as fallback.");
+          const fallbackQuery = query(collection(firestore, MAIL_LOG_COLLECTION), orderBy("delivery.startTime", "desc"), limit(LOGS_PER_PAGE * 2));
           const fallbackSnapshot = await getDocs(fallbackQuery);
            const logs: MailLogEntry[] = fallbackSnapshot.docs.map((docSnap) => ({
             id: docSnap.id,
             ...docSnap.data(),
           } as MailLogEntry));
-          // Client-side sort as a fallback
-          logs.sort((a, b) => (b.delivery?.startTime?.toMillis() || 0) - (a.delivery?.startTime?.toMillis() || 0));
+          // Client-side sort if necessary
+          // logs.sort((a, b) => (b.createdTimestamp?.toMillis() || b.delivery?.startTime?.toMillis() || 0) - (a.createdTimestamp?.toMillis() || a.delivery?.startTime?.toMillis() || 0));
           setMailLogs(logs);
         } catch (fallbackError: any) {
           console.error("Fallback mail log fetch also failed:", fallbackError);
@@ -106,21 +102,26 @@ export default function MailLogPage() {
     fetchMailLogs();
   }, [fetchMailLogs]);
 
-  const getStatusBadge = (state?: MailLogEntry['delivery']['state']) => {
-    switch (state) {
-      case 'SUCCESS':
-        return <Badge className="bg-green-500 hover:bg-green-600"><CheckCircle className="mr-1 h-3 w-3" />Success</Badge>;
-      case 'ERROR':
-        return <Badge variant="destructive"><AlertTriangle className="mr-1 h-3 w-3" />Error</Badge>;
-      case 'PENDING':
-        return <Badge variant="secondary"><Clock className="mr-1 h-3 w-3" />Pending</Badge>;
-      case 'PROCESSING':
-        return <Badge variant="outline" className="text-blue-600 border-blue-600"><Loader2 className="mr-1 h-3 w-3 animate-spin" />Processing</Badge>;
-      case 'RETRY':
-        return <Badge variant="outline" className="text-orange-500 border-orange-500"><MailWarning className="mr-1 h-3 w-3" />Retry</Badge>;
-      default:
-        return <Badge variant="outline">Unknown</Badge>;
+  const getStatusBadge = (entry: MailLogEntry) => {
+    const state = entry.delivery?.state;
+    if (state) {
+        switch (state) {
+        case 'SUCCESS':
+            return <Badge className="bg-green-500 hover:bg-green-600"><CheckCircle className="mr-1 h-3 w-3" />Success</Badge>;
+        case 'ERROR':
+            return <Badge variant="destructive"><AlertTriangle className="mr-1 h-3 w-3" />Error</Badge>;
+        case 'PENDING':
+            return <Badge variant="secondary"><Clock className="mr-1 h-3 w-3" />Pending</Badge>;
+        case 'PROCESSING':
+            return <Badge variant="outline" className="text-blue-600 border-blue-600"><Loader2 className="mr-1 h-3 w-3 animate-spin" />Processing</Badge>;
+        case 'RETRY':
+            return <Badge variant="outline" className="text-orange-500 border-orange-500"><MailWarning className="mr-1 h-3 w-3" />Retry</Badge>;
+        default:
+            return <Badge variant="outline">Status: {state}</Badge>;
+        }
     }
+    // If 'delivery.state' is not present, it means the extension hasn't processed it yet.
+    return <Badge variant="outline"><Clock className="mr-1 h-3 w-3" />Queued</Badge>;
   };
 
   const formatTimestampSafe = (timestamp?: Timestamp): string => {
@@ -133,7 +134,7 @@ export default function MailLogPage() {
   };
   
   const viewEmailBody = (htmlBody?: string) => {
-    setSelectedEmailBody(htmlBody || "No HTML body available.");
+    setSelectedEmailBody(htmlBody || "No HTML body available for this email.");
     setIsBodyDialogOpen(true);
   };
 
@@ -175,7 +176,7 @@ export default function MailLogPage() {
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead>Processed At</TableHead>
+                    <TableHead>Queued / Processed At</TableHead>
                     <TableHead>To</TableHead>
                     <TableHead>Subject</TableHead>
                     <TableHead>Status</TableHead>
@@ -187,7 +188,8 @@ export default function MailLogPage() {
                   {mailLogs.map((log) => (
                     <TableRow key={log.id}>
                       <TableCell className="text-xs">
-                        {formatTimestampSafe(log.delivery?.startTime || log.created)}
+                        {/* Display delivery.startTime if available, otherwise createdTimestamp */}
+                        {formatTimestampSafe(log.delivery?.startTime || log.createdTimestamp)}
                       </TableCell>
                       <TableCell className="text-xs max-w-[200px] truncate" title={log.to.join(', ')}>
                         {log.to.join(', ')}
@@ -195,9 +197,9 @@ export default function MailLogPage() {
                       <TableCell className="text-sm max-w-[250px] truncate" title={log.message.subject}>
                         {log.message.subject}
                       </TableCell>
-                      <TableCell>{getStatusBadge(log.delivery?.state)}</TableCell>
+                      <TableCell>{getStatusBadge(log)}</TableCell>
                       <TableCell className="text-xs text-destructive max-w-[300px] truncate" title={log.delivery?.error || log.delivery?.info?.response}>
-                        {log.delivery?.error || log.delivery?.info?.response || 'N/A'}
+                        {log.delivery?.error || log.delivery?.info?.response || (log.delivery?.state === 'SUCCESS' ? 'Sent successfully' : 'N/A')}
                       </TableCell>
                       <TableCell className="text-right">
                         <Button variant="outline" size="sm" onClick={() => viewEmailBody(log.message.html)}>
