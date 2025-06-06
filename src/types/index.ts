@@ -309,7 +309,7 @@ export type AdminActionType =
   | 'INVITE_STATUS_UPDATE_ADMIN'
   | 'INVITE_REMINDER_SEND_ADMIN'
   // System Configuration
-  | 'SYSTEM_DAILY_RESET_TRIGGER'
+  | 'SYSTEM_DAILY_RESET_TRIGGER' // New action type for daily reset
   // Suggestion Management
   | 'SUGGESTION_ACTIONED'
   | 'SUGGESTION_ARCHIVED_NO_ACTION'
@@ -322,7 +322,7 @@ export interface AdminAuditLogEntry {
   timestamp: Timestamp;
   actingAdminId: string;
   actionType: AdminActionType;
-  targetEntityType?: string; // e.g., 'User', 'Puzzle', 'Word', 'Circle', 'Invite', 'Suggestion', 'ChangelogEntry'
+  targetEntityType?: string; // e.g., 'User', 'Puzzle', 'Word', 'Circle', 'Invite', 'Suggestion', 'ChangelogEntry', 'System'
   targetEntityId?: string; // UID of user, ID of puzzle, etc.
   targetEntityDisplay?: string; // e.g. username, wordText, circleName, changelog version
   details?: string | object; // Human-readable summary or structured data
