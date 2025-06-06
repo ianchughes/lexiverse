@@ -3,7 +3,7 @@
 
 import React, { useState, useEffect, useCallback } from 'react';
 import { firestore } from '@/lib/firebase';
-import { collection, getDocs, doc, Timestamp } from 'firebase/firestore'; // Removed updateDoc, setDoc, deleteDoc as they are in actions
+import { collection, getDocs, doc, Timestamp } from 'firebase/firestore'; 
 import type { UserProfile, AdminRoleDoc, UserRole, AccountStatus, UserProfileWithRole } from '@/types';
 import { useAuth } from '@/contexts/AuthContext'; 
 
@@ -13,11 +13,14 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { useToast } from '@/hooks/use-toast';
-import { MoreHorizontal, UserCog, UserCheck, UserX, ShieldCheck, ShieldOff, Trash2, Loader2 } from 'lucide-react'; 
+import { MoreHorizontal, UserCog, UserCheck, UserX, ShieldCheck, ShieldOff, Trash2, Loader2, Mail } from 'lucide-react'; 
 import { Input } from '@/components/ui/input';
+import { Textarea } from '@/components/ui/textarea';
+import { Label } from '@/components/ui/label';
 import { Skeleton } from '@/components/ui/skeleton';
-import { adminDeleteUserAndReleaseWordsAction, adminUpdateUserRoleAction, adminUpdateUserStatusAction } from './actions';
+import { adminDeleteUserAndReleaseWordsAction, adminUpdateUserRoleAction, adminUpdateUserStatusAction, adminSendEmailToUserAction } from './actions';
 
 
 export default function UserManagementPage() {
@@ -33,6 +36,12 @@ export default function UserManagementPage() {
   const [newStatus, setNewStatus] = useState<AccountStatus | null>(null);
   const [isAlertDialogOpen, setIsAlertDialogOpen] = useState(false);
   const [isProcessingAction, setIsProcessingAction] = useState(false); 
+
+  const [isSendEmailDialogOpen, setIsSendEmailDialogOpen] = useState(false);
+  const [emailSubject, setEmailSubject] = useState('');
+  const [emailMessage, setEmailMessage] = useState('');
+  const [isSendingEmail, setIsSendingEmail] = useState(false);
+
 
   const [hasMounted, setHasMounted] = useState(false);
 
@@ -82,6 +91,13 @@ export default function UserManagementPage() {
     setIsAlertDialogOpen(true);
   };
 
+  const openSendEmailDialog = (user: UserProfileWithRole) => {
+    setSelectedUser(user);
+    setEmailSubject(`Message from LexiVerse Admin`);
+    setEmailMessage('');
+    setIsSendEmailDialogOpen(true);
+  };
+
   const handleConfirmAction = async () => {
     if (!selectedUser || !actionType || !actingAdmin) return;
     setIsProcessingAction(true);
@@ -110,7 +126,7 @@ export default function UserManagementPage() {
       } else if (actionType === 'deleteUser') {
         result = await adminDeleteUserAndReleaseWordsAction({ 
           actingAdminId: actingAdmin.uid, 
-          targetUserId: selectedUser.uid, // Corrected parameter name
+          targetUserId: selectedUser.uid, 
           targetUsername: selectedUser.username 
         });
         if (result.success) toast({ title: "User Deleted", description: `${selectedUser.username} has been deleted and their words released.` });
@@ -133,6 +149,34 @@ export default function UserManagementPage() {
     }
   };
   
+  const handleSendEmail = async () => {
+    if (!selectedUser || !actingAdmin || !emailSubject.trim() || !emailMessage.trim()) {
+      toast({ title: "Missing Information", description: "Please provide a subject and message.", variant: "destructive" });
+      return;
+    }
+    setIsSendingEmail(true);
+    try {
+      const result = await adminSendEmailToUserAction({
+        actingAdminId: actingAdmin.uid,
+        targetUserId: selectedUser.uid,
+        targetUsername: selectedUser.username,
+        subject: emailSubject,
+        messageBody: emailMessage,
+      });
+      if (result.success) {
+        toast({ title: "Email Sent", description: `Email successfully sent to ${selectedUser.username}.` });
+        setIsSendEmailDialogOpen(false);
+      } else {
+        throw new Error(result.error || "Failed to send email.");
+      }
+    } catch (error: any) {
+      toast({ title: "Error Sending Email", description: error.message, variant: "destructive" });
+    } finally {
+      setIsSendingEmail(false);
+    }
+  };
+
+
   const getRoleBadge = (role: UserRole) => {
     switch (role) {
       case 'admin': return <Badge variant="destructive" className="items-center gap-1"><ShieldCheck className="h-3 w-3"/>Admin</Badge>;
@@ -226,19 +270,22 @@ export default function UserManagementPage() {
                     <TableCell>
                       {user.dateCreated instanceof Timestamp
                         ? user.dateCreated.toDate().toLocaleDateString()
-                        : (user.dateCreated as any)?.seconds // Use 'as any' to bypass 'never' type for .seconds access
+                        : (user.dateCreated as any)?.seconds 
                         ? new Date((user.dateCreated as any).seconds * 1000).toLocaleDateString()
                         : 'N/A'}
                     </TableCell>
                     <TableCell className="text-right">
                       <DropdownMenu>
                         <DropdownMenuTrigger asChild>
-                          <Button variant="ghost" size="icon" disabled={isProcessingAction && selectedUser?.uid === user.uid}>
-                            {isProcessingAction && selectedUser?.uid === user.uid ? <Loader2 className="h-4 w-4 animate-spin" /> : <MoreHorizontal className="h-4 w-4" />}
+                          <Button variant="ghost" size="icon" disabled={isProcessingAction && selectedUser?.uid === user.uid || isSendingEmail && selectedUser?.uid === user.uid}>
+                            {(isProcessingAction || isSendingEmail) && selectedUser?.uid === user.uid ? <Loader2 className="h-4 w-4 animate-spin" /> : <MoreHorizontal className="h-4 w-4" />}
                           </Button>
                         </DropdownMenuTrigger>
                         <DropdownMenuContent align="end">
                           <DropdownMenuLabel>Actions for {user.username}</DropdownMenuLabel>
+                          <DropdownMenuItem onClick={() => openSendEmailDialog(user)} disabled={selectedUser?.uid === user.uid && (isProcessingAction || isSendingEmail)}>
+                            <Mail className="mr-2 h-4 w-4" /> Send Email
+                          </DropdownMenuItem>
                           <DropdownMenuSeparator />
                           <DropdownMenuLabel>Set Role</DropdownMenuLabel>
                           <DropdownMenuItem onClick={() => openConfirmationDialog(user, 'changeRole', 'admin')} disabled={user.role === 'admin' || user.uid === actingAdmin?.uid || (selectedUser?.uid === user.uid && isProcessingAction)}>
@@ -307,8 +354,56 @@ export default function UserManagementPage() {
           </AlertDialogContent>
         </AlertDialog>
       )}
+
+      {selectedUser && (
+        <Dialog open={isSendEmailDialogOpen} onOpenChange={(open) => { if(!isSendingEmail) setIsSendEmailDialogOpen(open); }}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Send Email to {selectedUser.username}</DialogTitle>
+              <DialogDescription>
+                Compose and send an email to {selectedUser.email}.
+              </DialogDescription>
+            </DialogHeader>
+            <div className="grid gap-4 py-4">
+              <div className="grid grid-cols-4 items-center gap-4">
+                <Label htmlFor="emailSubject" className="text-right">
+                  Subject
+                </Label>
+                <Input
+                  id="emailSubject"
+                  value={emailSubject}
+                  onChange={(e) => setEmailSubject(e.target.value)}
+                  className="col-span-3"
+                  disabled={isSendingEmail}
+                />
+              </div>
+              <div className="grid grid-cols-4 items-start gap-4">
+                <Label htmlFor="emailMessage" className="text-right pt-2">
+                  Message
+                </Label>
+                <Textarea
+                  id="emailMessage"
+                  value={emailMessage}
+                  onChange={(e) => setEmailMessage(e.target.value)}
+                  className="col-span-3 min-h-[120px]"
+                  placeholder="Type your message here..."
+                  disabled={isSendingEmail}
+                />
+              </div>
+            </div>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setIsSendEmailDialogOpen(false)} disabled={isSendingEmail}>Cancel</Button>
+              <Button onClick={handleSendEmail} disabled={isSendingEmail || !emailSubject.trim() || !emailMessage.trim()}>
+                {isSendingEmail ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Mail className="mr-2 h-4 w-4" />}
+                Send Email
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+      )}
+
        <p className="text-xs text-muted-foreground text-center">
-            User role, status changes, and deletions are made directly to Firestore. Deleting a user also releases their owned words and removes them from circles.
+            User role, status changes, and deletions are made directly to Firestore. Deleting a user also releases their owned words and removes them from circles. Emails are sent via Trigger Email extension.
         </p>
     </div>
   );

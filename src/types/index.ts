@@ -289,6 +289,7 @@ export type AdminActionType =
   | 'USER_ROLE_CHANGE'
   | 'USER_STATUS_CHANGE'
   | 'USER_DELETE'
+  | 'USER_EMAIL_SEND' // New action type for sending email
   // Puzzle Management
   | 'PUZZLE_CREATE'
   | 'PUZZLE_UPDATE'
@@ -309,7 +310,7 @@ export type AdminActionType =
   | 'INVITE_STATUS_UPDATE_ADMIN'
   | 'INVITE_REMINDER_SEND_ADMIN'
   // System Configuration
-  | 'SYSTEM_DAILY_RESET_TRIGGER' // New action type for daily reset
+  | 'SYSTEM_DAILY_RESET_TRIGGER'
   // Suggestion Management
   | 'SUGGESTION_ACTIONED'
   | 'SUGGESTION_ARCHIVED_NO_ACTION'
