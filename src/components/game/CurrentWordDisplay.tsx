@@ -1,3 +1,4 @@
+
 'use client';
 
 interface CurrentWordDisplayProps {
@@ -8,9 +9,9 @@ interface CurrentWordDisplayProps {
 export function CurrentWordDisplay({ word, isInvalid = false }: CurrentWordDisplayProps) {
   const displayWord = word || "Type a word...";
   return (
-    <div className="my-6 h-16 flex items-center justify-center bg-card p-3 rounded-md shadow-inner text-center">
+    <div className="my-4 sm:my-5 md:my-6 h-12 sm:h-14 md:h-16 flex items-center justify-center bg-card p-2 sm:p-3 rounded-md shadow-inner text-center">
       <p 
-        className={`font-headline text-3xl tracking-wider ${
+        className={`font-headline tracking-wider text-2xl sm:text-3xl ${
           isInvalid ? 'text-destructive animate-pulse-once' : 'text-foreground'
         } ${!word ? 'text-muted-foreground' : ''}`}
       >

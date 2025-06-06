@@ -628,7 +628,7 @@ export default function HomePage() {
         isWotDClaim: isWotDClaim, 
     };
     try {
-        await addDoc(collection(firestore, WORD_SUBMISSIONS_QUEUE), { ...newSubmission, submittedTimestamp: serverTimestamp() });
+        await addDoc(collection(firestore, WORD_SUBMISSIONS_QUEUE), { ...newSubmission, submittedTimestamp: serverTimestamp() as Timestamp });
         // Do not toast "Word Submitted!" here if it's a fallback, the specific fallback toast is already shown.
         // Only toast if it's a direct submission from a successful check.
         if (definition && !definition.startsWith("Wiktionary check failed")) {
@@ -712,7 +712,7 @@ export default function HomePage() {
   }
   
   return (
-    <div className="flex flex-col items-center justify-center p-4 pt-8 md:p-8 md:pt-12">
+    <div className="flex flex-col items-center justify-center p-2 pt-4 sm:p-4 sm:pt-8 md:p-6 md:pt-10 lg:p-8 lg:pt-12">
       <WelcomeInstructionsDialog
         isOpen={showWelcomeInstructionsModal}
         onOpenChange={setShowWelcomeInstructionsModal}

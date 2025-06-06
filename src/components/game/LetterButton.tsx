@@ -1,3 +1,4 @@
+
 'use client';
 
 import type { SeedingLetter } from '@/types';
@@ -15,9 +16,12 @@ export function LetterButton({ letter, onClick, disabled, isSelected }: LetterBu
   return (
     <Button
       variant="outline"
-      size="lg"
+      size="lg" // Base size prop, actual dimensions controlled by className
       className={cn(
-        'font-headline text-2xl md:text-3xl w-16 h-16 md:w-20 md:h-20 transition-all duration-150 ease-in-out',
+        'font-headline transition-all duration-150 ease-in-out',
+        'w-14 h-14 text-xl', // Base size for extra small screens
+        'sm:w-16 sm:h-16 sm:text-2xl', // Small screens and up
+        'md:w-20 md:h-20 md:text-3xl', // Medium screens and up
         isSelected ? 'bg-primary text-primary-foreground scale-90' : 'bg-card hover:bg-accent hover:text-accent-foreground',
         disabled && !isSelected ? 'opacity-50 cursor-not-allowed' : ''
       )}
