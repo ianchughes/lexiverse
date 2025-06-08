@@ -103,15 +103,15 @@ export function GameScreen({
       <div className="w-full max-w-2xl mx-auto">
         <div className="flex flex-col sm:flex-row justify-between items-center gap-2 mb-4 w-full">
           <div className="sm:w-1/3 text-center sm:text-left order-1 sm:order-1">
-            <Badge variant="outline" className="text-lg px-3 py-1">Score: {sessionScore}</Badge>
+            <Badge variant="outline" className="text-base px-2 py-0.5 sm:text-lg sm:px-3 sm:py-1">Score: {sessionScore}</Badge>
           </div>
           <div className="sm:w-1/3 flex justify-center order-2 sm:order-2">
             <GameTimer timeLeft={timeLeft} />
           </div>
-          <div className="sm:w-1/3 text-center sm:text-right min-h-[38px] flex justify-center sm:justify-end items-center order-3 sm:order-3">
+          <div className="sm:w-1/3 text-center sm:text-right min-h-[30px] sm:min-h-[38px] flex justify-center sm:justify-end items-center order-3 sm:order-3">
             {wotdFound && (
-              <Badge variant="default" className="bg-accent text-accent-foreground py-2 px-3 text-sm">
-                <Check className="h-5 w-5 mr-1" /> WotD Found!
+              <Badge variant="default" className="bg-accent text-accent-foreground text-xs py-1 px-2 sm:text-sm sm:py-2 sm:px-3">
+                <Check className="h-4 w-4 sm:h-5 sm:w-5 mr-1" /> WotD Found!
               </Badge>
             )}
           </div>

@@ -1,3 +1,4 @@
+
 'use client';
 
 import { Button } from '@/components/ui/button';
@@ -28,7 +29,7 @@ export function WordEntryControls({
         onClick={onBackspace}
         disabled={!canClearOrBackspace || isSubmitting}
         aria-label="Backspace"
-        className="px-4 md:px-6"
+        className="px-3 sm:px-4 md:px-6"
       >
         <Delete className="h-5 w-5 md:mr-2" />
         <span className="hidden md:inline">Backspace</span>
@@ -39,7 +40,7 @@ export function WordEntryControls({
         onClick={onClear}
         disabled={!canClearOrBackspace || isSubmitting}
         aria-label="Clear word"
-        className="px-4 md:px-6"
+        className="px-3 sm:px-4 md:px-6"
       >
         <RotateCcw className="h-5 w-5 md:mr-2" />
         <span className="hidden md:inline">Clear</span>
@@ -49,7 +50,7 @@ export function WordEntryControls({
         onClick={onSubmit}
         disabled={!canSubmit || isSubmitting}
         aria-label="Submit word"
-        className="px-4 md:px-6 bg-primary hover:bg-primary/90 text-primary-foreground"
+        className="px-3 sm:px-4 md:px-6 bg-primary hover:bg-primary/90 text-primary-foreground"
       >
         <Zap className="h-5 w-5 md:mr-2" />
         <span className="hidden md:inline">Submit</span>

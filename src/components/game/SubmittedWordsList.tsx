@@ -13,7 +13,7 @@ interface SubmittedWordsListProps {
 export function SubmittedWordsList({ words }: SubmittedWordsListProps) {
   if (words.length === 0) {
     return (
-      <div className="text-center text-muted-foreground p-4">
+      <div className="text-center text-muted-foreground p-2 sm:p-4">
         No words found yet. Start typing!
       </div>
     );
