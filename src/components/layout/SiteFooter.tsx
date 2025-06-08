@@ -6,7 +6,7 @@ export function SiteFooter() {
     <footer className="py-6 md:px-8 md:py-0 border-t border-border/40">
       <div className="container flex flex-col items-center justify-center gap-4 md:h-20 md:flex-row md:justify-between">
         <p className="text-balance text-center text-sm leading-loose text-muted-foreground md:text-left">
-          © {new Date().getFullYear()} LexiVerse. All rights reserved. - Build 0.1
+          © {new Date().getFullYear()} LexiVerse. All rights reserved. - Build 0.2
         </p>
         <nav className="flex gap-4 items-center text-sm text-muted-foreground">
           <Link href="/changelog" className="hover:text-primary transition-colors">
