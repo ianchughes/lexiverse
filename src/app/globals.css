@@ -20,7 +20,7 @@
     --secondary-foreground: 217 30% 25%;
 
     --muted: 210 60% 90%; /* Muted tones */
-    --muted-foreground: 215 25% 45%;
+    --muted-foreground: 215 25% 35%; /* Adjusted for better contrast (was 215 25% 45%) */
 
     --accent: 231 48% 77%; /* Violet #9FA8DA */
     --accent-foreground: 231 25% 25%; /* Darker color for text on accent */

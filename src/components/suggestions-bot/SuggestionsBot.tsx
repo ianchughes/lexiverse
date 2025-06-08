@@ -118,7 +118,7 @@ export function SuggestionsBot() {
               <Lightbulb className="h-6 w-6 text-primary" />
               <CardTitle className="text-lg font-semibold">Suggestions Bot</CardTitle>
             </div>
-            <Button variant="ghost" size="icon" onClick={toggleBot} className="h-7 w-7">
+            <Button variant="ghost" size="icon" onClick={toggleBot} className="h-10 w-10"> {/* Ensured button meets 40x40 from size="icon" */}
                 <X className="h-4 w-4" />
             </Button>
           </CardHeader>
