@@ -40,7 +40,7 @@ export default function AdminLayout({
           <AdminNavItems />
         </SidebarContent>
         <SidebarFooter className="p-2 group-data-[collapsible=icon]:hidden">
-          <p className="text-xs text-muted-foreground">LexiVerse Admin v1.0</p>
+          <p className="text-xs text-muted-foreground">LexiVerse Admin v1.1</p>
         </SidebarFooter>
       </Sidebar>
       
@@ -57,7 +57,7 @@ export default function AdminLayout({
           <AdminNavItems />
         </SidebarContent>
          <SidebarFooter className="p-2">
-          <p className="text-xs text-muted-foreground">LexiVerse Admin v1.0</p>
+          <p className="text-xs text-muted-foreground">LexiVerse Admin v1.1</p>
         </SidebarFooter>
       </Sidebar>
 
