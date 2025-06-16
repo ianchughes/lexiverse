@@ -92,11 +92,17 @@ export interface MasterWordType {
   frequency: number;
   status: 'Approved' | 'SystemInitial';
   addedByUID: string;
-  dateAdded: Timestamp;
+  dateAdded: Timestamp; // Firestore Timestamp
   originalSubmitterUID?: string | null; // Can be null if disassociated
   puzzleDateGMTOfSubmission?: string | null; // Can be null if disassociated
   pendingTransferId?: string | null; // ID of an active WordTransfer document
 }
+
+// Client-side version of MasterWordType with serialized Timestamps
+export interface ClientMasterWordType extends Omit<MasterWordType, 'dateAdded'> {
+  dateAdded: string; // ISO date string
+}
+
 
 export type RejectionType = 'Gibberish' | 'AdminDecision';
 

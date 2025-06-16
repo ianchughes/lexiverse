@@ -6,7 +6,7 @@ import type { User as FirebaseUser } from 'firebase/auth';
 import { firestore } from '@/lib/firebase';
 import { doc, getDoc, collection, getDocs, query, where, Timestamp } from 'firebase/firestore';
 import { format } from 'date-fns';
-import type { SeedingLetter, MasterWordType, RejectedWordType, DailyPuzzle, SystemSettings, CircleInvite, UserProfile } from '@/types';
+import type { SeedingLetter, MasterWordType, RejectedWordType, DailyPuzzle, SystemSettings, CircleInvite, UserProfile, ClientMasterWordType } from '@/types';
 import { useToast } from '@/hooks/use-toast';
 import { calculateWordScore } from '@/lib/scoring';
 
@@ -29,7 +29,7 @@ interface GameData {
   actualWordOfTheDayText: string | null;
   actualWordOfTheDayDefinition: string | null;
   actualWordOfTheDayPoints: number | null;
-  approvedWords: Map<string, MasterWordType>;
+  approvedWords: Map<string, ClientMasterWordType>; // Changed to ClientMasterWordType
   rejectedWords: Map<string, RejectedWordType>;
   hasPlayedToday: boolean;
   initialDebriefData: {
@@ -41,7 +41,7 @@ interface GameData {
   } | null;
   currentPuzzleDate: string;
   pendingInvitesCount: number;
-  refreshApprovedWords: () => Promise<void>; // Function to manually refresh approved words
+  refreshApprovedWords: () => Promise<void>; 
 }
 
 export function useGameData(currentUser: FirebaseUser | null, userProfile: UserProfile | null): GameData {
@@ -50,7 +50,7 @@ export function useGameData(currentUser: FirebaseUser | null, userProfile: UserP
   const [actualWordOfTheDayText, setActualWordOfTheDayText] = useState<string | null>(null);
   const [actualWordOfTheDayDefinition, setActualWordOfTheDayDefinition] = useState<string | null>(null);
   const [actualWordOfTheDayPoints, setActualWordOfTheDayPoints] = useState<number | null>(null);
-  const [approvedWords, setApprovedWords] = useState<Map<string, MasterWordType>>(new Map());
+  const [approvedWords, setApprovedWords] = useState<Map<string, ClientMasterWordType>>(new Map()); // Changed
   const [rejectedWords, setRejectedWords] = useState<Map<string, RejectedWordType>>(new Map());
   const [hasPlayedTodayState, setHasPlayedTodayState] = useState(false);
   const [initialDebriefData, setInitialDebriefData] = useState<{
@@ -100,9 +100,14 @@ export function useGameData(currentUser: FirebaseUser | null, userProfile: UserP
   const fetchWordDictionaries = useCallback(async () => {
     try {
       const approvedWordsSnap = await getDocs(collection(firestore, MASTER_WORDS_COLLECTION));
-      const newApprovedMap = new Map<string, MasterWordType>();
+      const newApprovedMap = new Map<string, ClientMasterWordType>(); // Changed
       approvedWordsSnap.forEach(docSnap => {
-        newApprovedMap.set(docSnap.id, { wordText: docSnap.id, ...docSnap.data() } as MasterWordType);
+        const data = docSnap.data() as MasterWordType; // Fetch as Firestore type
+        newApprovedMap.set(docSnap.id, { // Convert to Client type
+          ...data,
+          wordText: docSnap.id, // Ensure wordText is set from ID
+          dateAdded: (data.dateAdded as Timestamp).toDate().toISOString(),
+        });
       });
       setApprovedWords(newApprovedMap);
 
@@ -121,9 +126,14 @@ export function useGameData(currentUser: FirebaseUser | null, userProfile: UserP
   const refreshApprovedWords = useCallback(async () => {
     try {
       const approvedWordsSnap = await getDocs(collection(firestore, MASTER_WORDS_COLLECTION));
-      const newApprovedMap = new Map<string, MasterWordType>();
+      const newApprovedMap = new Map<string, ClientMasterWordType>(); // Changed
       approvedWordsSnap.forEach(docSnap => {
-        newApprovedMap.set(docSnap.id, { wordText: docSnap.id, ...docSnap.data() } as MasterWordType);
+        const data = docSnap.data() as MasterWordType; // Fetch as Firestore type
+        newApprovedMap.set(docSnap.id, { // Convert to Client type
+          ...data,
+          wordText: docSnap.id,
+          dateAdded: (data.dateAdded as Timestamp).toDate().toISOString(),
+        });
       });
       setApprovedWords(newApprovedMap);
     } catch (error) {

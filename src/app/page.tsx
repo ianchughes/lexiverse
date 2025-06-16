@@ -6,7 +6,7 @@ import { Button } from '@/components/ui/button';
 import { DailyDebriefDialog } from '@/components/game/DailyDebriefDialog';
 import { ShareMomentDialog } from '@/components/game/ShareMomentDialog';
 import { WelcomeInstructionsDialog } from '@/components/game/WelcomeInstructionsDialog';
-import type { SeedingLetter, SubmittedWord, GameState, UserProfile, MasterWordType } from '@/types';
+import type { SeedingLetter, SubmittedWord, GameState, UserProfile, ClientMasterWordType } from '@/types'; // Import ClientMasterWordType
 import { useToast } from '@/hooks/use-toast';
 import { Loader2 } from 'lucide-react';
 import { firestore } from '@/lib/firebase';
@@ -17,8 +17,8 @@ import { useSearchParams } from 'next/navigation';
 
 import { LoggedOutLandingPage } from '@/components/landing/LoggedOutLandingPage';
 import { GameScreen } from '@/components/game/GameScreen';
-import { useGameData } from '@/hooks/useGameData'; // New hook
-import { processWordSubmission, type ProcessedWordResult } from '@/services/wordProcessingService'; // New service
+import { useGameData } from '@/hooks/useGameData'; 
+import { processWordSubmission, type ProcessedWordResult } from '@/services/wordProcessingService'; 
 
 const DAILY_GAME_DURATION = 90;
 const MIN_WORD_LENGTH = 4;
@@ -50,8 +50,7 @@ export default function HomePage() {
   const [showWelcomeInstructionsModal, setShowWelcomeInstructionsModal] = useState(false);
   const [newlyOwnedWordsThisSession, setNewlyOwnedWordsThisSession] = useState<string[]>([]);
   
-  // Local cache of approved words, initialized by useGameData, updated by word processing
-  const [sessionApprovedWords, setSessionApprovedWords] = useState<Map<string, MasterWordType>>(new Map());
+  const [sessionApprovedWords, setSessionApprovedWords] = useState<Map<string, ClientMasterWordType>>(new Map()); // Changed to ClientMasterWordType
 
   const { toast } = useToast();
 
@@ -119,7 +118,7 @@ export default function HomePage() {
 
   const handleCloseWelcomeInstructions = async () => {
     setShowWelcomeInstructionsModal(false);
-    if (currentUser && setUserProfile && userProfile) { // check userProfile too
+    if (currentUser && setUserProfile && userProfile) { 
       try {
         const userDocRef = doc(firestore, "Users", currentUser.uid);
         await updateDoc(userDocRef, { hasSeenWelcomeInstructions: true });
@@ -183,7 +182,7 @@ export default function HomePage() {
             puzzleDateGMT: gameData.currentPuzzleDate,
             finalDailyScore: roundedFinalScore,
         });
-        // Manually update local userProfile state for immediate UI reflection of score
+        
         if (setUserProfile) {
           setUserProfile(prev => prev ? ({
             ...prev,
@@ -253,13 +252,12 @@ export default function HomePage() {
           setNewlyOwnedWordsThisSession(prev => [...prev, result.newlyOwnedWordText!]);
         }
         if (result.updatedMasterWordEntry) {
-          // Optimistically update local approved words map
           setSessionApprovedWords(prevMap => new Map(prevMap).set(result.updatedMasterWordEntry!.wordText, result.updatedMasterWordEntry!));
         }
       } else if (result.status.includes('rejected')) {
         triggerInvalidWordFlash();
         if (result.status === 'rejected_gibberish') {
-            setSessionScore(prev => prev + result.pointsAwarded); // pointsAwarded will be negative
+            setSessionScore(prev => prev + result.pointsAwarded); 
         }
       }
     } catch (error: any) {
@@ -336,7 +334,7 @@ export default function HomePage() {
         }}
         userProfile={userProfile} 
         circleId={userProfile?.activeCircleId} 
-        circleName={userProfile?.activeCircleId ? "Your Circle" : undefined} // Placeholder, fetch actual name if needed
+        circleName={userProfile?.activeCircleId ? "Your Circle" : undefined} 
         newlyOwnedWords={newlyOwnedWordsForDebrief} 
       />
       
@@ -348,7 +346,7 @@ export default function HomePage() {
           guessedWotD: guessedWotDForDebrief,
           wordsFoundCount: wordsFoundCountForDebrief,
           date: shareableGameDate, 
-          circleName: userProfile?.activeCircleId ? "Your Circle" : undefined, // Placeholder
+          circleName: userProfile?.activeCircleId ? "Your Circle" : undefined, 
           newlyClaimedWordsCount: newlyOwnedWordsForDebrief.length,
         }}
       />

@@ -4,7 +4,7 @@
 import { firestore } from '@/lib/firebase';
 import { collection, addDoc, serverTimestamp, doc, getDoc, updateDoc, increment, Timestamp, writeBatch, query, where, setDoc, getDocs } from 'firebase/firestore';
 import type { User as FirebaseUser } from 'firebase/auth'; // Assuming you pass the full FirebaseUser object or relevant parts
-import type { UserProfile, MasterWordType, RejectedWordType, WordSubmission } from '@/types';
+import type { UserProfile, MasterWordType, RejectedWordType, WordSubmission, ClientMasterWordType } from '@/types';
 import { calculateWordScore } from '@/lib/scoring';
 import { checkWiktionary } from '@/ai/flows/check-wiktionary-flow';
 
@@ -21,8 +21,6 @@ export interface ProcessWordSubmissionParams {
   actualWordOfTheDayText: string | null;
   actualWordOfTheDayDefinition: string | null;
   actualWordOfTheDayPoints: number | null;
-  // Approved/rejected words will be fetched by the service if needed to ensure freshness
-  // and avoid passing large maps that might be stale.
 }
 
 export interface ProcessedWordResult {
@@ -32,8 +30,17 @@ export interface ProcessedWordResult {
   isWotD: boolean;
   isNewlyOwned: boolean;
   newlyOwnedWordText?: string;
-  updatedMasterWordEntry?: MasterWordType; // If a word was claimed/updated to help client update its state
+  updatedMasterWordEntry?: ClientMasterWordType; // Use ClientMasterWordType
 }
+
+// Helper to convert Firestore MasterWordType to ClientMasterWordType
+const toClientMasterWord = (firestoreWord: MasterWordType): ClientMasterWordType => {
+  return {
+    ...firestoreWord,
+    dateAdded: (firestoreWord.dateAdded as Timestamp).toDate().toISOString(),
+  };
+};
+
 
 async function saveWordToSubmissionQueueInternal(
     wordText: string, 
@@ -95,34 +102,39 @@ export async function processWordSubmission(
     const wordSnap = await getDoc(wordDocRef);
     let wotdSessionPoints = 0;
     let newlyClaimedWotD = false;
-    let updatedMasterWordEntry: MasterWordType | undefined = undefined;
+    let clientSafeUpdatedMasterWordEntry: ClientMasterWordType | undefined = undefined;
 
     if (wordSnap.exists()) { // WotD is an existing approved word
       const masterWordData = wordSnap.data() as MasterWordType;
       wotdSessionPoints = calculateWordScore(wordText, masterWordData.frequency);
-      updatedMasterWordEntry = { ...masterWordData, wordText };
-
+      
+      let updatedFirestoreData = { ...masterWordData };
       if (!masterWordData.originalSubmitterUID) {
+        updatedFirestoreData = {
+            ...masterWordData,
+            originalSubmitterUID: currentUserId,
+            puzzleDateGMTOfSubmission: currentPuzzleDate,
+        };
         await updateDoc(wordDocRef, {
           originalSubmitterUID: currentUserId,
           puzzleDateGMTOfSubmission: currentPuzzleDate,
         });
         newlyClaimedWotD = true;
-        updatedMasterWordEntry.originalSubmitterUID = currentUserId;
       } else if (masterWordData.originalSubmitterUID && masterWordData.originalSubmitterUID !== currentUserId) {
         try {
           const claimerProfileRef = doc(firestore, USERS_COLLECTION, masterWordData.originalSubmitterUID);
           await updateDoc(claimerProfileRef, { overallPersistentScore: increment(wotdSessionPoints) });
         } catch (error) { console.error("Error awarding WotD claimer bonus:", error); }
       }
+      clientSafeUpdatedMasterWordEntry = toClientMasterWord(updatedFirestoreData);
     } else { // WotD not in master dictionary (should be rare if puzzles are set up correctly)
       wotdSessionPoints = actualWordOfTheDayPoints || calculateWordScore(wordText, 3);
       const definitionForSubmission = actualWordOfTheDayDefinition || `Definition for Word of the Day: ${wordText}`;
       const frequencyForSubmission = actualWordOfTheDayPoints ? Math.max(1, actualWordOfTheDayPoints / Math.max(4, wordText.length)) : 3;
       await saveWordToSubmissionQueueInternal(wordText, currentUserId, currentPuzzleDate, definitionForSubmission, frequencyForSubmission, true);
-      // This scenario means it's submitted for review, so not "newly owned" in the dictionary yet.
+      // No updatedMasterWordEntry here as it's queued
     }
-    return { status: 'success_wotd', message: `Word of the Day "${wordText}" found! Points: ${wotdSessionPoints} (Bonus at end)`, pointsAwarded: wotdSessionPoints, isWotD: true, isNewlyOwned: newlyClaimedWotD, newlyOwnedWordText: newlyClaimedWotD ? wordText : undefined, updatedMasterWordEntry };
+    return { status: 'success_wotd', message: `Word of the Day "${wordText}" found! Points: ${wotdSessionPoints} (Bonus at end)`, pointsAwarded: wotdSessionPoints, isWotD: true, isNewlyOwned: newlyClaimedWotD, newlyOwnedWordText: newlyClaimedWotD ? wordText : undefined, updatedMasterWordEntry: clientSafeUpdatedMasterWordEntry };
   }
 
   // 2. Check MasterWords Collection
@@ -132,24 +144,31 @@ export async function processWordSubmission(
     const masterWordData = masterWordSnap.data() as MasterWordType;
     const points = calculateWordScore(wordText, masterWordData.frequency);
     let newlyClaimedRegularWord = false;
-    let updatedMasterWordEntry: MasterWordType | undefined = { ...masterWordData, wordText };
+    let updatedFirestoreData = { ...masterWordData };
 
     if (!masterWordData.originalSubmitterUID) {
+      updatedFirestoreData = {
+          ...masterWordData,
+          originalSubmitterUID: currentUserId,
+          puzzleDateGMTOfSubmission: currentPuzzleDate,
+      };
       await updateDoc(masterWordDocRef, {
         originalSubmitterUID: currentUserId,
         puzzleDateGMTOfSubmission: currentPuzzleDate,
       });
       newlyClaimedRegularWord = true;
-      updatedMasterWordEntry.originalSubmitterUID = currentUserId;
-      return { status: 'success_approved', message: `You own "${wordText}"! Points: ${points}`, pointsAwarded: points, isWotD: false, isNewlyOwned: true, newlyOwnedWordText: wordText, updatedMasterWordEntry };
+      const clientEntry = toClientMasterWord(updatedFirestoreData);
+      return { status: 'success_approved', message: `You own "${wordText}"! Points: ${points}`, pointsAwarded: points, isWotD: false, isNewlyOwned: true, newlyOwnedWordText: wordText, updatedMasterWordEntry: clientEntry };
     } else if (masterWordData.originalSubmitterUID === currentUserId) {
-      return { status: 'success_approved', message: `"${wordText}" found! Points: ${points}`, pointsAwarded: points, isWotD: false, isNewlyOwned: false, updatedMasterWordEntry };
+      const clientEntry = toClientMasterWord(masterWordData);
+      return { status: 'success_approved', message: `"${wordText}" found! Points: ${points}`, pointsAwarded: points, isWotD: false, isNewlyOwned: false, updatedMasterWordEntry: clientEntry };
     } else { // Owned by someone else
       try {
         const claimerProfileRef = doc(firestore, USERS_COLLECTION, masterWordData.originalSubmitterUID);
         await updateDoc(claimerProfileRef, { overallPersistentScore: increment(points) });
       } catch (error) { console.error("Error awarding claimer bonus:", error); }
-      return { status: 'success_approved', message: `"${wordText}" found! Points: ${points}. (Owner bonus given)`, pointsAwarded: points, isWotD: false, isNewlyOwned: false, updatedMasterWordEntry };
+      const clientEntry = toClientMasterWord(masterWordData);
+      return { status: 'success_approved', message: `"${wordText}" found! Points: ${points}. (Owner bonus given)`, pointsAwarded: points, isWotD: false, isNewlyOwned: false, updatedMasterWordEntry: clientEntry };
     }
   }
 
@@ -202,13 +221,20 @@ export async function processWordSubmission(
       if (isNaN(frequency) || frequency <= 0) frequency = 3.5;
       
       const points = calculateWordScore(wordText, frequency);
-      const newMasterWordEntry: MasterWordType = {
+      const newMasterWordForFirestore: MasterWordType = { // Type for Firestore
           wordText: wordText, definition, frequency, status: 'Approved',
           addedByUID: currentUserId, dateAdded: serverTimestamp() as Timestamp,
           originalSubmitterUID: currentUserId, puzzleDateGMTOfSubmission: currentPuzzleDate,
       };
-      await setDoc(masterWordDocRef, newMasterWordEntry); // Claim it directly
-      return { status: 'success_approved', message: `You claimed "${wordText}"! Points: ${points}`, pointsAwarded: points, isWotD: false, isNewlyOwned: true, newlyOwnedWordText: wordText, updatedMasterWordEntry: newMasterWordEntry };
+      await setDoc(masterWordDocRef, newMasterWordForFirestore);
+      
+      // For the client, we can't immediately resolve serverTimestamp, so we use current client time for optimistic update
+      // Or better, fetch the doc again, but for simplicity for now:
+      const clientEntry: ClientMasterWordType = {
+        ...newMasterWordForFirestore,
+        dateAdded: new Date().toISOString(), // Client-side timestamp for immediate UI
+      };
+      return { status: 'success_approved', message: `You claimed "${wordText}"! Points: ${points}`, pointsAwarded: points, isWotD: false, isNewlyOwned: true, newlyOwnedWordText: wordText, updatedMasterWordEntry: clientEntry };
     
     } else if (response.status === 404) { // Word not found in WordsAPI, try Wiktionary
       const wiktionaryResult = await checkWiktionary({ word: wordText });
@@ -225,4 +251,5 @@ export async function processWordSubmission(
      return { status: 'error_unknown', message: `${error.message || `Could not verify "${wordText}"`}.`, pointsAwarded: 0, isWotD: false, isNewlyOwned: false };
   }
 }
+
 
