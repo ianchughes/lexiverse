@@ -1,0 +1,145 @@
+
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Helper function to check if a user is an admin or moderator
+    function isStaff() {
+      return request.auth != null && get(/databases/$(database)/documents/admin_users/$(request.auth.uid)).data.role in ['admin', 'moderator'];
+    }
+
+    // Helper function to check if a user is just an admin
+    function isAdmin() {
+      return request.auth != null && get(/databases/$(database)/documents/admin_users/$(request.auth.uid)).data.role == 'admin';
+    }
+
+    // Helper function to check if a user is a member of a circle
+    function isCircleMember(circleId) {
+      // Assumes memberId is structured as "circleId_userId"
+      return request.auth != null && exists(/databases/$(database)/documents/CircleMembers/$(circleId)_$(request.auth.uid));
+    }
+    
+    // Helper function to check if a user is an admin of a circle
+    function isCircleAdmin(circleId) {
+      let memberDocPath = /databases/$(database)/documents/CircleMembers/$(circleId)_$(request.auth.uid);
+      return request.auth != null && exists(memberDocPath) && get(memberDocPath).data.role == 'Admin';
+    }
+
+    // --- Collection Rules ---
+
+    // Users can create their own profile, update certain fields, and read public profiles.
+    match /Users/{userId} {
+      allow read: if request.auth != null;
+      allow create: if request.auth.uid == userId;
+      // Users can update their own profile. Admins can also update fields like accountStatus.
+      allow update: if request.auth.uid == userId || isAdmin();
+      // Only admins can delete users.
+      allow delete: if isAdmin();
+    }
+
+    // Only admins can manage roles.
+    match /admin_users/{userId} {
+      allow read, write, delete: if isAdmin();
+    }
+    
+    // Dictionaries are readable by any authenticated user, but only staff can modify them.
+    match /Words/{wordId} {
+      allow read: if request.auth != null;
+      allow write: if isStaff();
+    }
+    match /RejectedWords/{wordId} {
+      allow read: if request.auth != null;
+      allow write: if isStaff();
+    }
+
+    // Users can submit words to the queue for themselves. Staff manages the queue.
+    match /WordSubmissionsQueue/{submissionId} {
+      allow create: if request.auth.uid == request.resource.data.submittedByUID;
+      allow read, update, delete: if isStaff();
+    }
+    
+    // Puzzles are readable by authenticated users, writable only by staff.
+    match /DailyPuzzles/{puzzleId} {
+      allow read: if request.auth != null;
+      allow write, delete: if isStaff();
+    }
+    
+    // Circles can be created by any user, read by any user, but only updated/deleted by a circle admin or system admin.
+    match /Circles/{circleId} {
+      allow read: if request.auth != null;
+      allow create: if request.auth.uid == request.resource.data.creatorUserID;
+      allow update: if isCircleAdmin(circleId) || isAdmin();
+      allow delete: if isCircleAdmin(circleId) || isAdmin();
+    }
+    
+    // Users can join circles (create membership), and leave (delete their own membership). Circle admins can manage members.
+    match /CircleMembers/{memberId} {
+      allow read: if request.auth != null;
+      // Allow creation if user is adding themselves (e.g., joining with code)
+      allow create: if request.auth.uid == request.resource.data.userId;
+      // Allow role updates only by circle admin
+      allow update: if isCircleAdmin(resource.data.circleId);
+      // User can leave, or a circle admin can remove them
+      allow delete: if request.auth.uid == resource.data.userId || isCircleAdmin(resource.data.circleId);
+    }
+    
+    // Circle invite logic
+    match /CircleInvites/{inviteId} {
+      allow read: if request.auth != null; // Simplified, client logic should hide irrelevant invites
+      allow create: if isCircleAdmin(request.resource.data.circleId) || isStaff();
+      // Invitee can update (accept/decline), or circle admin can update status (e.g., to expire)
+      allow update: if request.auth.uid == resource.data.inviteeUserId || isCircleAdmin(resource.data.circleId);
+      // Inviter or circle admin can delete a pending invite
+      allow delete: if isCircleAdmin(resource.data.circleId) || request.auth.uid == resource.data.inviterUserId;
+    }
+    
+    // Circle scores can be updated by any authenticated user (via a trusted server action that increments).
+    match /CircleDailyScores/{scoreId} {
+        allow read: if request.auth != null;
+        allow write: if request.auth != null;
+    }
+    
+    // Word transfer requests
+    match /WordTransfers/{transferId} {
+      allow read: if request.auth != null && (request.auth.uid == resource.data.senderUserId || request.auth.uid == resource.data.recipientUserId);
+      allow create: if request.auth != null && request.auth.uid == request.resource.data.senderUserId;
+      allow update: if request.auth != null && request.auth.uid == resource.data.recipientUserId;
+    }
+    
+    // Notifications can only be accessed/modified by the recipient user.
+    match /Notifications/{notificationId} {
+        allow read, update: if request.auth.uid == resource.data.userId;
+        // Creation is handled by trusted server actions
+        allow create: if request.auth != null;
+    }
+    
+    // User suggestions can be created by any user, but only managed by staff.
+    match /UserSuggestions/{suggestionId} {
+        allow create: if request.auth != null;
+        allow read, update: if isStaff();
+    }
+    
+    // Changelog is public-read, but admin-write.
+    match /ChangelogEntries/{entryId} {
+        allow read: if true;
+        allow write: if isAdmin();
+    }
+    
+    // System Configuration is admin-only.
+    match /SystemConfiguration/{docId} {
+      allow read, write: if isAdmin();
+    }
+
+    // Admin audit logs are staff read/create.
+    match /AdminAuditLogs/{logId} {
+      allow read, create: if isStaff();
+    }
+    
+    // Mail collection is write-only for the application to trigger emails via the extension. No reading allowed.
+    match /mail/{docId} {
+      allow read: if false;
+      allow write: if request.auth != null;
+    }
+  }
+}
