@@ -6,13 +6,11 @@ import type { User as FirebaseUser } from 'firebase/auth';
 import { firestore } from '@/lib/firebase';
 import { doc, getDoc, collection, getDocs, query, where, Timestamp } from 'firebase/firestore';
 import { format } from 'date-fns';
-import type { SeedingLetter, MasterWordType, RejectedWordType, DailyPuzzle, SystemSettings, CircleInvite, UserProfile, ClientMasterWordType } from '@/types';
+import type { SeedingLetter, DailyPuzzle, SystemSettings, CircleInvite, UserProfile } from '@/types';
 import { useToast } from '@/hooks/use-toast';
 import { calculateWordScore } from '@/lib/scoring';
 
 const DAILY_PUZZLES_COLLECTION = "DailyPuzzles";
-const MASTER_WORDS_COLLECTION = "Words";
-const REJECTED_WORDS_COLLECTION = "RejectedWords";
 const SYSTEM_SETTINGS_COLLECTION = "SystemConfiguration";
 const GAME_SETTINGS_DOC_ID = "gameSettings";
 const CIRCLE_INVITES_COLLECTION = "CircleInvites";
@@ -29,8 +27,6 @@ interface GameData {
   actualWordOfTheDayText: string | null;
   actualWordOfTheDayDefinition: string | null;
   actualWordOfTheDayPoints: number | null;
-  approvedWords: Map<string, ClientMasterWordType>; // Changed to ClientMasterWordType
-  rejectedWords: Map<string, RejectedWordType>;
   hasPlayedToday: boolean;
   initialDebriefData: {
     score: number;
@@ -41,7 +37,6 @@ interface GameData {
   } | null;
   currentPuzzleDate: string;
   pendingInvitesCount: number;
-  refreshApprovedWords: () => Promise<void>; 
 }
 
 export function useGameData(currentUser: FirebaseUser | null, userProfile: UserProfile | null): GameData {
@@ -50,8 +45,6 @@ export function useGameData(currentUser: FirebaseUser | null, userProfile: UserP
   const [actualWordOfTheDayText, setActualWordOfTheDayText] = useState<string | null>(null);
   const [actualWordOfTheDayDefinition, setActualWordOfTheDayDefinition] = useState<string | null>(null);
   const [actualWordOfTheDayPoints, setActualWordOfTheDayPoints] = useState<number | null>(null);
-  const [approvedWords, setApprovedWords] = useState<Map<string, ClientMasterWordType>>(new Map()); // Changed
-  const [rejectedWords, setRejectedWords] = useState<Map<string, RejectedWordType>>(new Map());
   const [hasPlayedTodayState, setHasPlayedTodayState] = useState(false);
   const [initialDebriefData, setInitialDebriefData] = useState<{
     score: number;
@@ -96,52 +89,6 @@ export function useGameData(currentUser: FirebaseUser | null, userProfile: UserP
     }));
     setSeedingLetters(initialLetters);
   }, [toast]);
-
-  const fetchWordDictionaries = useCallback(async () => {
-    try {
-      const approvedWordsSnap = await getDocs(collection(firestore, MASTER_WORDS_COLLECTION));
-      const newApprovedMap = new Map<string, ClientMasterWordType>(); // Changed
-      approvedWordsSnap.forEach(docSnap => {
-        const data = docSnap.data() as MasterWordType; // Fetch as Firestore type
-        newApprovedMap.set(docSnap.id, { // Convert to Client type
-          ...data,
-          wordText: docSnap.id, // Ensure wordText is set from ID
-          dateAdded: (data.dateAdded as Timestamp).toDate().toISOString(),
-        });
-      });
-      setApprovedWords(newApprovedMap);
-
-      const rejectedWordsSnap = await getDocs(collection(firestore, REJECTED_WORDS_COLLECTION));
-      const newRejectedMap = new Map<string, RejectedWordType>();
-      rejectedWordsSnap.forEach(docSnap => {
-        newRejectedMap.set(docSnap.id, { wordText: docSnap.id, ...docSnap.data() } as RejectedWordType);
-      });
-      setRejectedWords(newRejectedMap);
-    } catch (error) {
-      console.error("Error fetching word dictionaries:", error);
-      toast({ title: "Dictionary Error", description: "Could not load word dictionaries.", variant: "destructive" });
-    }
-  }, [toast]);
-
-  const refreshApprovedWords = useCallback(async () => {
-    try {
-      const approvedWordsSnap = await getDocs(collection(firestore, MASTER_WORDS_COLLECTION));
-      const newApprovedMap = new Map<string, ClientMasterWordType>(); // Changed
-      approvedWordsSnap.forEach(docSnap => {
-        const data = docSnap.data() as MasterWordType; // Fetch as Firestore type
-        newApprovedMap.set(docSnap.id, { // Convert to Client type
-          ...data,
-          wordText: docSnap.id,
-          dateAdded: (data.dateAdded as Timestamp).toDate().toISOString(),
-        });
-      });
-      setApprovedWords(newApprovedMap);
-    } catch (error) {
-      console.error("Error refreshing approved words:", error);
-      toast({ title: "Dictionary Refresh Error", description: "Could not refresh approved words.", variant: "destructive" });
-    }
-  }, [toast]);
-
 
   const checkPlayStatusAndDebrief = useCallback(async (puzzleDate: string) => {
     let userCanPlayToday = true;
@@ -195,7 +142,6 @@ export function useGameData(currentUser: FirebaseUser | null, userProfile: UserP
 
       Promise.all([
         fetchCoreGameData(todayGMTStr),
-        fetchWordDictionaries(),
         checkPlayStatusAndDebrief(todayGMTStr),
         (async () => {
           try {
@@ -216,13 +162,11 @@ export function useGameData(currentUser: FirebaseUser | null, userProfile: UserP
       setActualWordOfTheDayText(MOCK_WORD_OF_THE_DAY_TEXT);
       setActualWordOfTheDayDefinition("A fun word puzzle game.");
       setActualWordOfTheDayPoints(calculateWordScore(MOCK_WORD_OF_THE_DAY_TEXT, 3));
-      setApprovedWords(new Map());
-      setRejectedWords(new Map());
       setHasPlayedTodayState(false);
       setInitialDebriefData(null);
       setPendingInvitesCount(0);
     }
-  }, [currentUser, fetchCoreGameData, fetchWordDictionaries, checkPlayStatusAndDebrief, toast]);
+  }, [currentUser, fetchCoreGameData, checkPlayStatusAndDebrief, toast]);
 
   return {
     isLoadingGameData,
@@ -230,12 +174,9 @@ export function useGameData(currentUser: FirebaseUser | null, userProfile: UserP
     actualWordOfTheDayText,
     actualWordOfTheDayDefinition,
     actualWordOfTheDayPoints,
-    approvedWords,
-    rejectedWords,
     hasPlayedToday: hasPlayedTodayState,
     initialDebriefData,
     currentPuzzleDate,
     pendingInvitesCount,
-    refreshApprovedWords,
   };
 }

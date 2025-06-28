@@ -50,13 +50,7 @@ export default function HomePage() {
   const [showWelcomeInstructionsModal, setShowWelcomeInstructionsModal] = useState(false);
   const [newlyOwnedWordsThisSession, setNewlyOwnedWordsThisSession] = useState<string[]>([]);
   
-  const [sessionApprovedWords, setSessionApprovedWords] = useState<Map<string, ClientMasterWordType>>(new Map()); // Changed to ClientMasterWordType
-
   const { toast } = useToast();
-
-  useEffect(() => {
-    setSessionApprovedWords(gameData.approvedWords);
-  }, [gameData.approvedWords]);
 
   useEffect(() => {
     if (!isLoadingAuth && currentUser && userProfile && (userProfile.hasSeenWelcomeInstructions === false || userProfile.hasSeenWelcomeInstructions === undefined)) {
@@ -250,9 +244,6 @@ export default function HomePage() {
         setSubmittedWords(prev => [...prev, { id: crypto.randomUUID(), text: wordText, points: result.pointsAwarded, isWotD: result.isWotD || false, newlyOwned: result.isNewlyOwned }]);
         if (result.isNewlyOwned && result.newlyOwnedWordText) {
           setNewlyOwnedWordsThisSession(prev => [...prev, result.newlyOwnedWordText!]);
-        }
-        if (result.updatedMasterWordEntry) {
-          setSessionApprovedWords(prevMap => new Map(prevMap).set(result.updatedMasterWordEntry!.wordText, result.updatedMasterWordEntry!));
         }
       } else if (result.status.includes('rejected')) {
         triggerInvalidWordFlash();
