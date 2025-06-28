@@ -5,161 +5,162 @@ service cloud.firestore {
   match /databases/{database}/documents {
     
     // --- Helper Functions ---
-    function isUserAuthenticated() {
+    function isSignedIn() {
       return request.auth != null;
     }
 
-    function isUserAdmin() {
-      return isUserAuthenticated() && get(/databases/$(database)/documents/admin_users/$(request.auth.uid)).data.role == 'admin';
+    function isUser(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+    
+    function isAdmin() {
+      return isSignedIn() && get(/databases/$(database)/documents/admin_users/$(request.auth.uid)).data.role == 'admin';
     }
 
-    function isUserModerator() {
-      return isUserAuthenticated() && get(/databases/$(database)/documents/admin_users/$(request.auth.uid)).data.role in ['admin', 'moderator'];
+    function isModerator() {
+      return isSignedIn() && get(/databases/$(database)/documents/admin_users/$(request.auth.uid)).data.role in ['admin', 'moderator'];
     }
 
-    function isOwner(userId) {
-      return isUserAuthenticated() && request.auth.uid == userId;
+    // Function to check if the requesting user is a member of a given circle
+    function isCircleMember(circleId) {
+      return isSignedIn() && exists(/databases/$(database)/documents/CircleMembers/$(circleId + '_' + request.auth.uid));
+    }
+    
+    // Function to check if the requesting user is an ADMIN of a given circle
+    function isCircleAdmin(circleId) {
+      let memberDoc = get(/databases/$(database)/documents/CircleMembers/$(circleId + '_' + request.auth.uid));
+      return isCircleMember(circleId) && memberDoc.data.role == 'Admin';
+    }
+    
+    // Function to check if the requesting user is an INFLUENCER or ADMIN of a given circle
+    function canInviteToCircle(circleId) {
+       let memberDoc = get(/databases/$(database)/documents/CircleMembers/$(circleId + '_' + request.auth.uid));
+       return isCircleMember(circleId) && memberDoc.data.role in ['Admin', 'Influencer'];
     }
 
-    // --- Collections ---
+    // --- Collection Rules ---
 
-    // Users: Users can read/update their own profile. Admins can manage any user.
+    // Users can create their own profile upon registration.
+    // Users can read any other user's profile (for circle member lists, etc.).
+    // Users can only update or delete their own profile.
     match /Users/{userId} {
-      allow read: if isOwner(userId) || isUserAdmin();
-      allow create: if isOwner(userId);
-      allow update: if isOwner(userId) || isUserAdmin();
-      allow delete: if isUserAdmin();
+      allow read: if isSignedIn();
+      allow create: if isUser(userId);
+      allow update: if isUser(userId);
+      allow delete: if isUser(userId) || isAdmin(); // Allow admin to delete user
     }
-
-    // admin_users: Only admins can read/write roles.
+    
+    // Only admins can read/write to the admin_users collection.
     match /admin_users/{userId} {
-      allow read, write: if isUserAdmin();
+        allow read, write: if isAdmin();
     }
-
-    // DailyPuzzles: Anyone can read puzzle data. Only admins can write.
+    
+    // Any authenticated user can read the daily puzzles.
+    // Only admins can create, update, or delete puzzles.
     match /DailyPuzzles/{puzzleId} {
-      allow read: if true;
-      allow write: if isUserAdmin();
+      allow read: if isSignedIn();
+      allow write: if isAdmin();
     }
-
-    // Words: Anyone can read the dictionary. Only admins can write directly.
-    match /Words/{wordId} {
-      allow read: if true;
-      allow write: if isUserAdmin();
-    }
-
-    // RejectedWords: Only moderators/admins can read/write.
-    match /RejectedWords/{wordId} {
-      allow read, write: if isUserModerator();
-    }
-
-    // WordSubmissionsQueue: Users create. Admins/Mods read & delete.
+    
+    // Users can create their own word submissions.
+    // Only moderators/admins can read/write submissions in the queue.
     match /WordSubmissionsQueue/{submissionId} {
-      allow create: if isUserAuthenticated();
-      allow read, delete: if isUserModerator();
+      allow create: if request.auth.uid == request.resource.data.submittedByUID;
+      allow read, write: if isModerator();
+    }
+    
+    // Words are readable by any authenticated user.
+    // Words can only be written/updated by a moderator/admin.
+    match /Words/{wordId} {
+      allow read: if isSignedIn();
+      allow write: if isModerator();
     }
 
-    // SystemConfiguration: Only admins can manage system settings.
-    match /SystemConfiguration/{docId} {
-      allow read, write: if isUserAdmin();
+    // Rejected words are not readable by users to prevent gaming.
+    // Only moderators/admins can read/write them.
+    match /RejectedWords/{wordId} {
+        allow read, write: if isModerator();
     }
 
-    // AdminAuditLogs: Admins/Mods create and read logs. Immutable.
-    match /AdminAuditLogs/{logId} {
-      allow read, create: if isUserModerator();
-    }
-
-    // Circles: Public circles are readable by all. Private circles by members only.
-    // Circle management (create/update/delete) requires specific permissions.
+    // Circles are readable by any authenticated user (for discovery).
+    // Users can only create circles.
+    // Updates/Deletes are restricted to Circle Admins or game Admins.
     match /Circles/{circleId} {
-      function isCircleMember() {
-        return isUserAuthenticated() && exists(path('/databases/$(database)/documents/CircleMembers/' + circleId + '_' + request.auth.uid));
-      }
-      function isCircleAdmin() {
-        return isUserAuthenticated() && get(path('/databases/$(database)/documents/CircleMembers/' + circleId + '_' + request.auth.uid)).data.role == 'Admin';
-      }
-
-      allow read: if resource.data.isPublic == true || isCircleMember();
-      allow create: if isUserAuthenticated();
-      allow update: if isCircleAdmin();
-      allow delete: if isCircleAdmin();
+        allow read: if isSignedIn();
+        allow create: if isSignedIn(); // Creator is validated in server action
+        allow update: if isCircleAdmin(circleId) || isAdmin();
+        allow delete: if isCircleAdmin(circleId) || isAdmin();
     }
 
-    // CircleMembers: Composite key {circleId}_{userId}.
+    // Users can create their own membership doc when joining/creating a circle.
+    // Any member of a circle can read all other member documents for that circle.
+    // Users can only delete their OWN membership doc (leaving).
+    // Circle Admins or Game Admins can delete any member doc (removing a user).
     match /CircleMembers/{memberId} {
-      function isCircleAdminForThisMember() {
-          let circle_id = request.method in ['create', 'update'] ? request.resource.data.circleId : resource.data.circleId;
-          return isUserAuthenticated() && get(path('/databases/$(database)/documents/CircleMembers/' + circle_id + '_' + request.auth.uid)).data.role == 'Admin';
-      }
-      
-      allow read: if isUserAuthenticated() && exists(path('/databases/$(database)/documents/CircleMembers/' + resource.data.circleId + '_' + request.auth.uid));
-      allow create: if isOwner(request.resource.data.userId);
-      allow update: if isCircleAdminForThisMember();
-      allow delete: if isOwner(resource.data.userId) || isCircleAdminForThisMember();
+        allow create: if isUser(request.resource.data.userId);
+        allow read: if isSignedIn() && isCircleMember(resource.data.circleId);
+        allow update: if isCircleAdmin(resource.data.circleId); // For role changes
+        allow delete: if isUser(resource.data.userId) || isCircleAdmin(resource.data.circleId) || isAdmin();
     }
-
-    // CircleInvites: Can be read by inviter/invitee. Actions restricted by role.
+    
+    // Invites can be created by a circle admin/influencer.
+    // They can be read by the invitee or an admin of the circle.
+    // They can be updated by the invitee (responding) or an admin of the circle.
+    // They can be deleted by an admin of the circle.
     match /CircleInvites/{inviteId} {
-        function isInviter() {
-            return isOwner(resource.data.inviterUserId);
-        }
-        function isInvitee() {
-            // On create, inviteeUserId may not exist, so check request data
-            let targetUserId = request.method == 'create' ? request.resource.data.inviteeUserId : resource.data.inviteeUserId;
-            return isOwner(targetUserId);
-        }
-        function isCircleAdminForThisInvite() {
-            let circle_id = request.method == 'create' ? request.resource.data.circleId : resource.data.circleId;
-            return isUserAuthenticated() && get(path('/databases/$(database)/documents/CircleMembers/' + circle_id + '_' + request.auth.uid)).data.role == 'Admin';
-        }
-
-        allow read: if isUserAuthenticated() && (isInviter() || isInvitee());
-        allow create: if isOwner(request.resource.data.inviterUserId);
-        allow update: if isUserAuthenticated() && isInvitee();
-        allow delete: if isUserAuthenticated() && (isInviter() || isCircleAdminForThisInvite());
+        allow create: if isSignedIn() && canInviteToCircle(request.resource.data.circleId);
+        allow read: if isSignedIn() && (request.auth.uid == resource.data.inviteeUserId || isCircleAdmin(resource.data.circleId));
+        allow update: if isSignedIn() && (request.auth.uid == resource.data.inviteeUserId || isCircleAdmin(resource.data.circleId) || isAdmin());
+        allow delete: if isSignedIn() && (isCircleAdmin(resource.data.circleId) || isAdmin());
     }
-    
-    // CircleScores: Read by members. Writes handled by backend only.
+
+    // Score documents can be read by any member of that circle.
+    // Writes should only be performed via trusted server-side logic (actions) which check permissions.
     match /CircleDailyScores/{scoreId} {
-      allow read: if isUserAuthenticated() && exists(path('/databases/$(database)/documents/CircleMembers/' + resource.data.circleId + '_' + request.auth.uid));
-      allow write: if false;
+        allow read: if isSignedIn() && isCircleMember(resource.data.circleId);
+        allow write: if isSignedIn() && isCircleMember(request.resource.data.circleId); // User can update scores for their own circles
     }
 
-    // ChangelogEntries: Read by anyone, written by admins.
-    match /ChangelogEntries/{entryId} {
-        allow read: if true;
-        allow write: if isUserAdmin();
-    }
-
-    // UserSuggestions: Created by users, managed by mods/admins.
-    match /UserSuggestions/{suggestionId} {
-        allow create: if isUserAuthenticated();
-        allow read, update: if isUserModerator();
+    // Notifications are private to each user.
+    match /Notifications/{notificationId} {
+      allow read, write, delete: if isUser(resource.data.userId);
     }
     
-    // Notifications: Users manage their own. Created by server actions.
-    match /Notifications/{notificationId} {
-        allow read, update: if isOwner(resource.data.userId);
-        allow create: if isUserAuthenticated();
-    }
-
-    // WordTransfers: Managed by sender and recipient.
+    // Word Transfers can be created by the word owner.
+    // Read/Update is allowed by either sender or recipient.
+    // Delete is not allowed (status is changed instead).
     match /WordTransfers/{transferId} {
-        function isSender() {
-            return isOwner(request.method == 'create' ? request.resource.data.senderUserId : resource.data.senderUserId);
-        }
-        function isRecipient() {
-            return isOwner(request.method == 'create' ? request.resource.data.recipientUserId : resource.data.recipientUserId);
-        }
-
-        allow read: if isUserAuthenticated() && (isSender() || isRecipient());
-        allow create: if isUserAuthenticated() && isSender();
-        allow update: if isUserAuthenticated() && isRecipient();
+      allow create: if isUser(request.resource.data.senderUserId);
+      allow read, update: if isSignedIn() && (request.auth.uid == resource.data.senderUserId || request.auth.uid == resource.data.recipientUserId);
     }
-
-    // mail: Used by Trigger Email extension. Only admins can create emails.
+    
+    // User suggestions are write-only for users, read/write for admins
+    match /UserSuggestions/{suggestionId} {
+        allow create: if isSignedIn();
+        allow read, write: if isModerator();
+    }
+    
+    // Changelog entries are public-readable, but only admin-writable.
+    match /ChangelogEntries/{entryId} {
+        allow read: true;
+        allow write: if isAdmin();
+    }
+    
+    // System Configuration can only be read/written by admins.
+    match /SystemConfiguration/{docId} {
+      allow read, write: if isAdmin();
+    }
+    
+    // Admin Audit Logs can only be created and read by moderators/admins.
+    match /AdminAuditLogs/{logId} {
+      allow create: if isModerator();
+      allow read: if isModerator();
+    }
+    
+    // The "mail" collection for the Trigger Email extension should be write-only for users.
     match /mail/{docId} {
-      allow create: if isUserAdmin();
+        allow read: if false; // No one can read emails from the client
+        allow write: if isSignedIn(); // Allow any signed-in user to trigger an email
     }
   }
 }
