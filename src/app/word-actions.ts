@@ -148,7 +148,7 @@ export async function respondToWordTransferAction(payload: RespondToWordTransfer
         throw new Error(`This transfer is already ${transferData.status.toLowerCase()}.`);
       }
       if (transferData.expiresAt.toMillis() < Date.now()) {
-        // Handle expiry implicitly by setting status to 'Expired'
+        // Handle expiry within the transaction
         transaction.update(transferDocRef, { status: 'Expired', respondedAt: serverTimestamp() as Timestamp });
         const wordDocRefExpired = doc(firestore, WORDS_COLLECTION, transferData.wordText);
         transaction.update(wordDocRefExpired, { pendingTransferId: null }); // Clear pending ID
@@ -159,6 +159,7 @@ export async function respondToWordTransferAction(payload: RespondToWordTransfer
       const wordDocSnap = await transaction.get(wordDocRef);
       if (!wordDocSnap.exists()) {
         // This case should be rare if transfer was initiated properly
+        transaction.update(transferDocRef, { status: 'Expired', respondedAt: serverTimestamp() as Timestamp, adminNotes: "Word no longer exists." });
         throw new Error(`The word "${transferData.wordText}" associated with this transfer no longer exists.`);
       }
 
@@ -194,20 +195,6 @@ export async function respondToWordTransferAction(payload: RespondToWordTransfer
   } catch (error: any)
    {
     console.error("Error responding to word transfer:", error);
-    // If it's an expiry error that we threw, ensure the status is updated if transaction didn't complete it.
-    if (error.message === "This transfer request has expired.") {
-        try {
-            await updateDoc(transferDocRef, { status: 'Expired', respondedAt: serverTimestamp() as Timestamp });
-            const transferDataForWordUpdate = (await getDoc(transferDocRef)).data() as WordTransfer | undefined;
-            if(transferDataForWordUpdate){
-                 const wordDocRefExpired = doc(firestore, WORDS_COLLECTION, transferDataForWordUpdate.wordText);
-                 await updateDoc(wordDocRefExpired, { pendingTransferId: null });
-            }
-        } catch (expiryUpdateError) {
-            console.error("Failed to mark as expired after transaction failure:", expiryUpdateError);
-        }
-    }
     return { success: false, error: error.message || "Failed to respond to word transfer." };
   }
 }
-
