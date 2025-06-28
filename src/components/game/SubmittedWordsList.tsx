@@ -20,7 +20,7 @@ export function SubmittedWordsList({ words }: SubmittedWordsListProps) {
   }
 
   return (
-    <ScrollArea className="h-48 md:h-64 w-full max-w-md mx-auto border rounded-lg p-2 bg-card shadow">
+    <ScrollArea className="h-48 md:h-60 w-full max-w-md mx-auto border rounded-lg p-2 bg-card shadow">
       <div className="space-y-2 p-2">
         {words.map((word) => (
           <div

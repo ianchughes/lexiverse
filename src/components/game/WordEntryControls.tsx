@@ -31,8 +31,8 @@ export function WordEntryControls({
         aria-label="Backspace"
         className="px-3 sm:px-4 md:px-6"
       >
-        <Delete className="h-5 w-5 md:mr-2" />
-        <span className="hidden md:inline">Backspace</span>
+        <Delete className="h-5 w-5 sm:mr-2" />
+        <span className="hidden sm:inline">Backspace</span>
       </Button>
       <Button
         variant="outline"
@@ -42,8 +42,8 @@ export function WordEntryControls({
         aria-label="Clear word"
         className="px-3 sm:px-4 md:px-6"
       >
-        <RotateCcw className="h-5 w-5 md:mr-2" />
-        <span className="hidden md:inline">Clear</span>
+        <RotateCcw className="h-5 w-5 sm:mr-2" />
+        <span className="hidden sm:inline">Clear</span>
       </Button>
       <Button
         size="lg"
@@ -52,9 +52,9 @@ export function WordEntryControls({
         aria-label="Submit word"
         className="px-3 sm:px-4 md:px-6 bg-primary hover:bg-primary/90 text-primary-foreground"
       >
-        <Zap className="h-5 w-5 md:mr-2" />
-        <span className="hidden md:inline">Submit</span>
-        <span className="md:hidden">Submit</span>
+        <Zap className="h-5 w-5 sm:mr-2" />
+        <span className="hidden sm:inline">Submit</span>
+        <span className="sm:hidden">Submit</span>
       </Button>
     </div>
   );

@@ -13,7 +13,7 @@ interface LoggedOutLandingPageProps {
 export function LoggedOutLandingPage({ inviteCodeFromUrl }: LoggedOutLandingPageProps) {
   return (
     <div className="flex flex-col items-center justify-center text-center h-full py-10 md:py-16 px-4">
-      <h1 className="text-3xl sm:text-4xl md:text-5xl lg:text-6xl font-headline text-primary mb-4 sm:mb-6">
+      <h1 className="text-4xl md:text-5xl font-headline text-primary mb-4 sm:mb-6">
         LexiVerse: Mint Words. Own the Game. Earn Forever! 🚀
       </h1>
       <p className="text-base sm:text-lg md:text-xl text-muted-foreground max-w-3xl mx-auto mb-8 sm:mb-10 leading-relaxed">

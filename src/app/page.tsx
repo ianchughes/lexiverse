@@ -282,7 +282,7 @@ export default function HomePage() {
   }
   
   return (
-    <div className="flex flex-col items-center justify-center p-2 pt-4 sm:p-4 sm:pt-8 md:p-6 md:pt-10 lg:p-8 lg:pt-12">
+    <div className="flex flex-col items-center justify-center p-4 pt-6 md:p-8 md:pt-12">
       <WelcomeInstructionsDialog
         isOpen={showWelcomeInstructionsModal}
         onOpenChange={setShowWelcomeInstructionsModal}
