@@ -5,168 +5,151 @@ service cloud.firestore {
   match /databases/{database}/documents {
 
     // Helper Functions
-    function isModeratorOrAdmin() {
-      // Note: This function can only be reliably called in rules where the user is already authenticated.
-      // It allows a user to read their own role doc to verify if they are an admin/moderator.
+    function isAdmin() {
       return exists(/databases/$(database)/documents/admin_users/$(request.auth.uid)) &&
-             (get(/databases/$(database)/documents/admin_users/$(request.auth.uid)).data.role == 'admin' ||
-              get(/databases/$(database)/documents/admin_users/$(request.auth.uid)).data.role == 'moderator');
+             get(/databases/$(database)/documents/admin_users/$(request.auth.uid)).data.role == 'admin';
+    }
+    
+    function isModeratorOrAdmin() {
+      // Check if the user document exists in admin_users and has a role of 'admin' or 'moderator'
+      return exists(/databases/$(database)/documents/admin_users/$(request.auth.uid)) &&
+             get(/databases/$(database)/documents/admin_users/$(request.auth.uid)).data.role in ['admin', 'moderator'];
     }
 
-    // Rules for Collections
+    function canReadOwnRole() {
+        return request.auth != null && exists(/databases/$(database)/documents/admin_users/$(request.auth.uid));
+    }
+    
+    function isCircleMember(circleId) {
+       return request.auth != null && exists(/databases/$(database)/documents/CircleMembers/$(circleId + '_' + request.auth.uid));
+    }
+
+    function isCircleAdmin(circleId) {
+        let memberDocPath = /databases/$(database)/documents/CircleMembers/$(circleId + '_' + request.auth.uid);
+        return exists(memberDocPath) && get(memberDocPath).data.role == 'Admin';
+    }
+
+    function isCircleAdminOrInfluencer(circleId) {
+        let memberDocPath = /databases/$(database)/documents/CircleMembers/$(circleId + '_' + request.auth.uid);
+        return exists(memberDocPath) && get(memberDocPath).data.role in ['Admin', 'Influencer'];
+    }
+
+    // --- Global Admin Override ---
+    // This rule grants admins full read/write access to everything, bypassing all other rules for them.
+    match /{document=**} {
+      allow read, write: if isAdmin();
+    }
+    
+    // --- Collection-Specific Rules (for non-admins) ---
 
     match /Users/{userId} {
       allow read: if true;
       allow create: if request.auth.uid == userId;
-      allow update: if request.auth.uid == userId || isModeratorOrAdmin();
+      allow update: if request.auth.uid == userId;
       allow delete: if isModeratorOrAdmin();
     }
-
+    
     match /admin_users/{userId} {
-      // A user can read their own role. Admins can read any role.
-      allow read: if request.auth.uid == userId;
-      // Only admins can create, update, or delete roles.
-      allow write: if isModeratorOrAdmin() && get(/databases/$(database)/documents/admin_users/$(request.auth.uid)).data.role == 'admin';
+      allow read: if request.auth.uid == userId; // Simplified to break circular dependency
+      allow write: if isModeratorOrAdmin();
     }
-
+    
     match /Words/{wordId} {
       allow read: if true;
-      // Allow admins and moderators to add/update words.
       allow write: if isModeratorOrAdmin();
     }
 
     match /RejectedWords/{wordId} {
-      // Allow any signed-in user to read this list to check against their submissions.
-      allow read: if request.auth != null;
-      // Only allow admins/moderators to write (create/update/delete).
+      allow read: if request.auth != null; // Allow any signed-in user to read
       allow write: if isModeratorOrAdmin();
     }
-
+    
     match /WordSubmissionsQueue/{submissionId} {
-      // User can create a submission if they are logged in.
-      allow create: if request.auth.uid == request.resource.data.submittedByUID;
-      // Only admins/moderators can read or delete submissions from the queue.
-      allow read, delete: if isModeratorOrAdmin();
-      allow update: if false; // Submissions should not be updatable, only deleted.
+        allow create: if request.auth != null && request.resource.data.submittedByUID == request.auth.uid;
+        allow read, update, delete: if isModeratorOrAdmin();
     }
     
     match /DailyPuzzles/{puzzleId} {
       allow read: if true;
-      // Only allow admins/moderators to write (create/update/delete).
       allow write: if isModeratorOrAdmin();
+    }
+    
+     match /ChangelogEntries/{entryId} {
+      allow read: if true;
+      allow create, update, delete: if isModeratorOrAdmin();
     }
 
     match /SystemConfiguration/{docId} {
-      allow read: if true; // Anyone can read system settings.
-      // Only admins/moderators can change system settings.
+      allow read: if true;
       allow write: if isModeratorOrAdmin();
     }
 
-    // --- Circle Feature Rules ---
-
-    function isCircleMember(circleId) {
-      return exists(/databases/$(database)/documents/CircleMembers/$(circleId + '_' + request.auth.uid));
+    // Circle Related Rules
+    match /Circles/{circleId} {
+        allow read: if true;
+        allow create: if request.auth.uid == request.resource.data.creatorUserID;
+        allow update: if isCircleAdmin(circleId);
+        allow delete: if isCircleAdmin(circleId);
     }
     
-    function isCircleAdmin(circleId) {
-       return exists(/databases/$(database)/documents/CircleMembers/$(circleId + '_' + request.auth.uid)) &&
-             get(/databases/$(database)/documents/CircleMembers/$(circleId + '_' + request.auth.uid)).data.role == 'Admin';
-    }
-
-    function isCircleAdminOrInfluencer(circleId) {
-       return exists(/databases/$(database)/documents/CircleMembers/$(circleId + '_' + request.auth.uid)) &&
-              (get(/databases/$(database)/documents/CircleMembers/$(circleId + '_' + request.auth.uid)).data.role == 'Admin' ||
-               get(/databases/$(database)/documents/CircleMembers/$(circleId + '_' + request.auth.uid)).data.role == 'Influencer');
-    }
-
-    match /Circles/{circleId} {
-      allow read: if true; // All users can discover/view circles.
-      // Only signed-in users can create.
-      allow create: if request.auth.uid == request.resource.data.creatorUserID;
-      // Only circle admins can update. Admins can delete.
-      allow update: if isCircleAdmin(circleId) || isModeratorOrAdmin();
-      allow delete: if isCircleAdmin(circleId) || isModeratorOrAdmin();
-    }
-
     match /CircleMembers/{memberId} {
-      // Must be a member of the circle to read its member list.
-      allow read: if isCircleMember(resource.data.circleId);
-       // New members can only be created via transaction/server-side action, checked by circle rules.
-      allow create: if request.auth.uid == request.resource.data.userId;
-      // Only circle admin can update roles.
-      allow update: if isCircleAdmin(resource.data.circleId);
-      // User can remove themselves, or admin can remove them.
-      allow delete: if request.auth.uid == resource.data.userId || isCircleAdmin(resource.data.circleId);
+        // memberId is CircleID_UserID
+        allow read: if isCircleMember(memberId.split('_')[0]);
+        allow create: if request.auth.uid == request.resource.data.userId; // When creating a circle
+        // Leaving, Role changes, and Removal are handled by server-side actions/transactions with admin checks.
+        allow update: if isCircleAdmin(memberId.split('_')[0]);
+        allow delete: if request.auth.uid == memberId.split('_')[1] || isCircleAdmin(memberId.split('_')[0]); // Self-leave or Admin removal
     }
     
     match /CircleInvites/{inviteId} {
-      // Allow read if you are the sender or receiver.
-      allow read: if request.auth.uid == resource.data.inviterUserId || request.auth.uid == resource.data.inviteeUserId;
-      // User must be circle admin/influencer to create.
-      allow create: if isCircleAdminOrInfluencer(request.resource.data.circleId);
-      // User can update if they are the recipient.
-      allow update: if request.auth.uid == resource.data.inviteeUserId;
-      // Can be deleted by sender, recipient, or circle admin.
-      allow delete: if request.auth.uid == resource.data.inviterUserId || request.auth.uid == resource.data.inviteeUserId || isCircleAdmin(resource.data.circleId);
+        allow read: if request.auth.uid == resource.data.inviterUserId || request.auth.uid == resource.data.inviteeUserId;
+        allow create: if isCircleAdminOrInfluencer(request.resource.data.circleId) && request.auth.uid == request.resource.data.inviterUserId;
+        allow update: if request.auth.uid == resource.data.inviteeUserId || isCircleAdmin(request.resource.data.circleId);
+        allow delete: if request.auth.uid == resource.data.inviterUserId || isCircleAdmin(request.resource.data.circleId);
     }
-
-    match /CircleDailyScores/{scoreId} {
-      allow read: if isCircleMember(resource.data.circleId);
-      allow write: if false; // Only updatable via server functions/transactions, not directly.
+    
+     match /CircleDailyScores/{scoreId} {
+        allow read: if isCircleMember(scoreId.split('_')[1]);
+        allow create, update: if request.auth != null; // Game server/functions update this
     }
+    
     match /CircleWeeklyScores/{scoreId} {
-      allow read: if isCircleMember(resource.data.circleId);
-      allow write: if false; // Only updatable via server functions/transactions, not directly.
+        allow read: if isCircleMember(scoreId.split('_')[1]);
+        allow create, update: if request.auth != null;
     }
+    
     match /CircleMonthlyScores/{scoreId} {
-      allow read: if isCircleMember(resource.data.circleId);
-      allow write: if false; // Only updatable via server functions/transactions, not directly.
-    }
-
-    // --- Word Transfers ---
-    match /WordTransfers/{transferId} {
-        allow read: if request.auth.uid == resource.data.senderUserId || request.auth.uid == resource.data.recipientUserId;
-        allow create: if request.auth.uid == request.resource.data.senderUserId;
-        // Allow update only if user is the recipient AND the transfer is still pending.
-        allow update: if request.auth.uid == resource.data.recipientUserId && resource.data.status == 'PendingRecipient';
-        allow delete: if false; // Transfers expire or are actioned, not deleted.
-    }
-
-    // --- Notifications, Logs, and System Collections ---
-    match /Notifications/{notificationId} {
-      // User can read/update/delete their own notifications.
-      allow read, update, delete: if request.auth.uid == resource.data.userId;
-      // Notifications are created by server-side logic, not directly by clients.
-      allow create: if request.auth.uid == request.resource.data.userId;
+        allow read: if isCircleMember(scoreId.split('_')[1]);
+        allow create, update: if request.auth != null;
     }
 
     match /UserSuggestions/{suggestionId} {
-        // Any authenticated user can create a suggestion.
         allow create: if request.auth != null;
-        // Only admins can read/update/delete them.
         allow read, update, delete: if isModeratorOrAdmin();
     }
     
-     match /AdminAuditLogs/{logId} {
-        // Only admins can read logs. No one can write/delete directly.
-        allow read: if isModeratorOrAdmin();
-        // Allow create for admins/moderators (for server actions)
-        allow create: if isModeratorOrAdmin();
-        allow write: if false; // No updates or deletes allowed
-     }
-
-    match /mail/{docId} {
-        // Users should not be able to read or write to this collection directly.
-        // It's managed by the Trigger Email extension.
-        allow read, write: if false;
+    match /Notifications/{notificationId} {
+        allow read, update, delete: if request.auth.uid == resource.data.userId;
+        allow create: if request.auth.uid == request.resource.data.userId;
     }
 
-    match /ChangelogEntries/{entryId} {
-        // Anyone can read changelog entries.
-        allow read: if true;
-        // Only admins can create/update/delete changelog entries.
-        allow write: if isModeratorOrAdmin() && get(/databases/$(database)/documents/admin_users/$(request.auth.uid)).data.role == 'admin';
+    match /WordTransfers/{transferId} {
+        allow read: if request.auth.uid == resource.data.senderUserId || request.auth.uid == resource.data.recipientUserId;
+        allow create: if request.auth.uid == request.resource.data.senderUserId;
+        allow update: if request.auth.uid == resource.data.recipientUserId && resource.data.status == 'PendingRecipient'; // Check status
+        allow delete: if isModeratorOrAdmin();
+    }
+    
+     match /AdminAuditLogs/{logId} {
+        allow read: if isModeratorOrAdmin();
+        allow create: if isModeratorOrAdmin();
+        allow update, delete: if false; // Logs should be immutable
+    }
+
+     match /mail/{mailId} {
+        allow read: if isModeratorOrAdmin();
+        allow create: if request.auth != null;
+        allow write: if isModeratorOrAdmin();
     }
   }
 }
-
