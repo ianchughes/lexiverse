@@ -1,4 +1,3 @@
-
 'use server';
 /**
  * @fileOverview A Genkit flow to check Wiktionary for word existence and its primary English definition.
@@ -38,7 +37,8 @@ const checkWiktionaryFlow = ai.defineFlow(
   },
   async (input) => {
     const { word } = input;
-    const apiUrl = `https://en.wiktionary.org/w/api.php?action=query&prop=extracts&explaintext&format=json&titles=${encodeURIComponent(word.toLowerCase())}`;
+    // Added &redirects=1 to automatically resolve redirects on the API side.
+    const apiUrl = `https://en.wiktionary.org/w/api.php?action=query&prop=extracts&explaintext&format=json&redirects=1&titles=${encodeURIComponent(word.toLowerCase())}`;
 
     try {
       const response = await fetch(apiUrl, {
@@ -60,37 +60,41 @@ const checkWiktionaryFlow = ai.defineFlow(
       }
 
       const pages = data.query.pages;
-      const pageId = Object.keys(pages)[0]; // Typically, the first key is the page ID or -1
+      const pageId = Object.keys(pages)[0];
 
-      if (!pageId || pages[pageId].missing !== undefined || pageId === "-1") {
+      // If pageId is -1, the page does not exist. Check for 'missing' property as well for robustness.
+      if (!pageId || pageId === "-1" || pages[pageId].missing !== undefined) {
         return { exists: false, definition: null, rawExtract: null }; // Word does not exist
       }
 
       const extract: string | undefined = pages[pageId].extract;
       if (!extract) {
-        return { exists: true, definition: null, rawExtract: null }; // Word exists but no extract/content
+        // The page exists but there's no text content (e.g., it's a category page).
+        return { exists: true, definition: null, rawExtract: null };
       }
 
-      // Attempt to find the primary English definition
+      // Heuristic to find the primary English definition.
+      // 1. Find the "==English==" section.
+      // 2. Look for the first line starting with "# " (a definition), but not "#:" (an example).
       let firstDefinition: string | null = null;
       
-      // Heuristic: Look for "==English==" section, then definitions marked by "# "
       const englishSectionMatch = extract.match(/==\s*English\s*==([\s\S]*?)(?:\n==\s*|$)/i);
       const contentToSearch = englishSectionMatch ? englishSectionMatch[1] : extract;
 
       const definitionLines = contentToSearch.split('\n');
       for (const line of definitionLines) {
-        if (line.startsWith('# ') && !line.startsWith('#:')) { // Standard definition, not an example/sub-point
-          firstDefinition = line.substring(2).trim(); // Remove "# " prefix
-          // Basic cleanup of common wikitext markup for readability
-          firstDefinition = firstDefinition
+        if (line.startsWith('# ') && !line.startsWith('#:')) {
+          // Cleanup common wikitext markup for readability.
+          firstDefinition = line
+            .substring(2) // Remove "# "
             .replace(/\{\{[^}]*\}\}/g, '') // Remove {{templates}}
             .replace(/\[\[(?:[^|\]]*\|)?([^\]]+)\]\]/g, '$1') // Simplify [[wikilinks|display]] to display
             .replace(/'''(.*?)'''/g, '$1') // Remove bold
             .replace(/''(.*?)''/g, '$1')   // Remove italics
             .replace(/\s{2,}/g, ' ')      // Collapse multiple spaces
             .trim();
-          if (firstDefinition) break; // Take the first one found
+          
+          if (firstDefinition) break; // Found the first valid definition, stop searching.
         }
       }
       
@@ -98,6 +102,7 @@ const checkWiktionaryFlow = ai.defineFlow(
 
     } catch (error: any) {
       console.error(`Error during Wiktionary API call for "${word}":`, error);
+      // This catches network errors or issues with fetch itself.
       return { exists: false, definition: null, rawExtract: null };
     }
   }
