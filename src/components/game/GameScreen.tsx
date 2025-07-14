@@ -9,9 +9,10 @@ import { WordEntryControls } from '@/components/game/WordEntryControls';
 import { GameTimer } from '@/components/game/GameTimer';
 import { SubmittedWordsList } from '@/components/game/SubmittedWordsList';
 import { Badge } from '@/components/ui/badge';
-import { PlayCircle, Check, Loader2, AlertTriangle, BellRing } from 'lucide-react';
+import { PlayCircle, Check, Loader2, AlertTriangle, BellRing, Smartphone, Monitor } from 'lucide-react';
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import Link from 'next/link';
+import { cn } from '@/lib/utils';
 
 const DAILY_GAME_DURATION = 90; // This should ideally come from a shared config or props
 const MIN_WORD_LENGTH = 4; // Same as above
@@ -39,6 +40,8 @@ interface GameScreenProps {
   showWelcomeInstructionsModal: boolean; // To prevent starting game if modal is up
   showDebrief: boolean; // To prevent starting game if debrief is active
   pendingInvitesCount: number;
+  isPhoneMode: boolean;
+  setIsPhoneMode: (value: boolean) => void;
 }
 
 export function GameScreen({
@@ -64,6 +67,8 @@ export function GameScreen({
   showWelcomeInstructionsModal,
   showDebrief,
   pendingInvitesCount,
+  isPhoneMode,
+  setIsPhoneMode,
 }: GameScreenProps) {
 
   if (gameState === 'idle' && !showWelcomeInstructionsModal && !showDebrief) {
@@ -100,10 +105,19 @@ export function GameScreen({
 
   if (gameState === 'playing') {
     return (
-      <div className="w-full max-w-2xl mx-auto">
+      <div className={cn("w-full max-w-2xl mx-auto", { 'phone-mode-lexiverse': isPhoneMode })}>
         <div className="flex flex-col sm:flex-row justify-between items-center gap-2 mb-4 w-full">
-          <div className="sm:w-1/3 text-center sm:text-left order-1 sm:order-1">
+          <div className="sm:w-1/3 text-center sm:text-left order-1 sm:order-1 flex items-center gap-2">
             <Badge variant="outline" className="text-base px-2 py-0.5 sm:text-lg sm:px-3 sm:py-1">Score: {sessionScore}</Badge>
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={() => setIsPhoneMode(!isPhoneMode)}
+              className="hidden md:inline-flex text-muted-foreground hover:text-primary"
+              title={isPhoneMode ? "Switch to Desktop View" : "Switch to Phone View"}
+            >
+              {isPhoneMode ? <Monitor className="h-5 w-5" /> : <Smartphone className="h-5 w-5" />}
+            </Button>
           </div>
           <div className="sm:w-1/3 flex justify-center order-2 sm:order-2">
             <GameTimer timeLeft={timeLeft} />
