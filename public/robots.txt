@@ -1,0 +1,7 @@
+# See https://www.robotstxt.org/robotstxt.html for documentation on how to write a robots.txt file
+
+User-agent: *
+Disallow: /admin/
+Disallow: /auth/
+
+Sitemap: https://www.lexiverse.game/sitemap.xml
