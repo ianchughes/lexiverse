@@ -41,6 +41,40 @@ const toClientMasterWord = (firestoreWord: MasterWordType): ClientMasterWordType
   };
 };
 
+async function autoApproveAndAddWord(
+  wordText: string,
+  definition: string,
+  frequency: number,
+  params: ProcessWordSubmissionParams
+): Promise<ProcessedWordResult> {
+  const { currentUserId, currentPuzzleDate } = params;
+  const wordKey = wordText.toUpperCase();
+  const masterWordDocRef = doc(firestore, MASTER_WORDS_COLLECTION, wordKey);
+
+  const newMasterWord: MasterWordType = {
+    wordText: wordKey,
+    definition: definition || "No definition provided.",
+    frequency: frequency,
+    status: 'Approved',
+    addedByUID: 'system_auto_approve', // System action
+    dateAdded: serverTimestamp() as Timestamp,
+    originalSubmitterUID: currentUserId,
+    puzzleDateGMTOfSubmission: currentPuzzleDate,
+  };
+
+  await setDoc(masterWordDocRef, newMasterWord);
+
+  const points = calculateWordScore(wordKey, frequency);
+  return {
+    status: 'success_approved',
+    message: `New word "${wordKey}" discovered and auto-approved! You now own it! Points: ${points}`,
+    pointsAwarded: points,
+    isWotD: false,
+    isNewlyOwned: true,
+    newlyOwnedWordText: wordKey,
+  };
+}
+
 
 async function saveWordToSubmissionQueueInternal(
     wordText: string, 
@@ -172,15 +206,13 @@ export async function processWordSubmission(
     try {
       const wiktionaryResult = await checkWiktionary({ word: wordText });
       if (wiktionaryResult.exists && wiktionaryResult.definition) {
-        await saveWordToSubmissionQueueInternal(wordText, currentUserId, currentPuzzleDate, wiktionaryResult.definition, 3.5, false);
-        return { status: 'success_new_unverified', message: `"${wordText}" sent for review (from Wiktionary).`, pointsAwarded: 20, isWotD: false, isNewlyOwned: false }; // Award some points for new submission
+        return await autoApproveAndAddWord(wordText, wiktionaryResult.definition, 3.5, params);
       } else {
         return { status: 'rejected_not_found', message: `"${wordText}" not found in dictionaries.`, pointsAwarded: 0, isWotD: false, isNewlyOwned: false };
       }
     } catch (wiktionaryError) {
       console.error("Error during Wiktionary check (fallback):", wiktionaryError);
-      await saveWordToSubmissionQueueInternal(wordText, currentUserId, currentPuzzleDate, "Wiktionary check failed, requires manual review.", 3.0, false);
-      return { status: 'success_new_unverified', message: `"${wordText}" sent for review (Wiktionary error).`, pointsAwarded: 10, isWotD: false, isNewlyOwned: false };
+      return { status: 'error_api', message: `Could not verify "${wordText}" (Wiktionary error).`, pointsAwarded: 0, isWotD: false, isNewlyOwned: false };
     }
   }
 
@@ -201,23 +233,13 @@ export async function processWordSubmission(
       }
       if (isNaN(frequency) || frequency <= 0) frequency = 3.5;
       
-      const points = calculateWordScore(wordText, frequency);
-      // Instead of writing to MasterWords, submit to queue.
-      await saveWordToSubmissionQueueInternal(wordText, currentUserId, currentPuzzleDate, definition, frequency, false);
-      
-      return {
-        status: 'success_new_unverified',
-        message: `New word "${wordText}" found & submitted for review. Points: ${points}`,
-        pointsAwarded: points,
-        isWotD: false,
-        isNewlyOwned: false,
-      };
+      // Auto-approve the word
+      return await autoApproveAndAddWord(wordText, definition, frequency, params);
     
     } else if (response.status === 404) { // Word not found in WordsAPI, try Wiktionary
       const wiktionaryResult = await checkWiktionary({ word: wordText });
       if (wiktionaryResult.exists && wiktionaryResult.definition) {
-        await saveWordToSubmissionQueueInternal(wordText, currentUserId, currentPuzzleDate, wiktionaryResult.definition, 3.5, false);
-        return { status: 'success_new_unverified', message: `"${wordText}" sent for review (from Wiktionary).`, pointsAwarded: 20, isWotD: false, isNewlyOwned: false };
+        return await autoApproveAndAddWord(wordText, wiktionaryResult.definition, 3.5, params);
       } else {
         return { status: 'rejected_not_found', message: `"${wordText}" not found in dictionaries.`, pointsAwarded: 0, isWotD: false, isNewlyOwned: false };
       }
