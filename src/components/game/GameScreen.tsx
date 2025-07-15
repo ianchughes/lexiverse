@@ -107,7 +107,7 @@ export function GameScreen({
     return (
       <div className={cn("w-full max-w-2xl mx-auto", { 'phone-mode-lexiverse': isPhoneMode })}>
         <div className="flex flex-col sm:flex-row justify-between items-center gap-2 mb-4 w-full">
-          <div className="sm:w-1/3 text-center sm:text-left order-1 sm:order-1 flex items-center gap-2">
+          <div className="sm:w-1/3 text-center sm:text-left order-1 sm:order-1 flex items-center justify-center sm:justify-start gap-2">
             <Badge variant="outline" className="text-base px-2 py-0.5 sm:text-lg sm:px-3 sm:py-1">Score: {sessionScore}</Badge>
             <Button
               variant="ghost"
