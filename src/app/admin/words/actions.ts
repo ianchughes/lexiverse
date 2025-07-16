@@ -159,15 +159,21 @@ export async function adminBulkProcessWordSubmissionsAction(payload: BulkProcess
     const results: Array<{id: string, status: string, error?: string}> = [];
     let approvedCount = 0;
     let rejectedCount = 0;
+    let preFetchedMasterWordsMap: Map<string, MasterWordType | null>;
 
-    const uniqueWordKeysInBatch = new Set(submissionsToProcess.filter(s => s.action === 'approve').map(s => s.wordText.toUpperCase()));
-    const masterWordPreFetchPromises: Promise<[string, MasterWordType | null]>[] = [];
-    uniqueWordKeysInBatch.forEach(key => {
-        const docRef = doc(firestore, MASTER_WORDS_COLLECTION, key);
-        masterWordPreFetchPromises.push(getFirestoreDoc(docRef).then(snap => [key, snap.exists() ? snap.data() as MasterWordType : null]));
-    });
-    const preFetchedMasterWordsArray = await Promise.all(masterWordPreFetchPromises);
-    const preFetchedMasterWordsMap = new Map(preFetchedMasterWordsArray);
+    try {
+        const uniqueWordKeysInBatch = new Set(submissionsToProcess.filter(s => s.action === 'approve').map(s => s.wordText.toUpperCase()));
+        const masterWordPreFetchPromises: Promise<[string, MasterWordType | null]>[] = [];
+        uniqueWordKeysInBatch.forEach(key => {
+            const docRef = doc(firestore, MASTER_WORDS_COLLECTION, key);
+            masterWordPreFetchPromises.push(getFirestoreDoc(docRef).then(snap => [key, snap.exists() ? snap.data() as MasterWordType : null]));
+        });
+        const preFetchedMasterWordsArray = await Promise.all(masterWordPreFetchPromises);
+        preFetchedMasterWordsMap = new Map(preFetchedMasterWordsArray);
+    } catch (error: any) {
+        console.error("Error pre-fetching master words in bulk action:", error);
+        return { success: false, results: [], error: "Failed to pre-fetch word data. Please try again." };
+    }
 
 
     for (const item of submissionsToProcess) {
