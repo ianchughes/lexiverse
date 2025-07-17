@@ -10,18 +10,20 @@ import { calculateWordScore } from '@/lib/scoring';
 
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Button } from "@/components/ui/button";
+import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Checkbox } from '@/components/ui/checkbox';
 import { useToast } from '@/hooks/use-toast';
 import { Input } from '@/components/ui/input';
-import { Loader2, RefreshCw, Star, CheckCircle, XCircle, ThumbsDown, ShieldAlert, Settings2, Send, UserMinus, MoreHorizontal, CheckIcon, AlertCircleIcon, BanIcon, BadgeCent, Unlink } from 'lucide-react'; 
+import { Loader2, RefreshCw, Star, CheckCircle, XCircle, ThumbsDown, ShieldAlert, Settings2, Send, UserMinus, MoreHorizontal, CheckIcon, AlertCircleIcon, BanIcon, BadgeCent, Unlink, Gift } from 'lucide-react'; 
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { format } from 'date-fns';
 import { Skeleton } from '@/components/ui/skeleton';
-import { adminBulkProcessWordSubmissionsAction, adminDisassociateWordOwnerAction, adminBulkDisassociateWordOwnersAction } from './actions'; 
+import { adminBulkProcessWordSubmissionsAction, adminDisassociateWordOwnerAction, adminBulkDisassociateWordOwnersAction, adminGiftWordToUserAction } from './actions'; 
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
+import { Label } from '@/components/ui/label';
 
 
 const WORD_SUBMISSIONS_QUEUE = "WordSubmissionsQueue";
@@ -61,6 +63,12 @@ export default function WordManagementPage() {
   // State for bulk disassociation
   const [selectedWordsForBulkDisassociate, setSelectedWordsForBulkDisassociate] = useState<Set<string>>(new Set());
   const [isProcessingBulkDisassociation, setIsProcessingBulkDisassociation] = useState(false);
+  
+  // State for gifting a word
+  const [isGiftWordDialogOpen, setIsGiftWordDialogOpen] = useState(false);
+  const [wordToGift, setWordToGift] = useState<DisplayMasterWordType | null>(null);
+  const [giftRecipientUsername, setGiftRecipientUsername] = useState('');
+  const [isProcessingGift, setIsProcessingGift] = useState(false);
 
 
   useEffect(() => {
@@ -371,6 +379,37 @@ export default function WordManagementPage() {
     }
   };
 
+  const openGiftWordDialog = (word: DisplayMasterWordType) => {
+    setWordToGift(word);
+    setGiftRecipientUsername('');
+    setIsGiftWordDialogOpen(true);
+  };
+
+  const handleGiftWord = async () => {
+    if (!wordToGift || !giftRecipientUsername.trim() || !currentUser) {
+      toast({title: "Missing Information", description: "Please enter a recipient username.", variant: "destructive"});
+      return;
+    }
+    setIsProcessingGift(true);
+    try {
+      const result = await adminGiftWordToUserAction({
+        wordText: wordToGift.wordText,
+        actingAdminId: currentUser.uid,
+        recipientUsername: giftRecipientUsername.trim()
+      });
+      if (result.success) {
+        toast({title: "Word Gifted!", description: `An email has been sent to ${giftRecipientUsername} to claim the word "${wordToGift.wordText}".`});
+        setIsGiftWordDialogOpen(false);
+      } else {
+        throw new Error(result.error || "Failed to gift the word.");
+      }
+    } catch (error: any) {
+      toast({ title: "Gifting Failed", description: error.message, variant: "destructive" });
+    } finally {
+      setIsProcessingGift(false);
+    }
+  };
+
 
   return (
     <div className="space-y-6">
@@ -627,7 +666,7 @@ export default function WordManagementPage() {
       <Card>
         <CardHeader>
             <CardTitle>Unclaimed Words in Dictionary</CardTitle>
-            <CardDescription>These words are approved but currently have no owner. They can be claimed if a user submits them and an admin approves.</CardDescription>
+            <CardDescription>These words are approved but currently have no owner. They can be claimed if a user submits them and an admin approves, or gifted by an admin.</CardDescription>
              <div className="pt-4">
                  <Input 
                     placeholder="Search unclaimed words..."
@@ -655,6 +694,7 @@ export default function WordManagementPage() {
                         <TableHead>Definition</TableHead>
                         <TableHead className="text-center">Frequency</TableHead>
                         <TableHead>Date Added/Modified</TableHead>
+                        <TableHead className="text-right">Actions</TableHead>
                     </TableRow>
                     </TableHeader>
                     <TableBody>
@@ -664,6 +704,11 @@ export default function WordManagementPage() {
                         <TableCell className="max-w-xs truncate" title={word.definition}>{word.definition.substring(0,50)}...</TableCell>
                         <TableCell className="text-center">{word.frequency.toFixed(2)}</TableCell>
                         <TableCell>{formatDate(word.dateAdded)}</TableCell>
+                        <TableCell className="text-right">
+                          <Button variant="outline" size="sm" onClick={() => openGiftWordDialog(word)}>
+                            <Gift className="mr-2 h-4 w-4" /> Gift Word
+                          </Button>
+                        </TableCell>
                         </TableRow>
                     ))}
                     </TableBody>
@@ -706,8 +751,37 @@ export default function WordManagementPage() {
           </AlertDialogContent>
         </AlertDialog>
       )}
+      
+      {wordToGift && (
+        <Dialog open={isGiftWordDialogOpen} onOpenChange={setIsGiftWordDialogOpen}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Gift Word: {wordToGift.wordText}</DialogTitle>
+              <DialogDescription>
+                Enter the username of the player you want to gift this word to. An email will be sent with instructions to claim it.
+              </DialogDescription>
+            </DialogHeader>
+            <div className="py-4">
+              <Label htmlFor="gift-recipient">Recipient Username</Label>
+              <Input 
+                id="gift-recipient" 
+                value={giftRecipientUsername}
+                onChange={(e) => setGiftRecipientUsername(e.target.value)}
+                placeholder="Enter exact username"
+                disabled={isProcessingGift}
+              />
+            </div>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setIsGiftWordDialogOpen(false)} disabled={isProcessingGift}>Cancel</Button>
+              <Button onClick={handleGiftWord} disabled={isProcessingGift || !giftRecipientUsername.trim()}>
+                {isProcessingGift ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Send className="mr-2 h-4 w-4" />}
+                Send Gift
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+      )}
 
     </div>
   );
 }
-

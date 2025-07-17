@@ -233,7 +233,8 @@ export type NotificationType =
   | 'Achievement'
   | 'Generic'
   | 'WordTransferRequest' // New notification type
-  | 'WordTransferResult'; // New notification type
+  | 'WordTransferResult' // New notification type
+  | 'WordGiftClaim'; // New notification type
 
 export interface AppNotification {
   id?: string;
@@ -278,6 +279,20 @@ export interface WordTransfer {
   respondedAt?: Timestamp;
 }
 
+// Word Gift Types
+export type WordGiftStatus = 'PendingClaim' | 'Claimed' | 'Expired';
+export interface WordGift {
+  id?: string; // Firestore Document ID
+  wordText: string;
+  giftedByAdminId: string;
+  recipientUserId: string;
+  recipientUsername: string;
+  status: WordGiftStatus;
+  initiatedAt: Timestamp;
+  expiresAt: Timestamp;
+  claimedAt?: Timestamp;
+}
+
 // Changelog Entry Type
 export interface ChangelogEntry {
   id?: string; // Firestore Document ID
@@ -309,6 +324,7 @@ export type AdminActionType =
   | 'WORD_SUBMISSION_BULK_PROCESS'
   | 'WORD_OWNER_DISASSOCIATE'
   | 'WORD_OWNER_BULK_DISASSOCIATE'
+  | 'WORD_GIFT_TO_USER' // New action type
   // Circle Management
   | 'CIRCLE_STATUS_CHANGE_ADMIN'
   // Invite Management
@@ -334,5 +350,3 @@ export interface AdminAuditLogEntry {
   targetEntityDisplay?: string; // e.g. username, wordText, circleName, changelog version
   details?: string | object; // Human-readable summary or structured data
 }
-
-    

@@ -2,14 +2,17 @@
 'use server';
 
 import { firestore } from '@/lib/firebase'; // auth removed
-import { collection, query, where, getDocs, doc, updateDoc, setDoc, serverTimestamp, Timestamp, increment, getDoc as getFirestoreDoc, deleteDoc, writeBatch } from 'firebase/firestore';
-import type { WordSubmission, MasterWordType, UserProfile, RejectedWordType, RejectionType } from '@/types';
+import { collection, query, where, getDocs, doc, updateDoc, setDoc, serverTimestamp, Timestamp, increment, getDoc as getFirestoreDoc, deleteDoc, writeBatch, addDoc, runTransaction } from 'firebase/firestore';
+import type { WordSubmission, MasterWordType, UserProfile, RejectedWordType, RejectionType, WordGift, AppNotification } from '@/types';
 import { logAdminAction } from '@/lib/auditLogger';
 
 const WORD_SUBMISSIONS_QUEUE = "WordSubmissionsQueue";
 const MASTER_WORDS_COLLECTION = "Words";
 const REJECTED_WORDS_COLLECTION = "RejectedWords";
 const USERS_COLLECTION = "Users";
+const WORD_GIFTS_COLLECTION = "WordGifts";
+const MAIL_COLLECTION = "mail";
+const NOTIFICATIONS_COLLECTION = "Notifications";
 
 
 export async function adminApproveWordSubmissionAction(payload: { submissionId: string, wordText: string, definition?: string, frequency?: number, submittedByUID: string, puzzleDateGMT: string, moderatorNotes?: string, isWotDClaim?: boolean, actingAdminId: string }): Promise<{ success: boolean; message?: string; error?: string }> {
@@ -110,9 +113,7 @@ export async function adminRejectWordSubmissionAction(payload: { submissionId: s
             const userSnap = await getFirestoreDoc(userDocRef);
             if (userSnap.exists()) {
                 const deductionPoints = wordText.length;
-                await updateDoc(userDocRef, {
-                    overallPersistentScore: increment(-deductionPoints)
-                });
+                await updateDoc(userDocRef, { overallPersistentScore: increment(-deductionPoints) });
                 message += ` ${deductionPoints} points deducted from submitter.`;
             }
         }
@@ -163,13 +164,17 @@ export async function adminBulkProcessWordSubmissionsAction(payload: BulkProcess
 
     try {
         const uniqueWordKeysInBatch = new Set(submissionsToProcess.filter(s => s.action === 'approve').map(s => s.wordText.toUpperCase()));
-        const masterWordPreFetchPromises: Promise<[string, MasterWordType | null]>[] = [];
-        uniqueWordKeysInBatch.forEach(key => {
-            const docRef = doc(firestore, MASTER_WORDS_COLLECTION, key);
-            masterWordPreFetchPromises.push(getFirestoreDoc(docRef).then(snap => [key, snap.exists() ? snap.data() as MasterWordType : null]));
-        });
-        const preFetchedMasterWordsArray = await Promise.all(masterWordPreFetchPromises);
-        preFetchedMasterWordsMap = new Map(preFetchedMasterWordsArray);
+        if (uniqueWordKeysInBatch.size > 0) {
+            const masterWordPreFetchPromises: Promise<[string, MasterWordType | null]>[] = [];
+            uniqueWordKeysInBatch.forEach(key => {
+                const docRef = doc(firestore, MASTER_WORDS_COLLECTION, key);
+                masterWordPreFetchPromises.push(getFirestoreDoc(docRef).then(snap => [key, snap.exists() ? snap.data() as MasterWordType : null]));
+            });
+            const preFetchedMasterWordsArray = await Promise.all(masterWordPreFetchPromises);
+            preFetchedMasterWordsMap = new Map(preFetchedMasterWordsArray);
+        } else {
+            preFetchedMasterWordsMap = new Map();
+        }
     } catch (error: any) {
         console.error("Error pre-fetching master words in bulk action:", error);
         return { success: false, results: [], error: "Failed to pre-fetch word data. Please try again." };
@@ -374,4 +379,86 @@ export async function adminBulkDisassociateWordOwnersAction(payload: AdminBulkDi
     });
     return { success: false, results, error: `Bulk disassociation failed: ${error.message}` };
   }
+}
+
+interface AdminGiftWordPayload {
+    wordText: string;
+    actingAdminId: string;
+    recipientUsername: string;
+}
+
+export async function adminGiftWordToUserAction(payload: AdminGiftWordPayload): Promise<{ success: boolean; error?: string }> {
+    const { wordText, actingAdminId, recipientUsername } = payload;
+
+    if (!actingAdminId) return { success: false, error: "Authentication required." };
+    if (!wordText || !recipientUsername) return { success: false, error: "Word and recipient username are required." };
+
+    const wordDocRef = doc(firestore, MASTER_WORDS_COLLECTION, wordText.toUpperCase());
+    const usersQuery = query(collection(firestore, USERS_COLLECTION), where("username", "==", recipientUsername));
+    
+    try {
+        const wordSnap = await getFirestoreDoc(wordDocRef);
+        if (!wordSnap.exists()) {
+            return { success: false, error: `Word "${wordText}" does not exist in the master dictionary.` };
+        }
+        if (wordSnap.data().originalSubmitterUID) {
+            return { success: false, error: `Word "${wordText}" is already owned.` };
+        }
+
+        const userSnap = await getDocs(usersQuery);
+        if (userSnap.empty) {
+            return { success: false, error: `User "${recipientUsername}" not found.` };
+        }
+        const recipientUserDoc = userSnap.docs[0];
+        const recipientUserId = recipientUserDoc.id;
+        const recipientEmail = recipientUserDoc.data().email;
+
+        const giftDocRef = doc(collection(firestore, WORD_GIFTS_COLLECTION));
+        const now = Timestamp.now();
+        const expiresAt = new Timestamp(now.seconds + 7 * 24 * 60 * 60, now.nanoseconds); // 7 days expiry
+
+        const newGift: WordGift = {
+            id: giftDocRef.id,
+            wordText: wordText.toUpperCase(),
+            giftedByAdminId: actingAdminId,
+            recipientUserId: recipientUserId,
+            recipientUsername: recipientUsername,
+            status: 'PendingClaim',
+            initiatedAt: now,
+            expiresAt: expiresAt,
+        };
+        
+        const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
+        const claimLink = `${appUrl}/claim-word/${giftDocRef.id}`;
+        
+        const emailContent = {
+            to: [recipientEmail],
+            message: {
+                subject: "Wow! You just got given a word",
+                html: `<p>Thanks for playing Lexiverse, as one of our early adopters we want to get you earning points as soon as possible so we are giving you a word. Yes, that's right you will own this word and every time someone uses it in future you will get points. All you have to do to claim this word is click on this link: <a href="${claimLink}">${claimLink}</a></p>`,
+            },
+            createdTimestamp: serverTimestamp(),
+        };
+        
+        const batch = writeBatch(firestore);
+        batch.set(giftDocRef, newGift);
+        batch.set(doc(collection(firestore, MAIL_COLLECTION)), emailContent);
+
+        await batch.commit();
+
+        await logAdminAction({
+            actingAdminId,
+            actionType: 'WORD_GIFT_TO_USER',
+            targetEntityType: 'User',
+            targetEntityId: recipientUserId,
+            targetEntityDisplay: recipientUsername,
+            details: `Gifted word "${wordText.toUpperCase()}" to user.`,
+        });
+
+        return { success: true };
+
+    } catch (error: any) {
+        console.error("Error gifting word:", error);
+        return { success: false, error: error.message || "An unexpected error occurred." };
+    }
 }
