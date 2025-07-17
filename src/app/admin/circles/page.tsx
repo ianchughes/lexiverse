@@ -281,6 +281,7 @@ export default function CircleManagementPage() {
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
               className="max-w-sm"
+              suppressHydrationWarning={true}
             />
             <Select value={statusFilter} onValueChange={(value) => setStatusFilter(value as CircleStatus | 'all')}>
               <SelectTrigger className="w-full sm:w-[180px]">
