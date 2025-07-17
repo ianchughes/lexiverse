@@ -316,7 +316,7 @@ export async function sendCircleInviteAction(payload: SendCircleInvitePayload): 
     batch.set(newInviteRef, newInviteDataPayload);
 
     if (!finalInviteeUserId && finalInviteeEmail) {
-      const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://your-app-url.com'; // Fallback URL
+      const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://lexiverse.io'; // Fallback URL
       const registrationLink = `${appUrl}/auth/register?inviteId=${newInviteRef.id}`;
       const emailContent = {
         to: [finalInviteeEmail],
@@ -578,7 +578,7 @@ export async function userResendCircleInviteAction(payload: UserManageInvitePayl
     });
 
     if (inviteData.status === 'SentToEmail' && inviteData.inviteeEmail) {
-      const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://your-app-url.com'; // Fallback URL
+      const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://lexiverse.io'; // Fallback URL
       const registrationLink = `${appUrl}/auth/register?inviteId=${inviteId}`;
       const emailContent = {
         to: [inviteData.inviteeEmail],

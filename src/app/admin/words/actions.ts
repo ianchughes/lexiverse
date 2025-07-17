@@ -428,7 +428,7 @@ export async function adminGiftWordToUserAction(payload: AdminGiftWordPayload): 
             expiresAt: expiresAt,
         };
         
-        const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
+        const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://lexiverse.io';
         const claimLink = `${appUrl}/claim-word/${giftDocRef.id}`;
         
         const emailContent = {
