@@ -14,7 +14,7 @@ import {
   serverTimestamp,
   Timestamp,
   runTransaction,
-  updateDoc, // Added updateDoc
+  updateDoc,
 } from 'firebase/firestore';
 import type { MasterWordType, UserProfile, WordTransfer, WordTransferStatus, AppNotification } from '@/types';
 

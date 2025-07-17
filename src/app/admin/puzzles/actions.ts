@@ -2,7 +2,7 @@
 'use server';
 
 import { firestore } from '@/lib/firebase';
-import { doc, setDoc, getDoc, Timestamp, collection, getDocs, deleteDoc, updateDoc, query, orderBy, writeBatch, serverTimestamp, WriteBatch, where } from 'firebase/firestore';
+import { doc, setDoc, getDoc, Timestamp, collection, getDocs, deleteDoc, updateDoc, query, orderBy, writeBatch, serverTimestamp } from 'firebase/firestore';
 import type { DailyPuzzle, AdminPuzzleFormState, ClientPuzzleSuggestion, GeneratePuzzleSuggestionsOutput } from '@/types';
 import { format, addDays, startOfTomorrow } from 'date-fns';
 import { logAdminAction } from '@/lib/auditLogger';
@@ -388,5 +388,3 @@ export async function adminReseedUpcomingPuzzlesAction(payload: AdminReseedPuzzl
         return { success: false, reseededCount: 0, error: error.message || "Could not reseed puzzles." };
     }
 }
-
-    
