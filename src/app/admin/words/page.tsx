@@ -69,6 +69,8 @@ export default function WordManagementPage() {
   const [wordToGift, setWordToGift] = useState<DisplayMasterWordType | null>(null);
   const [giftRecipientUsername, setGiftRecipientUsername] = useState('');
   const [isProcessingGift, setIsProcessingGift] = useState(false);
+  const [allUsers, setAllUsers] = useState<UserProfile[]>([]);
+  const [isLoadingUsers, setIsLoadingUsers] = useState(true);
 
 
   useEffect(() => {
@@ -134,32 +136,33 @@ export default function WordManagementPage() {
   }, [toast, itemsPerPage, setIsLoadingSubmissions, setPendingSubmissions, setCurrentPage, setSubmissionActions, setLastVisibleSubmission]); 
 
 
-  const fetchMasterWords = useCallback(async () => {
+  const fetchMasterWordsAndUsers = useCallback(async () => {
     setIsLoadingMasterWords(true);
+    setIsLoadingUsers(true);
     try {
-      const q = query(collection(firestore, MASTER_WORDS_COLLECTION), orderBy("dateAdded", "desc"));
-      const querySnapshot = await getDocs(q);
+      // Fetch Master Words
+      const masterWordsQuery = query(collection(firestore, MASTER_WORDS_COLLECTION), orderBy("dateAdded", "desc"));
+      const masterWordsSnapshot = await getDocs(masterWordsQuery);
       const words: MasterWordType[] = [];
-      querySnapshot.forEach((docSnap) => {
+      masterWordsSnapshot.forEach((docSnap) => {
         words.push({ wordText: docSnap.id, ...docSnap.data() } as MasterWordType);
       });
+
+      // Fetch All Users
+      const usersSnapshot = await getDocs(collection(firestore, USERS_COLLECTION));
+      const usersList: UserProfile[] = usersSnapshot.docs.map(d => ({ uid: d.id, ...d.data() } as UserProfile));
+      setAllUsers(usersList.sort((a,b) => a.username.localeCompare(b.username)));
+      setIsLoadingUsers(false);
 
       const ownerUIDs = new Set(words.map(w => w.originalSubmitterUID).filter(uid => uid));
       const usernamesMap = new Map<string, string>();
 
       if (ownerUIDs.size > 0) {
-        const uidArray = Array.from(ownerUIDs);
-        for (let i = 0; i < uidArray.length; i += 30) {
-            const batchUIDs = uidArray.slice(i, i + 30);
-            if (batchUIDs.length > 0) {
-                const usersQuery = query(collection(firestore, USERS_COLLECTION), where("uid", "in", batchUIDs));
-                const usersSnap = await getDocs(usersQuery);
-                usersSnap.forEach(userDoc => {
-                    const userData = userDoc.data() as UserProfile;
-                    usernamesMap.set(userData.uid, userData.username);
-                });
+        usersList.forEach(user => {
+            if(ownerUIDs.has(user.uid)) {
+                usernamesMap.set(user.uid, user.username);
             }
-        }
+        });
       }
       
       const displayWords: DisplayMasterWordType[] = words.map(word => ({
@@ -170,20 +173,21 @@ export default function WordManagementPage() {
 
       setMasterWordsList(displayWords);
     } catch (error) {
-      console.error("Error fetching master words:", error);
-      toast({ title: "Error", description: "Could not fetch master word list.", variant: "destructive" });
+      console.error("Error fetching master words or users:", error);
+      toast({ title: "Error", description: "Could not fetch master word list or users.", variant: "destructive" });
     } finally {
       setIsLoadingMasterWords(false);
     }
   }, [toast]);
+
 
   useEffect(() => {
     fetchPendingSubmissions(true); 
   }, [itemsPerPage, fetchPendingSubmissions]); 
 
    useEffect(() => {
-    fetchMasterWords();
-  }, [fetchMasterWords]);
+    fetchMasterWordsAndUsers();
+  }, [fetchMasterWordsAndUsers]);
 
 
   const handleLoadMoreSubmissions = () => {
@@ -266,7 +270,7 @@ export default function WordManagementPage() {
       }
       
       fetchPendingSubmissions(true); 
-      fetchMasterWords(); 
+      fetchMasterWordsAndUsers(); 
 
     } catch (error: any) {
       toast({ title: "Bulk Action Failed", description: error.message || "Could not process submissions.", variant: "destructive" });
@@ -313,7 +317,7 @@ export default function WordManagementPage() {
       });
       if (result.success) {
         toast({ title: "Owner Disassociated", description: `Owner has been removed from "${wordToDisassociate.wordText}".` });
-        fetchMasterWords(); 
+        fetchMasterWordsAndUsers(); 
       } else {
         throw new Error(result.error || "Failed to disassociate owner.");
       }
@@ -369,7 +373,7 @@ export default function WordManagementPage() {
       } else {
         toast({ title: "Bulk Disassociation Error", description: result.error || "Some words could not be disassociated.", variant: "destructive" });
       }
-      fetchMasterWords();
+      fetchMasterWordsAndUsers();
       setSelectedWordsForBulkDisassociate(new Set());
 
     } catch (error: any) {
@@ -387,7 +391,7 @@ export default function WordManagementPage() {
 
   const handleGiftWord = async () => {
     if (!wordToGift || !giftRecipientUsername.trim() || !currentUser) {
-      toast({title: "Missing Information", description: "Please enter a recipient username.", variant: "destructive"});
+      toast({title: "Missing Information", description: "Please select a recipient username.", variant: "destructive"});
       return;
     }
     setIsProcessingGift(true);
@@ -758,18 +762,30 @@ export default function WordManagementPage() {
             <DialogHeader>
               <DialogTitle>Gift Word: {wordToGift.wordText}</DialogTitle>
               <DialogDescription>
-                Enter the username of the player you want to gift this word to. An email will be sent with instructions to claim it.
+                Select the user you want to gift this word to. An email will be sent with instructions to claim it.
               </DialogDescription>
             </DialogHeader>
             <div className="py-4">
               <Label htmlFor="gift-recipient">Recipient Username</Label>
-              <Input 
-                id="gift-recipient" 
-                value={giftRecipientUsername}
-                onChange={(e) => setGiftRecipientUsername(e.target.value)}
-                placeholder="Enter exact username"
-                disabled={isProcessingGift}
-              />
+              {isLoadingUsers ? (
+                <div className="flex items-center space-x-2 mt-1">
+                    <Skeleton className="h-10 flex-grow" />
+                    <Loader2 className="h-5 w-5 animate-spin" />
+                </div>
+              ) : (
+                <Select value={giftRecipientUsername} onValueChange={setGiftRecipientUsername} disabled={isProcessingGift}>
+                    <SelectTrigger id="gift-recipient">
+                        <SelectValue placeholder="Select a user to gift to..." />
+                    </SelectTrigger>
+                    <SelectContent>
+                        {allUsers.map((user) => (
+                            <SelectItem key={user.uid} value={user.username}>
+                                {user.username} ({user.email})
+                            </SelectItem>
+                        ))}
+                    </SelectContent>
+                </Select>
+              )}
             </div>
             <DialogFooter>
               <Button variant="outline" onClick={() => setIsGiftWordDialogOpen(false)} disabled={isProcessingGift}>Cancel</Button>
@@ -785,3 +801,4 @@ export default function WordManagementPage() {
     </div>
   );
 }
+
