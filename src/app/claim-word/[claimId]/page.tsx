@@ -5,7 +5,7 @@ import { useEffect, useState, useCallback, Suspense } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { useAuth } from '@/contexts/AuthContext';
 import { firestore } from '@/lib/firebase';
-import { doc, getDoc, updateDoc, writeBatch, serverTimestamp, Timestamp } from 'firebase/firestore';
+import { doc, getDoc, updateDoc, writeBatch, serverTimestamp, Timestamp, runTransaction } from 'firebase/firestore';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Loader2, AlertTriangle, PartyPopper, Gift, XCircle, LogIn, UserPlus } from 'lucide-react';
@@ -16,7 +16,7 @@ import type { WordGift, MasterWordType } from '@/types';
 async function claimGiftedWordAction(claimId: string, userId: string): Promise<{ success: boolean; error?: string; wordText?: string }> {
   const giftRef = doc(firestore, 'WordGifts', claimId);
   try {
-    return await firestore.runTransaction(async (transaction) => {
+    return await runTransaction(firestore, async (transaction) => {
       const giftSnap = await transaction.get(giftRef);
       if (!giftSnap.exists()) {
         throw new Error("This gift link is invalid or has expired.");
