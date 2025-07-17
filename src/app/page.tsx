@@ -49,7 +49,6 @@ export default function HomePage() {
   const [isProcessingWord, setIsProcessingWord] = useState(false);
   const [showWelcomeInstructionsModal, setShowWelcomeInstructionsModal] = useState(false);
   const [newlyOwnedWordsThisSession, setNewlyOwnedWordsThisSession] = useState<string[]>([]);
-  const [isPhoneMode, setIsPhoneMode] = useState(false);
   
   const { toast } = useToast();
 
@@ -307,8 +306,6 @@ export default function HomePage() {
           showWelcomeInstructionsModal={showWelcomeInstructionsModal}
           showDebrief={showDebrief}
           pendingInvitesCount={gameData.pendingInvitesCount}
-          isPhoneMode={isPhoneMode}
-          setIsPhoneMode={setIsPhoneMode}
         />
       )}
       

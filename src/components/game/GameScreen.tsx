@@ -40,8 +40,6 @@ interface GameScreenProps {
   showWelcomeInstructionsModal: boolean; // To prevent starting game if modal is up
   showDebrief: boolean; // To prevent starting game if debrief is active
   pendingInvitesCount: number;
-  isPhoneMode: boolean;
-  setIsPhoneMode: (value: boolean) => void;
 }
 
 export function GameScreen({
@@ -67,8 +65,6 @@ export function GameScreen({
   showWelcomeInstructionsModal,
   showDebrief,
   pendingInvitesCount,
-  isPhoneMode,
-  setIsPhoneMode,
 }: GameScreenProps) {
 
   if (gameState === 'idle' && !showWelcomeInstructionsModal && !showDebrief) {
@@ -105,21 +101,12 @@ export function GameScreen({
 
   if (gameState === 'playing') {
     return (
-      <div className={cn("w-full max-w-2xl mx-auto", { 'phone-mode-lexiverse': isPhoneMode })}>
+      <div className="w-full max-w-2xl mx-auto">
         <div className="flex flex-col sm:flex-row justify-between items-center gap-2 mb-4 w-full">
-          <div className="sm:w-1/3 text-center sm:text-left order-1 sm:order-1 flex items-center justify-center sm:justify-start gap-2">
+          <div className="sm:w-1/3 text-center sm:text-left order-2 sm:order-1 flex items-center justify-center sm:justify-start">
             <Badge variant="outline" className="text-base px-2 py-0.5 sm:text-lg sm:px-3 sm:py-1">Score: {sessionScore}</Badge>
-            <Button
-              variant="ghost"
-              size="icon"
-              onClick={() => setIsPhoneMode(!isPhoneMode)}
-              className="hidden md:inline-flex text-muted-foreground hover:text-primary"
-              title={isPhoneMode ? "Switch to Desktop View" : "Switch to Phone View"}
-            >
-              {isPhoneMode ? <Monitor className="h-5 w-5" /> : <Smartphone className="h-5 w-5" />}
-            </Button>
           </div>
-          <div className="sm:w-1/3 flex justify-center order-2 sm:order-2">
+          <div className="sm:w-1/3 flex justify-center order-1 sm:order-2">
             <GameTimer timeLeft={timeLeft} />
           </div>
           <div className="sm:w-1/3 text-center sm:text-right min-h-[30px] sm:min-h-[38px] flex justify-center sm:justify-end items-center order-3 sm:order-3">
