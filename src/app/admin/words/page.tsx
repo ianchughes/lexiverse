@@ -133,7 +133,7 @@ export default function WordManagementPage() {
     } finally {
       setIsLoadingSubmissions(false);
     }
-  }, [toast, itemsPerPage, setIsLoadingSubmissions, setPendingSubmissions, setCurrentPage, setSubmissionActions, setLastVisibleSubmission]); 
+  }, [toast, itemsPerPage, setIsLoadingSubmissions, setPendingSubmissions, setCurrentPage, setSubmissionActions, setLastVisibleSubmission, lastVisibleSubmission]); 
 
 
   const fetchMasterWordsAndUsers = useCallback(async () => {
@@ -706,7 +706,7 @@ export default function WordManagementPage() {
                         <TableRow key={word.wordText}>
                         <TableCell className="font-medium">{word.wordText}</TableCell>
                         <TableCell className="max-w-xs truncate" title={word.definition}>{word.definition.substring(0,50)}...</TableCell>
-                        <TableCell className="text-center">{word.frequency.toFixed(2)}</TableCell>
+                        <TableCell className="text-center">{word.frequency?.toFixed(2) ?? 'N/A'}</TableCell>
                         <TableCell>{formatDate(word.dateAdded)}</TableCell>
                         <TableCell className="text-right">
                           <Button variant="outline" size="sm" onClick={() => openGiftWordDialog(word)}>
@@ -801,4 +801,3 @@ export default function WordManagementPage() {
     </div>
   );
 }
-
