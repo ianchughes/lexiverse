@@ -327,6 +327,7 @@ export type AdminActionType =
   | 'WORD_GIFT_TO_USER' // New action type
   // Circle Management
   | 'CIRCLE_STATUS_CHANGE_ADMIN'
+  | 'CIRCLE_CREATE_ADMIN' // New action type
   // Invite Management
   | 'INVITE_DELETE_ADMIN'
   | 'INVITE_STATUS_UPDATE_ADMIN'

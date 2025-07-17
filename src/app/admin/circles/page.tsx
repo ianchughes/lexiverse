@@ -1,23 +1,27 @@
 
 'use client';
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import Link from 'next/link';
 import { firestore } from '@/lib/firebase';
 import { collection, getDocs, query, orderBy } from 'firebase/firestore'; // Removed doc, updateDoc
-import type { Circle, CircleStatus } from '@/types';
+import type { Circle, CircleStatus, UserProfile } from '@/types';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from '@/components/ui/badge';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { useToast } from '@/hooks/use-toast';
 import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Checkbox } from '@/components/ui/checkbox';
+import { ScrollArea } from '@/components/ui/scroll-area';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { MoreHorizontal, Users, ShieldAlert, ShieldCheck, Trash2, Eye, Loader2, RefreshCw } from 'lucide-react';
+import { MoreHorizontal, Users, ShieldAlert, ShieldCheck, Trash2, Eye, Loader2, RefreshCw, PlusCircle } from 'lucide-react';
 import { format } from 'date-fns';
-import { adminUpdateCircleStatusAction } from '@/app/admin/circles/actions';
+import { adminUpdateCircleStatusAction, adminCreateCircleWithMembersAction } from '@/app/admin/circles/actions';
 import { useAuth } from '@/contexts/AuthContext'; // Import useAuth
 
 const CIRCLES_PER_PAGE = 15;
@@ -34,6 +38,14 @@ export default function CircleManagementPage() {
   const [newStatusForCircle, setNewStatusForCircle] = useState<CircleStatus | null>(null);
   const [isStatusConfirmOpen, setIsStatusConfirmOpen] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
+
+  // For Create Circle Dialog
+  const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
+  const [newCircleName, setNewCircleName] = useState('');
+  const [selectedUserIds, setSelectedUserIds] = useState<Set<string>>(new Set());
+  const [allUsers, setAllUsers] = useState<UserProfile[]>([]);
+  const [isLoadingUsers, setIsLoadingUsers] = useState(false);
+  const [userSearchTerm, setUserSearchTerm] = useState('');
 
   const fetchCircles = useCallback(async () => {
     setIsLoading(true);
@@ -63,9 +75,29 @@ export default function CircleManagementPage() {
     }
   }, [toast, searchTerm, statusFilter]); 
 
+  const fetchAllUsers = useCallback(async () => {
+    setIsLoadingUsers(true);
+    try {
+      const usersSnap = await getDocs(collection(firestore, "Users"));
+      const usersList: UserProfile[] = usersSnap.docs.map(d => ({ uid: d.id, ...d.data() } as UserProfile));
+      setAllUsers(usersList.sort((a,b) => a.username.localeCompare(b.username)));
+    } catch(error) {
+       console.error("Error fetching users for circle creation:", error);
+       toast({ title: "Error", description: "Could not fetch user list for selection.", variant: "destructive" });
+    } finally {
+      setIsLoadingUsers(false);
+    }
+  }, [toast]);
+
   useEffect(() => {
     fetchCircles();
   }, [fetchCircles]);
+  
+  useEffect(() => {
+    if(isCreateDialogOpen) {
+      fetchAllUsers();
+    }
+  }, [isCreateDialogOpen, fetchAllUsers]);
 
   const getStatusBadge = (status: CircleStatus) => {
     switch (status) {
@@ -112,6 +144,59 @@ export default function CircleManagementPage() {
     }
   };
 
+  const handleToggleUserSelection = (userId: string) => {
+    setSelectedUserIds(prev => {
+      const newSet = new Set(prev);
+      if (newSet.has(userId)) {
+        newSet.delete(userId);
+      } else {
+        newSet.add(userId);
+      }
+      return newSet;
+    });
+  };
+
+  const handleCreateCircle = async () => {
+    if (!actingAdmin) return;
+    if (!newCircleName.trim()) {
+      toast({ title: "Validation Error", description: "Circle name is required.", variant: "destructive"});
+      return;
+    }
+    if (selectedUserIds.size === 0) {
+      toast({ title: "Validation Error", description: "Please select at least one member.", variant: "destructive"});
+      return;
+    }
+    setIsProcessing(true);
+    try {
+      const result = await adminCreateCircleWithMembersAction({
+        circleName: newCircleName,
+        memberIds: Array.from(selectedUserIds),
+        actingAdminId: actingAdmin.uid
+      });
+      if(result.success) {
+        toast({ title: "Circle Created", description: `Circle "${newCircleName}" created successfully.`});
+        setIsCreateDialogOpen(false);
+        setNewCircleName('');
+        setSelectedUserIds(new Set());
+        fetchCircles();
+      } else {
+        throw new Error(result.error || "Failed to create circle.");
+      }
+    } catch (error: any) {
+      toast({ title: "Error", description: error.message, variant: "destructive" });
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+  
+  const filteredUsers = useMemo(() => {
+    if (!userSearchTerm) return allUsers;
+    return allUsers.filter(u => 
+      u.username.toLowerCase().includes(userSearchTerm.toLowerCase()) || 
+      u.email.toLowerCase().includes(userSearchTerm.toLowerCase())
+    );
+  }, [allUsers, userSearchTerm]);
+
 
   return (
     <div className="space-y-6">
@@ -129,9 +214,66 @@ export default function CircleManagementPage() {
               <CardTitle>Circles Overview</CardTitle>
               <CardDescription>View, filter, and manage all created circles.</CardDescription>
             </div>
-            <Button onClick={fetchCircles} variant="outline" size="icon" disabled={isLoading}>
-              <RefreshCw className={`h-4 w-4 ${isLoading ? 'animate-spin' : ''}`} />
-            </Button>
+            <div className="flex gap-2">
+              <Dialog open={isCreateDialogOpen} onOpenChange={setIsCreateDialogOpen}>
+                <DialogTrigger asChild>
+                  <Button><PlusCircle className="mr-2 h-4 w-4"/>Create Circle</Button>
+                </DialogTrigger>
+                <DialogContent className="sm:max-w-lg">
+                  <DialogHeader>
+                    <DialogTitle>Create New Circle (Admin)</DialogTitle>
+                    <DialogDescription>
+                      Create a circle and pre-populate it with members. An email will be sent to all selected members.
+                    </DialogDescription>
+                  </DialogHeader>
+                  <div className="grid gap-4 py-4">
+                    <div className="grid grid-cols-4 items-center gap-4">
+                      <Label htmlFor="circle-name" className="text-right">Circle Name</Label>
+                      <Input id="circle-name" value={newCircleName} onChange={e => setNewCircleName(e.target.value)} className="col-span-3" />
+                    </div>
+                    <div className="space-y-2">
+                      <Label>Select Members ({selectedUserIds.size} selected)</Label>
+                       <Input 
+                        placeholder="Search users..." 
+                        value={userSearchTerm} 
+                        onChange={e => setUserSearchTerm(e.target.value)}
+                        className="mb-2"
+                      />
+                      <ScrollArea className="h-64 border rounded-md">
+                        {isLoadingUsers ? (
+                          <div className="flex justify-center items-center h-full"><Loader2 className="h-6 w-6 animate-spin"/></div>
+                        ) : (
+                          <div className="p-4 space-y-2">
+                            {filteredUsers.map(user => (
+                              <div key={user.uid} className="flex items-center space-x-3 p-2 rounded hover:bg-muted">
+                                <Checkbox
+                                  id={`user-${user.uid}`}
+                                  checked={selectedUserIds.has(user.uid)}
+                                  onCheckedChange={() => handleToggleUserSelection(user.uid)}
+                                />
+                                <Label htmlFor={`user-${user.uid}`} className="flex flex-col">
+                                  <span>{user.username}</span>
+                                  <span className="text-xs text-muted-foreground">{user.email}</span>
+                                </Label>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </ScrollArea>
+                    </div>
+                  </div>
+                  <DialogFooter>
+                    <Button variant="outline" onClick={() => setIsCreateDialogOpen(false)}>Cancel</Button>
+                    <Button onClick={handleCreateCircle} disabled={isProcessing}>
+                      {isProcessing ? <Loader2 className="mr-2 h-4 w-4 animate-spin"/> : null} Create & Invite
+                    </Button>
+                  </DialogFooter>
+                </DialogContent>
+              </Dialog>
+              <Button onClick={fetchCircles} variant="outline" size="icon" disabled={isLoading}>
+                <RefreshCw className={`h-4 w-4 ${isLoading ? 'animate-spin' : ''}`} />
+              </Button>
+            </div>
           </div>
            <div className="pt-4 flex flex-col sm:flex-row gap-4">
             <Input 
