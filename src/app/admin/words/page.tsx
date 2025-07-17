@@ -706,7 +706,7 @@ export default function WordManagementPage() {
                         <TableRow key={word.wordText}>
                         <TableCell className="font-medium">{word.wordText}</TableCell>
                         <TableCell className="max-w-xs truncate" title={word.definition}>{word.definition.substring(0,50)}...</TableCell>
-                        <TableCell className="text-center">{word.frequency?.toFixed(2) ?? 'N/A'}</TableCell>
+                        <TableCell className="text-center">{typeof word.frequency === 'number' ? word.frequency.toFixed(2) : 'N/A'}</TableCell>
                         <TableCell>{formatDate(word.dateAdded)}</TableCell>
                         <TableCell className="text-right">
                           <Button variant="outline" size="sm" onClick={() => openGiftWordDialog(word)}>
