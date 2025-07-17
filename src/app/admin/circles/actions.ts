@@ -2,7 +2,7 @@
 'use server';
 
 import { firestore } from '@/lib/firebase';
-import { doc, updateDoc, getDoc, serverTimestamp, collection, addDoc, writeBatch, query, where, type Timestamp } from 'firebase/firestore';
+import { doc, updateDoc, getDoc, serverTimestamp, collection, addDoc, writeBatch, query, where, type Timestamp, getDocs } from 'firebase/firestore';
 import type { CircleStatus, Circle, CircleMember } from '@/types';
 import { logAdminAction } from '@/lib/auditLogger';
 import { customAlphabet } from 'nanoid';
