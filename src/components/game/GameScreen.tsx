@@ -13,6 +13,9 @@ import { PlayCircle, Check, Loader2, AlertTriangle, BellRing, Smartphone, Monito
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import Link from 'next/link';
 import { cn } from '@/lib/utils';
+import { useDevice } from '@/contexts/DeviceContext';
+import { motion, AnimatePresence } from 'framer-motion';
+
 
 const DAILY_GAME_DURATION = 90; // This should ideally come from a shared config or props
 const MIN_WORD_LENGTH = 4; // Same as above
@@ -66,6 +69,7 @@ export function GameScreen({
   showDebrief,
   pendingInvitesCount,
 }: GameScreenProps) {
+    const { isMobile } = useDevice();
 
   if (gameState === 'idle' && !showWelcomeInstructionsModal && !showDebrief) {
     return (
@@ -99,7 +103,70 @@ export function GameScreen({
     );
   }
 
-  if (gameState === 'playing') {
+  if (isMobile && gameState === 'playing') {
+    return (
+      <div className="flex flex-col h-[calc(100svh-4rem-2rem)] w-full max-w-sm mx-auto">
+        {/* Mobile-optimized header */}
+        <div className="flex justify-between items-center p-2">
+          <Badge variant="outline" className="text-lg font-bold px-3 py-1">
+            Score: {sessionScore}
+          </Badge>
+          <GameTimer timeLeft={timeLeft} />
+        </div>
+
+        {/* Word Display Area */}
+        <div className="py-2">
+          <CurrentWordDisplay word={currentWordText} isInvalid={wordInvalidFlash} />
+        </div>
+        
+        {/* Main content area, scrolls if needed */}
+        <div className="flex-1 overflow-y-auto mb-2">
+            <h2 className="text-lg font-semibold mb-2 text-center">Words Found: {submittedWords.length}</h2>
+            <SubmittedWordsList words={submittedWords} />
+        </div>
+
+        {/* Letter Grid and Actions at the bottom */}
+        <div className="flex-shrink-0">
+          <LetterGrid
+            letters={seedingLetters}
+            onLetterClick={onLetterClick}
+            selectedIndices={selectedLetterIndices}
+            disabled={gameState !== 'playing'}
+          />
+
+          <div className="grid grid-cols-3 gap-2 pt-4">
+            <Button
+              variant="outline"
+              onClick={onBackspace}
+              className="h-14 text-lg"
+              disabled={isProcessingWord || currentWordText.length === 0}
+            >
+              ←
+            </Button>
+            <Button
+              variant="default"
+              onClick={onSubmitWord}
+              disabled={isProcessingWord || currentWordText.length < MIN_WORD_LENGTH}
+              className="h-14 text-lg font-bold"
+            >
+              {isProcessingWord ? <Loader2 className="h-6 w-6 animate-spin" /> : 'SUBMIT'}
+            </Button>
+            <Button
+              variant="outline"
+              onClick={onClearWord}
+              className="h-14 text-lg"
+              disabled={isProcessingWord || currentWordText.length === 0}
+            >
+              CLEAR
+            </Button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+
+  if (gameState === 'playing') { // Desktop layout
     return (
       <div className="w-full max-w-2xl mx-auto">
         <div className="flex flex-col sm:flex-row justify-between items-center gap-2 mb-4 w-full">
