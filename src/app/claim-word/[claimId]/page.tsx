@@ -2,61 +2,16 @@
 'use client';
 
 import { useEffect, useState, useCallback, Suspense } from 'react';
-import { useParams, useRouter } from 'next/navigation';
+import { useParams } from 'next/navigation';
 import { useAuth } from '@/contexts/AuthContext';
-import { firestore } from '@/lib/firebase';
-import { doc, getDoc, updateDoc, writeBatch, serverTimestamp, Timestamp, runTransaction } from 'firebase/firestore';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Loader2, AlertTriangle, PartyPopper, Gift, XCircle, LogIn, UserPlus } from 'lucide-react';
 import Link from 'next/link';
-import type { WordGift, MasterWordType } from '@/types';
-
-// Server action to claim the word
-async function claimGiftedWordAction(claimId: string, userId: string): Promise<{ success: boolean; error?: string; wordText?: string }> {
-  const giftRef = doc(firestore, 'WordGifts', claimId);
-  try {
-    return await runTransaction(firestore, async (transaction) => {
-      const giftSnap = await transaction.get(giftRef);
-      if (!giftSnap.exists()) {
-        throw new Error("This gift link is invalid or has expired.");
-      }
-
-      const giftData = giftSnap.data() as WordGift;
-
-      if (giftData.recipientUserId !== userId) {
-        throw new Error("This gift is not intended for you. Please log in with the correct account.");
-      }
-      if (giftData.status !== 'PendingClaim') {
-        throw new Error(`This gift has already been ${giftData.status.toLowerCase()}.`);
-      }
-      if (giftData.expiresAt.toMillis() < Date.now()) {
-        transaction.update(giftRef, { status: 'Expired' });
-        throw new Error("This gift has expired.");
-      }
-
-      const wordRef = doc(firestore, 'Words', giftData.wordText);
-      const wordSnap = await transaction.get(wordRef);
-      if (!wordSnap.exists() || wordSnap.data()?.originalSubmitterUID) {
-        transaction.update(giftRef, { status: 'Expired', adminNotes: 'Word became unavailable.' });
-        throw new Error("Sorry, this word is no longer available to be claimed.");
-      }
-
-      // All checks passed, perform the claim
-      transaction.update(wordRef, { originalSubmitterUID: userId });
-      transaction.update(giftRef, { status: 'Claimed', claimedAt: serverTimestamp() as Timestamp });
-
-      return { success: true, wordText: giftData.wordText };
-    });
-  } catch (error: any) {
-    console.error("Error claiming gifted word:", error);
-    return { success: false, error: error.message };
-  }
-}
+import { claimGiftedWordServerAction } from './actions';
 
 function ClaimWordContent() {
   const params = useParams();
-  const router = useRouter();
   const claimId = typeof params.claimId === 'string' ? params.claimId : '';
   const { currentUser, isLoadingAuth } = useAuth();
   
@@ -78,7 +33,7 @@ function ClaimWordContent() {
       return;
     }
 
-    const result = await claimGiftedWordAction(claimId, currentUser.uid);
+    const result = await claimGiftedWordServerAction(claimId, currentUser.uid);
 
     if (result.success) {
       setStatus('success');

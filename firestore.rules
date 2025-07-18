@@ -130,6 +130,14 @@ service cloud.firestore {
       allow create, update: if isSignedIn(); // Handled by server functions
       allow delete: if false; // Transfers should expire or be resolved, not deleted by users
     }
+
+    match /WordGifts/{giftId} {
+      allow read: if isSignedIn() && request.auth.uid == resource.data.recipientUserId;
+      allow update: if isSignedIn() &&
+                       request.auth.uid == resource.data.recipientUserId &&
+                       request.resource.data.keys().hasOnly(['status', 'claimedAt']);
+      allow create, delete: if false; // Only admins via server actions
+    }
     
     match /Notifications/{notificationId} {
       allow read, update: if isUser(resource.data.userId);
