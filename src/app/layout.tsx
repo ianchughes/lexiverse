@@ -5,6 +5,7 @@ import type { Metadata } from 'next';
 import './globals.css';
 import { SiteHeader } from '@/components/layout/SiteHeader';
 import { SiteFooter } from '@/components/layout/SiteFooter';
+import { BottomNav } from '@/components/layout/BottomNav';
 import { Toaster } from "@/components/ui/toaster";
 import { AuthProvider } from '@/contexts/AuthContext'; 
 import { SuggestionsBot } from '@/components/suggestions-bot/SuggestionsBot';
@@ -55,8 +56,9 @@ export default function RootLayout({
               {children}
             </main>
             <SiteFooter />
+            <BottomNav />
             <Toaster />
-            <SuggestionsBot /> 
+            <SuggestionsBot />
           </DeviceProvider>
         </AuthProvider>
       </body>
