@@ -9,6 +9,7 @@ import { Toaster } from "@/components/ui/toaster";
 import { AuthProvider } from '@/contexts/AuthContext'; 
 import { SuggestionsBot } from '@/components/suggestions-bot/SuggestionsBot';
 import React, { useEffect } from 'react'; // Import useEffect
+import { DeviceProvider } from '@/contexts/DeviceContext';
 
 // export const metadata: Metadata = { // Metadata object should be defined in server components
 //   title: 'LexiVerse - Daily Word Puzzle',
@@ -47,13 +48,15 @@ export default function RootLayout({
       </head>
       <body className="font-body antialiased min-h-screen flex flex-col" suppressHydrationWarning>
         <AuthProvider> 
-          <SiteHeader />
-          <main className="flex-grow container mx-auto px-4 py-8">
-            {children}
-          </main>
-          <SiteFooter />
-          <Toaster />
-          <SuggestionsBot /> 
+          <DeviceProvider>
+            <SiteHeader />
+            <main className="flex-grow container mx-auto px-4 py-8">
+              {children}
+            </main>
+            <SiteFooter />
+            <Toaster />
+            <SuggestionsBot /> 
+          </DeviceProvider>
         </AuthProvider>
       </body>
     </html>
