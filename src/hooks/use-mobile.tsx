@@ -1,65 +1,34 @@
 
 "use client"
 
-import { useEffect, useState } from "react"
+import * as React from "react"
 
 const MOBILE_BREAKPOINT = 768
-const TABLET_BREAKPOINT = 1024
 
 export function useIsMobile() {
-  const [isMobile, setIsMobile] = useState<boolean | undefined>(undefined)
+  const [isMobile, setIsMobile] = React.useState<boolean | undefined>(undefined)
 
-  useEffect(() => {
+  React.useEffect(() => {
+    if (typeof window === 'undefined') {
+      setIsMobile(false);
+      return;
+    }
+
     const mql = window.matchMedia(`(max-width: ${MOBILE_BREAKPOINT - 1}px)`)
     const onChange = () => {
       setIsMobile(window.innerWidth < MOBILE_BREAKPOINT)
     }
-    
-    // Set initial value
-    if (typeof window !== 'undefined') {
-        setIsMobile(window.innerWidth < MOBILE_BREAKPOINT)
-    }
+
+    // Set initial value on component mount
+    setIsMobile(window.innerWidth < MOBILE_BREAKPOINT)
     
     // Listen for changes
     mql.addEventListener("change", onChange)
+
+    // Cleanup listener on component unmount
     return () => mql.removeEventListener("change", onChange)
   }, [])
 
-  // Return false as default during SSR
-  return !!isMobile
-}
-
-export function useMediaQuery(query: string) {
-  const [matches, setMatches] = useState(false)
-
-  useEffect(() => {
-    if (typeof window === 'undefined') return;
-    
-    const media = window.matchMedia(query)
-    if (media.matches !== matches) {
-      setMatches(media.matches)
-    }
-    
-    const listener = (event: MediaQueryListEvent) => {
-      setMatches(event.matches)
-    }
-    
-    media.addEventListener("change", listener)
-    return () => media.removeEventListener("change", listener)
-  }, [matches, query])
-
-  return matches
-}
-
-export function useDevice() {
-  const isMobile = useIsMobile()
-  const isTablet = useMediaQuery(`(min-width: ${MOBILE_BREAKPOINT}px) and (max-width: ${TABLET_BREAKPOINT - 1}px)`)
-  const isDesktop = useMediaQuery(`(min-width: ${TABLET_BREAKPOINT}px)`)
-  
-  return {
-    isMobile,
-    isTablet,
-    isDesktop,
-    isTouchDevice: typeof window !== 'undefined' && ('ontouchstart' in window || navigator.maxTouchPoints > 0)
-  }
+  // Return a sensible default during server-side rendering or initial hydration
+  return isMobile === undefined ? false : isMobile
 }
