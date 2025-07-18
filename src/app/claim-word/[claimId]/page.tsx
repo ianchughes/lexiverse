@@ -3,51 +3,40 @@
 
 import { useEffect, useState, useCallback, Suspense } from 'react';
 import { useParams } from 'next/navigation';
-import { useAuth } from '@/contexts/AuthContext';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Loader2, AlertTriangle, PartyPopper, Gift, XCircle, LogIn, UserPlus } from 'lucide-react';
+import { Loader2, PartyPopper, Gift, XCircle } from 'lucide-react';
 import Link from 'next/link';
-import { claimGiftedWordServerAction, verifyGiftedWordServerAction } from './actions';
+import { claimGiftedWordServerAction, verifyGiftedWordServerAction, declineGiftedWordServerAction } from './actions';
 
 function ClaimWordContent() {
   const params = useParams();
   const claimId = typeof params.claimId === 'string' ? params.claimId : '';
-  const { currentUser, isLoadingAuth } = useAuth();
-  
-  const [status, setStatus] = useState<'loading' | 'confirm' | 'claiming' | 'success' | 'error' | 'unauthenticated'>('loading');
+
+  const [status, setStatus] = useState<'loading' | 'confirm' | 'claiming' | 'declining' | 'success' | 'error'>('loading');
   const [message, setMessage] = useState('Checking your gift...');
 
   const verifyGift = useCallback(async () => {
-    if (isLoadingAuth) return;
-
-    if (!currentUser) {
-      setStatus('unauthenticated');
-      setMessage('You need to be logged in to claim your gift.');
-      return;
-    }
-
     if (!claimId) {
       setStatus('error');
       setMessage('No claim ID provided.');
       return;
     }
 
-    const result = await verifyGiftedWordServerAction(claimId, currentUser.uid);
+    const result = await verifyGiftedWordServerAction(claimId);
     if (result.success) {
       setStatus('confirm');
-      setMessage('You have been gifted a word! Confirm below to claim it and reveal what it is.');
+      setMessage('You have been gifted a word! Would you like to claim it?');
     } else {
       setStatus('error');
       setMessage(result.error || 'An unknown error occurred while verifying your gift.');
     }
-  }, [claimId, currentUser, isLoadingAuth]);
+  }, [claimId]);
 
   const processClaim = useCallback(async () => {
-    if (!currentUser) return;
     setStatus('claiming');
     setMessage('Claiming your gift...');
-    const result = await claimGiftedWordServerAction(claimId, currentUser.uid);
+    const result = await claimGiftedWordServerAction(claimId);
 
     if (result.success) {
       setStatus('success');
@@ -56,7 +45,20 @@ function ClaimWordContent() {
       setStatus('error');
       setMessage(result.error || 'An unknown error occurred while claiming your gift.');
     }
-  }, [claimId, currentUser]);
+  }, [claimId]);
+
+  const processDecline = useCallback(async () => {
+    setStatus('declining');
+    setMessage('Declining the gift...');
+    const result = await declineGiftedWordServerAction(claimId);
+    if (result.success) {
+      setStatus('success');
+      setMessage('The gifted word has been returned to the pool.');
+    } else {
+      setStatus('error');
+      setMessage(result.error || 'An unknown error occurred while declining the gift.');
+    }
+  }, [claimId]);
 
   useEffect(() => {
     verifyGift();
@@ -66,38 +68,27 @@ function ClaimWordContent() {
     <div className="flex items-center justify-center min-h-[calc(100vh-200px)] py-12 px-4">
       <Card className="w-full max-w-lg shadow-2xl text-center">
         <CardHeader>
-          {(status === 'loading' || status === 'claiming') && <Loader2 className="mx-auto h-12 w-12 animate-spin text-primary" />}
+          {(status === 'loading' || status === 'claiming' || status === 'declining') && <Loader2 className="mx-auto h-12 w-12 animate-spin text-primary" />}
           {status === 'confirm' && <Gift className="mx-auto h-12 w-12 text-primary" />}
           {status === 'success' && <PartyPopper className="mx-auto h-12 w-12 text-green-500" />}
           {status === 'error' && <XCircle className="mx-auto h-12 w-12 text-destructive" />}
-          {status === 'unauthenticated' && <AlertTriangle className="mx-auto h-12 w-12 text-amber-500" />}
           
           <CardTitle className="text-2xl mt-4">
             {status === 'loading' && 'Checking Your Gift...'}
             {status === 'claiming' && 'Claiming Your Gift...'}
+            {status === 'declining' && 'Declining Gift...'}
             {status === 'confirm' && 'Confirm Claim'}
             {status === 'success' && 'Word Claimed!'}
             {status === 'error' && 'Claim Failed'}
-            {status === 'unauthenticated' && 'Please Log In'}
           </CardTitle>
         </CardHeader>
         <CardContent>
           <p className="text-muted-foreground">{message}</p>
-          
-          {status === 'unauthenticated' && (
-            <div className="flex flex-col sm:flex-row gap-4 justify-center pt-6">
-              <Button asChild>
-                <Link href={`/auth/login?redirect=/claim-word/${claimId}`}><LogIn className="mr-2 h-4 w-4"/>Log In</Link>
-              </Button>
-              <Button variant="secondary" asChild>
-                <Link href={`/auth/register?redirect=/claim-word/${claimId}`}><UserPlus className="mr-2 h-4 w-4"/>Sign Up</Link>
-              </Button>
-            </div>
-          )}
 
           {status === 'confirm' && (
-            <div className="pt-6">
-              <Button onClick={processClaim}><Gift className="mr-2 h-4 w-4"/>Claim Word</Button>
+            <div className="pt-6 flex gap-4 justify-center">
+              <Button onClick={processClaim}><Gift className="mr-2 h-4 w-4"/>Accept</Button>
+              <Button variant="secondary" onClick={processDecline}>Decline</Button>
             </div>
           )}
 
