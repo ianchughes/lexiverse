@@ -1,4 +1,3 @@
-
 'use client';
 
 import type { SeedingLetter, SubmittedWord, GameState } from '@/types';
