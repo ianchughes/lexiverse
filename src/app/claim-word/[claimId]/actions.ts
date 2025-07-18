@@ -4,7 +4,7 @@ import { firestore } from '@/lib/firebase';
 import { doc, runTransaction, serverTimestamp, Timestamp, getDoc } from 'firebase/firestore';
 import type { WordGift, MasterWordType } from '@/types';
 
-export async function verifyGiftedWordServerAction(claimId: string, userId: string): Promise<{ success: boolean; error?: string }> {
+export async function verifyGiftedWordServerAction(claimId: string): Promise<{ success: boolean; error?: string }> {
   const giftRef = doc(firestore, 'WordGifts', claimId);
   try {
     const giftSnap = await getDoc(giftRef);
@@ -13,10 +13,6 @@ export async function verifyGiftedWordServerAction(claimId: string, userId: stri
     }
 
     const giftData = giftSnap.data() as WordGift;
-
-    if (giftData.recipientUserId !== userId) {
-      throw new Error('This gift is not intended for you. Please log in with the correct account.');
-    }
     if (giftData.status !== 'PendingClaim') {
       throw new Error(`This gift has already been ${giftData.status.toLowerCase()}.`);
     }
@@ -36,7 +32,7 @@ export async function verifyGiftedWordServerAction(claimId: string, userId: stri
   }
 }
 
-export async function claimGiftedWordServerAction(claimId: string, userId: string): Promise<{ success: boolean; error?: string; wordText?: string }> {
+export async function claimGiftedWordServerAction(claimId: string): Promise<{ success: boolean; error?: string; wordText?: string }> {
   const giftRef = doc(firestore, 'WordGifts', claimId);
   try {
     return await runTransaction(firestore, async (transaction) => {
@@ -46,10 +42,6 @@ export async function claimGiftedWordServerAction(claimId: string, userId: strin
       }
 
       const giftData = giftSnap.data() as WordGift;
-
-      if (giftData.recipientUserId !== userId) {
-        throw new Error('This gift is not intended for you. Please log in with the correct account.');
-      }
       if (giftData.status !== 'PendingClaim') {
         throw new Error(`This gift has already been ${giftData.status.toLowerCase()}.`);
       }
@@ -65,13 +57,38 @@ export async function claimGiftedWordServerAction(claimId: string, userId: strin
         throw new Error('Sorry, this word is no longer available to be claimed.');
       }
 
-      transaction.update(wordRef, { originalSubmitterUID: userId });
+      transaction.update(wordRef, { originalSubmitterUID: giftData.recipientUserId });
       transaction.update(giftRef, { status: 'Claimed', claimedAt: serverTimestamp() as Timestamp });
 
       return { success: true, wordText: giftData.wordText };
     });
   } catch (error: any) {
     console.error('Error claiming gifted word:', error);
+    return { success: false, error: error.message };
+  }
+}
+
+export async function declineGiftedWordServerAction(claimId: string): Promise<{ success: boolean; error?: string }> {
+  const giftRef = doc(firestore, 'WordGifts', claimId);
+  try {
+    await runTransaction(firestore, async (transaction) => {
+      const giftSnap = await transaction.get(giftRef);
+      if (!giftSnap.exists()) {
+        throw new Error('This gift link is invalid or has expired.');
+      }
+
+      const giftData = giftSnap.data() as WordGift;
+
+      if (giftData.status !== 'PendingClaim') {
+        throw new Error(`This gift has already been ${giftData.status.toLowerCase()}.`);
+      }
+
+      transaction.update(giftRef, { status: 'Expired' });
+    });
+
+    return { success: true };
+  } catch (error: any) {
+    console.error('Error declining gifted word:', error);
     return { success: false, error: error.message };
   }
 }
