@@ -1,0 +1,21 @@
+{
+  "indexes": [
+    {
+      "collectionGroup": "CircleMembers",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "circleId", "order": "ASCENDING" },
+        { "fieldPath": "dateJoined", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "Words",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "originalSubmitterUID", "order": "ASCENDING" },
+        { "fieldPath": "dateAdded", "order": "DESCENDING" }
+      ]
+    }
+  ],
+  "fieldOverrides": []
+}
