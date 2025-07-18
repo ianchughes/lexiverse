@@ -18,7 +18,8 @@ import { useSearchParams } from 'next/navigation';
 import { LoggedOutLandingPage } from '@/components/landing/LoggedOutLandingPage';
 import { GameScreen } from '@/components/game/GameScreen';
 import { useGameData } from '@/hooks/useGameData'; 
-import { processWordSubmission, type ProcessedWordResult } from '@/services/wordProcessingService'; 
+import { useWordSubmission } from '@/hooks/useWordSubmission';
+import { type ProcessedWordResult } from '@/services/wordProcessingService'; 
 
 const DAILY_GAME_DURATION = 90;
 const MIN_WORD_LENGTH = 4;
@@ -30,6 +31,7 @@ export default function HomePage() {
   const inviteCodeFromUrl = searchParams.get('inviteCode');
 
   const gameData = useGameData(currentUser, userProfile);
+  const { submitWord, isProcessing: isProcessingWord } = useWordSubmission();
 
   const [currentWordUI, setCurrentWordUI] = useState<SeedingLetter[]>([]);
   const [submittedWords, setSubmittedWords] = useState<SubmittedWord[]>([]);
@@ -46,7 +48,6 @@ export default function HomePage() {
   const [showShareModal, setShowShareModal] = useState(false);
   const [wordInvalidFlash, setWordInvalidFlash] = useState(false);
   const [shareableGameDate, setShareableGameDate] = useState('');
-  const [isProcessingWord, setIsProcessingWord] = useState(false);
   const [showWelcomeInstructionsModal, setShowWelcomeInstructionsModal] = useState(false);
   const [newlyOwnedWordsThisSession, setNewlyOwnedWordsThisSession] = useState<string[]>([]);
   
@@ -226,8 +227,6 @@ export default function HomePage() {
       return;
     }
     
-    setIsProcessingWord(true);
-    
     const optimisticWord: SubmittedWord = {
       id: crypto.randomUUID(),
       text: wordText,
@@ -239,41 +238,38 @@ export default function HomePage() {
     setSubmittedWords(prev => [...prev, optimisticWord]);
     handleClearWord();
 
-    try {
-      const result: ProcessedWordResult = await processWordSubmission({
-        wordText: wordText,
-        currentUserId: currentUser.uid,
-        currentPuzzleDate: gameData.currentPuzzleDate,
-        actualWordOfTheDayText: gameData.actualWordOfTheDayText,
-        actualWordOfTheDayDefinition: gameData.actualWordOfTheDayDefinition,
-        actualWordOfTheDayPoints: gameData.actualWordOfTheDayPoints,
-      });
-
-      toast({ title: result.status.includes('success') ? "Word Update!" : "Word Info", description: result.message, variant: result.status.includes('error') || result.status.includes('rejected') ? "destructive" : "default" });
-
-      if (result.status.includes('success')) {
-        setSessionScore(prev => prev + result.pointsAwarded);
-        setSubmittedWords(prev => prev.map(w => w.id === optimisticWord.id 
-          ? { ...w, points: result.pointsAwarded, isWotD: result.isWotD || false, newlyOwned: result.isNewlyOwned, isPending: false }
-          : w
-        ));
-        if (result.isNewlyOwned && result.newlyOwnedWordText) {
-          setNewlyOwnedWordsThisSession(prev => [...prev, result.newlyOwnedWordText!]);
-        }
-      } else {
-        // Remove optimistic word on any kind of rejection/failure
-        setSubmittedWords(prev => prev.filter(w => w.id !== optimisticWord.id));
-        triggerInvalidWordFlash();
-        if (result.status === 'rejected_gibberish') {
-            setSessionScore(prev => prev + result.pointsAwarded); 
-        }
-      }
-    } catch (error: any) {
+    const result = await submitWord({
+      wordText: wordText,
+      currentPuzzleDate: gameData.currentPuzzleDate,
+      actualWordOfTheDayText: gameData.actualWordOfTheDayText,
+      actualWordOfTheDayDefinition: gameData.actualWordOfTheDayDefinition,
+      actualWordOfTheDayPoints: gameData.actualWordOfTheDayPoints,
+    });
+    
+    if (!result) { // Catastrophic failure in hook
       setSubmittedWords(prev => prev.filter(w => w.id !== optimisticWord.id));
-      toast({ title: "Submission Error", description: error.message || "Could not process your word.", variant: "destructive" });
       triggerInvalidWordFlash();
-    } finally {
-      setIsProcessingWord(false);
+      return;
+    }
+
+    toast({ title: result.status.includes('success') ? "Word Update!" : "Word Info", description: result.message, variant: result.status.includes('error') || result.status.includes('rejected') ? "destructive" : "default" });
+
+    if (result.status.includes('success')) {
+      setSessionScore(prev => prev + result.pointsAwarded);
+      setSubmittedWords(prev => prev.map(w => w.id === optimisticWord.id 
+        ? { ...w, points: result.pointsAwarded, isWotD: result.isWotD || false, newlyOwned: result.isNewlyOwned, isPending: false }
+        : w
+      ));
+      if (result.isNewlyOwned && result.newlyOwnedWordText) {
+        setNewlyOwnedWordsThisSession(prev => [...prev, result.newlyOwnedWordText!]);
+      }
+    } else {
+      // Remove optimistic word on any kind of rejection/failure
+      setSubmittedWords(prev => prev.filter(w => w.id !== optimisticWord.id));
+      triggerInvalidWordFlash();
+      if (result.status === 'rejected_gibberish') {
+          setSessionScore(prev => prev + result.pointsAwarded); 
+      }
     }
   };
 
