@@ -103,3 +103,27 @@
     @apply bg-background text-foreground;
   }
 }
+
+@layer utilities {
+  /* Prevent text selection on mobile */
+  .no-select {
+    -webkit-user-select: none;
+    -moz-user-select: none;
+    -ms-user-select: none;
+    user-select: none;
+    -webkit-touch-callout: none;
+  }
+  
+  /* Improve tap targets on mobile */
+  @media (max-width: 768px) {
+    .tap-target {
+      min-height: 44px;
+      min-width: 44px;
+    }
+  }
+  
+  /* Prevent bounce scrolling on iOS */
+  .no-bounce {
+    overscroll-behavior: contain;
+  }
+}
