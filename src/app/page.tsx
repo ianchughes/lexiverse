@@ -14,6 +14,7 @@ import { doc, updateDoc, increment, Timestamp, writeBatch } from 'firebase/fires
 import { useAuth } from '@/contexts/AuthContext';
 import { updateUserCircleDailyScoresAction } from '@/app/circles/actions';
 import { useSearchParams } from 'next/navigation';
+import { trackEvent } from '@/lib/analytics'; // Import the new analytics helper
 
 import { LoggedOutLandingPage } from '@/components/landing/LoggedOutLandingPage';
 import { GameScreen } from '@/components/game/GameScreen';
@@ -109,6 +110,7 @@ export default function HomePage() {
     setGameState('playing');
     setNewlyOwnedWordsThisSession([]);
     setShareableGameDate(gameData.currentPuzzleDate);
+    trackEvent('game_start', { puzzle_date: gameData.currentPuzzleDate });
   };
 
   const handleCloseWelcomeInstructions = async () => {
@@ -148,6 +150,13 @@ export default function HomePage() {
         guessedWotD: wotdGuessedThisSession,
         newlyOwnedWords: [...newlyOwnedWordsThisSession],
     }));
+
+    trackEvent('game_end', {
+      final_score: roundedFinalScore,
+      words_found: submittedWords.length,
+      guessed_wotd: wotdGuessedThisSession,
+      new_words_claimed: newlyOwnedWordsThisSession.length,
+    });
 
     if (currentUser && userProfile) {
         const userDocRef = doc(firestore, "Users", currentUser.uid);
@@ -218,12 +227,14 @@ export default function HomePage() {
     if (wordText.length < MIN_WORD_LENGTH) {
       toast({ title: "Too Short", description: `Words must be at least ${MIN_WORD_LENGTH} letters long.`, variant: "destructive" });
       triggerInvalidWordFlash();
+      trackEvent('word_rejected', { reason: 'too_short', word_length: wordText.length });
       return;
     }
     if (submittedWords.some(sw => sw.text.toUpperCase() === wordText)) {
       toast({ title: "Already Found", description: `You've already found "${wordText}".`, variant: "default" });
       triggerInvalidWordFlash();
       handleClearWord();
+      trackEvent('word_rejected', { reason: 'duplicate', word_length: wordText.length });
       return;
     }
     
@@ -249,12 +260,21 @@ export default function HomePage() {
     if (!result) { // Catastrophic failure in hook
       setSubmittedWords(prev => prev.filter(w => w.id !== optimisticWord.id));
       triggerInvalidWordFlash();
+      trackEvent('word_submission_error', { word: wordText, reason: 'hook_failure' });
       return;
     }
 
     toast({ title: result.status.includes('success') ? "Word Update!" : "Word Info", description: result.message, variant: result.status.includes('error') || result.status.includes('rejected') ? "destructive" : "default" });
 
     if (result.status.includes('success')) {
+      trackEvent('word_submitted', {
+        word: wordText,
+        word_length: wordText.length,
+        is_wotd: result.isWotD,
+        points_awarded: result.pointsAwarded,
+        newly_owned: result.isNewlyOwned,
+        result_status: result.status,
+      });
       setSessionScore(prev => prev + result.pointsAwarded);
       setSubmittedWords(prev => prev.map(w => w.id === optimisticWord.id 
         ? { ...w, points: result.pointsAwarded, isWotD: result.isWotD || false, newlyOwned: result.isNewlyOwned, isPending: false }
@@ -264,6 +284,11 @@ export default function HomePage() {
         setNewlyOwnedWordsThisSession(prev => [...prev, result.newlyOwnedWordText!]);
       }
     } else {
+      trackEvent('word_rejected', {
+        word: wordText,
+        reason: result.status,
+        word_length: wordText.length,
+      });
       // Remove optimistic word on any kind of rejection/failure
       setSubmittedWords(prev => prev.filter(w => w.id !== optimisticWord.id));
       triggerInvalidWordFlash();
