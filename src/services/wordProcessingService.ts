@@ -3,7 +3,6 @@
 
 import { firestore } from '@/lib/firebase';
 import { collection, addDoc, serverTimestamp, doc, getDoc, updateDoc, increment, Timestamp, writeBatch, query, where, setDoc, getDocs } from 'firebase/firestore';
-import type { User as FirebaseUser } from 'firebase/auth'; // Assuming you pass the full FirebaseUser object or relevant parts
 import type { UserProfile, MasterWordType, RejectedWordType, WordSubmission, ClientMasterWordType } from '@/types';
 import { calculateWordScore } from '@/lib/scoring';
 import { checkWiktionary } from '@/ai/flows/check-wiktionary-flow';
