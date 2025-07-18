@@ -6,6 +6,10 @@ import { useState, useEffect } from 'react';
 const TABLET_BREAKPOINT = 768; // md
 const DESKTOP_BREAKPOINT = 1024; // lg
 
+// Basic UA regex patterns
+const MOBILE_UA_REGEX = /Android.*Mobile|iPhone|Windows Phone|BlackBerry|Opera Mini/i;
+const TABLET_UA_REGEX = /iPad|Android(?!.*Mobile)/i;
+
 /**
  * A custom hook to detect device characteristics like mobile, tablet, and touch capability.
  * This hook listens to window resize events to provide responsive state to components.
@@ -24,16 +28,24 @@ export function useMobileDetection() {
       return;
     }
 
+    const userAgent = navigator.userAgent || navigator.vendor || '';
+    const isMobileUserAgent = MOBILE_UA_REGEX.test(userAgent);
+    const isTabletUserAgent = TABLET_UA_REGEX.test(userAgent);
+
     const checkDevice = () => {
       // Check for touch capability
-      const hasTouch = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
+      const hasTouch =
+        'ontouchstart' in window || navigator.maxTouchPoints > 0;
       setIsTouchDevice(hasTouch);
 
-      // Check viewport width for device type
+      // Check viewport width for device type combined with UA
       const width = window.innerWidth;
-      const mobile = width < TABLET_BREAKPOINT;
-      const tablet = width >= TABLET_BREAKPOINT && width < DESKTOP_BREAKPOINT;
-      
+      const mobile =
+        isMobileUserAgent || (hasTouch && width < TABLET_BREAKPOINT);
+      const tablet =
+        isTabletUserAgent ||
+        (hasTouch && width >= TABLET_BREAKPOINT && width < DESKTOP_BREAKPOINT);
+
       setIsMobile(mobile);
       setIsTablet(tablet);
       setIsDesktop(!mobile && !tablet);
