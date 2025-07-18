@@ -3,7 +3,7 @@
 
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { firestore } from '@/lib/firebase'; 
-import { collection, query, where, getDocs, doc, Timestamp, orderBy, limit, startAfter, getDoc as getFirestoreDocFE } from 'firebase/firestore'; // Renamed getDoc to avoid conflict with server action
+import { collection, query, where, getDocs, doc, Timestamp, orderBy, limit, startAfter, getDoc as getFirestoreDocFE, QueryDocumentSnapshot, DocumentData } from 'firebase/firestore'; // Renamed getDoc to avoid conflict with server action
 import type { WordSubmission, MasterWordType, RejectedWordType, RejectionType, UserProfile } from '@/types';
 import { useAuth } from '@/contexts/AuthContext'; 
 import { calculateWordScore } from '@/lib/scoring'; 
@@ -29,6 +29,7 @@ import { Label } from '@/components/ui/label';
 const WORD_SUBMISSIONS_QUEUE = "WordSubmissionsQueue";
 const MASTER_WORDS_COLLECTION = "Words";
 const USERS_COLLECTION = "Users";
+const MASTER_WORDS_PER_PAGE = 50;
 
 type WordAction = 'noAction' | 'approve' | 'rejectGibberish' | 'rejectAdminDecision';
 
@@ -46,6 +47,9 @@ export default function WordManagementPage() {
   
   const [masterWordsList, setMasterWordsList] = useState<DisplayMasterWordType[]>([]);
   const [isLoadingMasterWords, setIsLoadingMasterWords] = useState(true);
+  const [isLoadingMoreMasterWords, setIsLoadingMoreMasterWords] = useState(false);
+  const [lastVisibleMasterWord, setLastVisibleMasterWord] = useState<QueryDocumentSnapshot<DocumentData> | null>(null);
+  const [hasMoreMasterWords, setHasMoreMasterWords] = useState(true);
   const [searchTermMasterWords, setSearchTermMasterWords] = useState('');
   
   const [hasMounted, setHasMounted] = useState(false);
@@ -136,49 +140,95 @@ export default function WordManagementPage() {
   }, [toast, itemsPerPage, setIsLoadingSubmissions, setPendingSubmissions, setCurrentPage, setSubmissionActions, setLastVisibleSubmission, lastVisibleSubmission]); 
 
 
-  const fetchMasterWordsAndUsers = useCallback(async () => {
-    setIsLoadingMasterWords(true);
+  const fetchMasterWordsAndUsers = useCallback(async (loadMore = false) => {
+    if (loadMore) {
+        setIsLoadingMoreMasterWords(true);
+    } else {
+        setIsLoadingMasterWords(true);
+        setMasterWordsList([]);
+        setHasMoreMasterWords(true);
+    }
+
+    try {
+        let masterWordsQuery = query(
+            collection(firestore, MASTER_WORDS_COLLECTION), 
+            orderBy("wordText", "asc"), 
+            limit(MASTER_WORDS_PER_PAGE)
+        );
+
+        if (loadMore && lastVisibleMasterWord) {
+            masterWordsQuery = query(
+                collection(firestore, MASTER_WORDS_COLLECTION),
+                orderBy("wordText", "asc"),
+                startAfter(lastVisibleMasterWord),
+                limit(MASTER_WORDS_PER_PAGE)
+            );
+        }
+
+        const masterWordsSnapshot = await getDocs(masterWordsQuery);
+        const newWords: MasterWordType[] = [];
+        masterWordsSnapshot.forEach((docSnap) => {
+            newWords.push({ wordText: docSnap.id, ...docSnap.data() } as MasterWordType);
+        });
+
+        setLastVisibleMasterWord(masterWordsSnapshot.docs[masterWordsSnapshot.docs.length - 1] || null);
+        if (masterWordsSnapshot.docs.length < MASTER_WORDS_PER_PAGE) {
+            setHasMoreMasterWords(false);
+        }
+
+        const ownerUIDs = Array.from(new Set(newWords.map(w => w.originalSubmitterUID).filter((uid): uid is string => !!uid)));
+        const usernamesMap = new Map<string, string>();
+
+        if (ownerUIDs.length > 0) {
+            // Firestore 'in' query is limited to 30 items
+            for (let i = 0; i < ownerUIDs.length; i += 30) {
+                const chunk = ownerUIDs.slice(i, i + 30);
+                const usersQuery = query(collection(firestore, USERS_COLLECTION), where('uid', 'in', chunk));
+                const usersSnapshot = await getDocs(usersQuery);
+                usersSnapshot.forEach(userDoc => {
+                    const userData = userDoc.data() as UserProfile;
+                    usernamesMap.set(userData.uid, userData.username);
+                });
+            }
+        }
+        
+        const displayWords: DisplayMasterWordType[] = newWords.map(word => ({
+            ...word,
+            originalSubmitterUsername: word.originalSubmitterUID ? usernamesMap.get(word.originalSubmitterUID) : undefined,
+            calculatedScore: calculateWordScore(word.wordText, word.frequency),
+        }));
+
+        setMasterWordsList(prev => loadMore ? [...prev, ...displayWords] : displayWords);
+
+    } catch (error) {
+        console.error("Error fetching master words or users:", error);
+        toast({ title: "Error", description: "Could not fetch master word list or users.", variant: "destructive" });
+    } finally {
+        if (loadMore) {
+            setIsLoadingMoreMasterWords(false);
+        } else {
+            setIsLoadingMasterWords(false);
+        }
+    }
+}, [toast, lastVisibleMasterWord]);
+
+const fetchAllUsersForGifting = useCallback(async () => {
+    if (allUsers.length > 0) {
+        setIsLoadingUsers(false);
+        return;
+    }
     setIsLoadingUsers(true);
     try {
-      // Fetch Master Words
-      const masterWordsQuery = query(collection(firestore, MASTER_WORDS_COLLECTION), orderBy("dateAdded", "desc"));
-      const masterWordsSnapshot = await getDocs(masterWordsQuery);
-      const words: MasterWordType[] = [];
-      masterWordsSnapshot.forEach((docSnap) => {
-        words.push({ wordText: docSnap.id, ...docSnap.data() } as MasterWordType);
-      });
-
-      // Fetch All Users
-      const usersSnapshot = await getDocs(collection(firestore, USERS_COLLECTION));
-      const usersList: UserProfile[] = usersSnapshot.docs.map(d => ({ uid: d.id, ...d.data() } as UserProfile));
-      setAllUsers(usersList.sort((a,b) => a.username.localeCompare(b.username)));
-      setIsLoadingUsers(false);
-
-      const ownerUIDs = new Set(words.map(w => w.originalSubmitterUID).filter(uid => uid));
-      const usernamesMap = new Map<string, string>();
-
-      if (ownerUIDs.size > 0) {
-        usersList.forEach(user => {
-            if(ownerUIDs.has(user.uid)) {
-                usernamesMap.set(user.uid, user.username);
-            }
-        });
-      }
-      
-      const displayWords: DisplayMasterWordType[] = words.map(word => ({
-        ...word,
-        originalSubmitterUsername: word.originalSubmitterUID ? usernamesMap.get(word.originalSubmitterUID) : undefined,
-        calculatedScore: calculateWordScore(word.wordText, word.frequency), // Calculate score here
-      }));
-
-      setMasterWordsList(displayWords);
+        const usersSnapshot = await getDocs(collection(firestore, USERS_COLLECTION));
+        const usersList: UserProfile[] = usersSnapshot.docs.map(d => ({ uid: d.id, ...d.data() } as UserProfile));
+        setAllUsers(usersList.sort((a,b) => a.username.localeCompare(b.username)));
     } catch (error) {
-      console.error("Error fetching master words or users:", error);
-      toast({ title: "Error", description: "Could not fetch master word list or users.", variant: "destructive" });
+        console.error("Error fetching users for gifting:", error);
+        toast({ title: "Error", description: "Could not load user list for gifting.", variant: "destructive" });
     } finally {
-      setIsLoadingMasterWords(false);
+        setIsLoadingUsers(false);
     }
-  }, [toast]);
+}, [toast, allUsers]);
 
 
   useEffect(() => {
@@ -186,8 +236,10 @@ export default function WordManagementPage() {
   }, [itemsPerPage, fetchPendingSubmissions]); 
 
    useEffect(() => {
-    fetchMasterWordsAndUsers();
-  }, [fetchMasterWordsAndUsers]);
+    fetchMasterWordsAndUsers(false);
+    fetchAllUsersForGifting();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []); // Run once on mount
 
 
   const handleLoadMoreSubmissions = () => {
@@ -270,7 +322,7 @@ export default function WordManagementPage() {
       }
       
       fetchPendingSubmissions(true); 
-      fetchMasterWordsAndUsers(); 
+      fetchMasterWordsAndUsers(false); 
 
     } catch (error: any) {
       toast({ title: "Bulk Action Failed", description: error.message || "Could not process submissions.", variant: "destructive" });
@@ -281,6 +333,7 @@ export default function WordManagementPage() {
   
   const ownedMasterWords = useMemo(() => masterWordsList.filter(word => 
     word.originalSubmitterUID && (
+      !searchTermMasterWords || // Show all if search is empty
       word.wordText.toLowerCase().includes(searchTermMasterWords.toLowerCase()) ||
       (word.originalSubmitterUsername && word.originalSubmitterUsername.toLowerCase().includes(searchTermMasterWords.toLowerCase())) ||
       word.originalSubmitterUID.toLowerCase().includes(searchTermMasterWords.toLowerCase()) 
@@ -288,7 +341,7 @@ export default function WordManagementPage() {
   ), [masterWordsList, searchTermMasterWords]);
 
   const unclaimedMasterWords = useMemo(() => masterWordsList.filter(word => 
-    !word.originalSubmitterUID && word.wordText.toLowerCase().includes(searchTermMasterWords.toLowerCase())
+    !word.originalSubmitterUID && (!searchTermMasterWords || word.wordText.toLowerCase().includes(searchTermMasterWords.toLowerCase()))
   ), [masterWordsList, searchTermMasterWords]);
 
 
@@ -317,7 +370,7 @@ export default function WordManagementPage() {
       });
       if (result.success) {
         toast({ title: "Owner Disassociated", description: `Owner has been removed from "${wordToDisassociate.wordText}".` });
-        fetchMasterWordsAndUsers(); 
+        fetchMasterWordsAndUsers(false); 
       } else {
         throw new Error(result.error || "Failed to disassociate owner.");
       }
@@ -373,7 +426,7 @@ export default function WordManagementPage() {
       } else {
         toast({ title: "Bulk Disassociation Error", description: result.error || "Some words could not be disassociated.", variant: "destructive" });
       }
-      fetchMasterWordsAndUsers();
+      fetchMasterWordsAndUsers(false);
       setSelectedWordsForBulkDisassociate(new Set());
 
     } catch (error: any) {
@@ -404,6 +457,7 @@ export default function WordManagementPage() {
       if (result.success) {
         toast({title: "Word Gifted!", description: `An email has been sent to ${giftRecipientUsername} to claim the word "${wordToGift.wordText}".`});
         setIsGiftWordDialogOpen(false);
+        fetchMasterWordsAndUsers(false);
       } else {
         throw new Error(result.error || "Failed to gift the word.");
       }
@@ -652,18 +706,30 @@ export default function WordManagementPage() {
             </ScrollArea>
           )}
         </CardContent>
-        <CardFooter className="flex justify-between items-center border-t pt-4">
+        <CardFooter className="flex flex-col sm:flex-row justify-between items-center border-t pt-4 gap-4">
             <p className="text-xs text-muted-foreground">
               {ownedMasterWords.length} owned words. Selected for disassociation: {selectedWordsForBulkDisassociate.size}
             </p>
-            <Button
-                onClick={handleBulkDisassociate}
-                disabled={selectedWordsForBulkDisassociate.size === 0 || isProcessingBulkDisassociation}
-                variant="destructive"
-            >
-                {isProcessingBulkDisassociation ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Unlink className="mr-2 h-4 w-4" />}
-                Disassociate Selected ({selectedWordsForBulkDisassociate.size})
-            </Button>
+            <div className="flex gap-2">
+                <Button
+                    onClick={handleBulkDisassociate}
+                    disabled={selectedWordsForBulkDisassociate.size === 0 || isProcessingBulkDisassociation}
+                    variant="destructive"
+                >
+                    {isProcessingBulkDisassociation ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Unlink className="mr-2 h-4 w-4" />}
+                    Disassociate Selected ({selectedWordsForBulkDisassociate.size})
+                </Button>
+                 {hasMoreMasterWords && (
+                    <Button
+                        variant="outline"
+                        onClick={() => fetchMasterWordsAndUsers(true)}
+                        disabled={isLoadingMoreMasterWords}
+                    >
+                        {isLoadingMoreMasterWords ? <Loader2 className="mr-2 h-4 w-4 animate-spin"/> : null}
+                        Load More Words
+                    </Button>
+                )}
+            </div>
         </CardFooter>
       </Card>
 
@@ -722,7 +788,7 @@ export default function WordManagementPage() {
         </CardContent>
         <CardFooter>
             <p className="text-xs text-muted-foreground">
-              Total unclaimed words: {unclaimedMasterWords.length}
+              Total unclaimed words found in current view: {unclaimedMasterWords.length}
             </p>
         </CardFooter>
       </Card>
@@ -757,7 +823,13 @@ export default function WordManagementPage() {
       )}
       
       {wordToGift && (
-        <Dialog open={isGiftWordDialogOpen} onOpenChange={setIsGiftWordDialogOpen}>
+        <Dialog open={isGiftWordDialogOpen} onOpenChange={(open) => {
+          setIsGiftWordDialogOpen(open);
+          if (!open) {
+              setWordToGift(null);
+              setGiftRecipientUsername('');
+          }
+        }}>
           <DialogContent>
             <DialogHeader>
               <DialogTitle>Gift Word: {wordToGift.wordText}</DialogTitle>
@@ -801,3 +873,5 @@ export default function WordManagementPage() {
     </div>
   );
 }
+
+    
