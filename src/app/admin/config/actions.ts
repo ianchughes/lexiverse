@@ -2,7 +2,7 @@
 'use server';
 
 import { firestore } from '@/lib/firebase';
-import { doc, setDoc, serverTimestamp, Timestamp } from 'firebase/firestore'; // Added Timestamp import
+import { doc, setDoc, serverTimestamp, Timestamp } from 'firebase/firestore';
 import type { SystemSettings } from '@/types';
 import { logAdminAction } from '@/lib/auditLogger';
 
@@ -22,7 +22,7 @@ export async function adminForceDailyResetAction(payload: AdminForceDailyResetPa
   try {
     const settingsDocRef = doc(firestore, SYSTEM_SETTINGS_COLLECTION, GAME_SETTINGS_DOC_ID);
     const newSettings: Partial<SystemSettings> = {
-      lastForcedResetTimestamp: serverTimestamp() as Timestamp, // Cast to Timestamp
+      lastForcedResetTimestamp: serverTimestamp() as Timestamp,
     };
     await setDoc(settingsDocRef, newSettings, { merge: true });
 
@@ -38,4 +38,3 @@ export async function adminForceDailyResetAction(payload: AdminForceDailyResetPa
     return { success: false, error: error.message || "Could not trigger daily reset." };
   }
 }
-
