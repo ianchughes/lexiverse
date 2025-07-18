@@ -8,7 +8,7 @@ import { WordEntryControls } from '@/components/game/WordEntryControls';
 import { GameTimer } from '@/components/game/GameTimer';
 import { SubmittedWordsList } from '@/components/game/SubmittedWordsList';
 import { Badge } from '@/components/ui/badge';
-import { PlayCircle, Check, Loader2, AlertTriangle, BellRing, Smartphone, Monitor } from 'lucide-react';
+import { PlayCircle, Check, Loader2, BellRing } from 'lucide-react';
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import Link from 'next/link';
 import { cn } from '@/lib/utils';
