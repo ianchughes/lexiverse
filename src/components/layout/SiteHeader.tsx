@@ -24,7 +24,7 @@ const LOCALSTORAGE_OWNED_WORDS_COUNT_KEY = 'lexiverse_owned_words_count';
 
 export function SiteHeader() {
   const { currentUser, userProfile, userRole, isLoadingAuth } = useAuth();
-  const { isMobile, isTablet, isDesktop } = useDevice();
+  const { isMobile } = useDevice();
   const router = useRouter();
 
   const [ownedWordsCount, setOwnedWordsCount] = useState<number | null>(null);
@@ -113,7 +113,7 @@ export function SiteHeader() {
   return (
     <header className="sticky top-0 z-50 w-full border-b border-border/40 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
       <div className="absolute top-0 left-0 bg-white text-red-500 text-xs font-bold p-1 z-50">
-        {isMobile ? "Mobile" : isTablet ? "Tablet" : "PC"}
+        {isMobile ? "Mobile" : "PC"}
       </div>
       <div className="container flex h-16 max-w-screen-2xl items-center">
         <Link href="/" className="flex items-center space-x-2 mr-auto">
