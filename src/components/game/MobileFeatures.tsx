@@ -1,4 +1,3 @@
-
 'use client';
 
 import { useState, useEffect, useRef, useCallback } from 'react';
@@ -35,21 +34,37 @@ export function useSwipeGesture(onSwipeLeft: () => void, onSwipeRight: () => voi
   return { swipeHandlers: { handleTouchStart, handleTouchEnd } };
 }
 
-// Orientation lock suggestion
+// Orientation lock suggestion - ONLY show on actual mobile devices
 export function OrientationWarning() {
-  const [isLandscape, setIsLandscape] = useState(false);
+  const [shouldShowWarning, setShouldShowWarning] = useState(false);
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
 
     const checkOrientation = () => {
-      // Use screen.orientation for more reliable results where available
+      // First check if this is actually a mobile device
+      const isTouchDevice = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
+      const isMobileUserAgent = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+      const isSmallScreen = window.innerWidth < 768;
+      
+      // Only proceed if this is likely a mobile device
+      const isMobileDevice = (isTouchDevice || isMobileUserAgent) && isSmallScreen;
+      
+      if (!isMobileDevice) {
+        setShouldShowWarning(false);
+        return;
+      }
+
+      // Now check orientation - only for mobile devices
+      let isLandscape = false;
       if (window.screen.orientation) {
-        setIsLandscape(window.screen.orientation.type.startsWith('landscape'));
+        isLandscape = window.screen.orientation.type.startsWith('landscape');
       } else {
         // Fallback for older browsers
-        setIsLandscape(window.innerWidth > window.innerHeight);
+        isLandscape = window.innerWidth > window.innerHeight;
       }
+
+      setShouldShowWarning(isLandscape);
     };
 
     checkOrientation();
@@ -62,7 +77,7 @@ export function OrientationWarning() {
     };
   }, []);
 
-  if (!isLandscape) return null;
+  if (!shouldShowWarning) return null;
 
   return (
     <div className="fixed inset-0 bg-background/95 z-50 flex items-center justify-center p-4">

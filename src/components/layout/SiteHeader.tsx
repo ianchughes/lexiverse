@@ -18,11 +18,13 @@ import {
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import React, { useEffect, useState, useRef } from 'react'; // Added useEffect, useState, useRef
 import { collection, query, where, getDocs } from 'firebase/firestore'; // Added Firestore imports
+import { useDevice } from '@/contexts/DeviceContext';
 
 const LOCALSTORAGE_OWNED_WORDS_COUNT_KEY = 'lexiverse_owned_words_count';
 
 export function SiteHeader() {
   const { currentUser, userProfile, userRole, isLoadingAuth } = useAuth();
+  const { isMobile, isDesktop } = useDevice();
   const router = useRouter();
 
   const [ownedWordsCount, setOwnedWordsCount] = useState<number | null>(null);
@@ -110,6 +112,9 @@ export function SiteHeader() {
 
   return (
     <header className="sticky top-0 z-50 w-full border-b border-border/40 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
+      <div className="absolute top-0 left-0 bg-white text-red-500 text-xs font-bold p-1 z-50">
+        {isMobile ? "Mobile" : isDesktop ? "PC" : "Other"}
+      </div>
       <div className="container flex h-16 max-w-screen-2xl items-center">
         <Link href="/" className="flex items-center space-x-2 mr-auto">
           <BookText className="h-6 w-6 text-primary" />

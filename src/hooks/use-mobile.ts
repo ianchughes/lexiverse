@@ -51,3 +51,20 @@ export function useMobileDetection() {
 
   return { isMobile, isTablet, isDesktop, isTouchDevice };
 }
+
+/**
+ * Simple hook that returns just the mobile state
+ * This is what the sidebar component expects
+ */
+export function useIsMobile() {
+  const { isMobile } = useMobileDetection();
+  return isMobile;
+}
+
+/**
+ * Hook that returns device detection state
+ * This is what the DeviceContext expects
+ */
+export function useDevice() {
+  return useMobileDetection();
+}
