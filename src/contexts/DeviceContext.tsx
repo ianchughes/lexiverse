@@ -1,7 +1,8 @@
+
 'use client';
 
 import React, { createContext, useContext } from 'react';
-import { useIsMobile } from '@/hooks/use-mobile';
+import { useDevice as useDeviceFromHook } from '@/hooks/use-mobile';
 
 interface DeviceContextType {
   isMobile: boolean;
@@ -18,7 +19,7 @@ const DeviceContext = createContext<DeviceContextType>({
 });
 
 export function DeviceProvider({ children }: { children: React.ReactNode }) {
-  const deviceInfo = useIsMobile();
+  const deviceInfo = useDeviceFromHook();
   
   return (
     <DeviceContext.Provider value={deviceInfo}>
