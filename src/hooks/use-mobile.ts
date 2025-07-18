@@ -1,6 +1,6 @@
-"use client"
+"use client";
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect } from "react";
 
 // Define standard breakpoints
 const TABLET_BREAKPOINT = 768; // md
@@ -20,20 +20,20 @@ export function useMobileDetection() {
 
   useEffect(() => {
     // This function can only run on the client where `window` is available
-    if (typeof window === 'undefined') {
+    if (typeof window === "undefined") {
       return;
     }
 
     const checkDevice = () => {
       // Check for touch capability
-      const hasTouch = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
+      const hasTouch = "ontouchstart" in window || navigator.maxTouchPoints > 0;
       setIsTouchDevice(hasTouch);
 
       // Check viewport width for device type
       const width = window.innerWidth;
       const mobile = width < TABLET_BREAKPOINT;
       const tablet = width >= TABLET_BREAKPOINT && width < DESKTOP_BREAKPOINT;
-      
+
       setIsMobile(mobile);
       setIsTablet(tablet);
       setIsDesktop(!mobile && !tablet);
@@ -43,10 +43,10 @@ export function useMobileDetection() {
     checkDevice();
 
     // Add event listener for window resize
-    window.addEventListener('resize', checkDevice);
-    
+    window.addEventListener("resize", checkDevice);
+
     // Cleanup event listener on component unmount
-    return () => window.removeEventListener('resize', checkDevice);
+    return () => window.removeEventListener("resize", checkDevice);
   }, []);
 
   return { isMobile, isTablet, isDesktop, isTouchDevice };
