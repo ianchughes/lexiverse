@@ -4,7 +4,7 @@
 import type { SubmittedWord } from '@/types';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Badge } from '@/components/ui/badge';
-import { CheckCircle2, Award, Trophy } from 'lucide-react'; // Added Trophy
+import { CheckCircle2, Award, Trophy, Loader2 } from 'lucide-react'; // Added Trophy and Loader2
 
 interface SubmittedWordsListProps {
   words: SubmittedWord[];
@@ -39,9 +39,15 @@ export function SubmittedWordsList({ words }: SubmittedWordsListProps) {
                   <Trophy className="h-4 w-4 mr-1" /> Claimed!
                 </Badge>
               )}
-              <Badge variant="secondary">
-                <Award className="h-4 w-4 mr-1" /> {word.points} pts
-              </Badge>
+              {word.isPending ? (
+                <Badge variant="outline">
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                </Badge>
+              ) : (
+                <Badge variant="secondary">
+                  <Award className="h-4 w-4 mr-1" /> {word.points} pts
+                </Badge>
+              )}
             </div>
           </div>
         ))}

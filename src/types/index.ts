@@ -13,6 +13,7 @@ export interface SubmittedWord {
   points: number; // Points awarded in the current session for this word
   isWotD: boolean;
   newlyOwned?: boolean; // Flag if ownership was gained this session
+  isPending?: boolean; // For optimistic UI updates
 }
 
 export type GameState = 'idle' | 'playing' | 'cooldown' | 'debrief';

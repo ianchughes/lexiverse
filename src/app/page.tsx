@@ -227,6 +227,18 @@ export default function HomePage() {
     }
     
     setIsProcessingWord(true);
+    
+    const optimisticWord: SubmittedWord = {
+      id: crypto.randomUUID(),
+      text: wordText,
+      points: 0,
+      isWotD: false,
+      isPending: true,
+    };
+
+    setSubmittedWords(prev => [...prev, optimisticWord]);
+    handleClearWord();
+
     try {
       const result: ProcessedWordResult = await processWordSubmission({
         wordText: wordText,
@@ -241,21 +253,26 @@ export default function HomePage() {
 
       if (result.status.includes('success')) {
         setSessionScore(prev => prev + result.pointsAwarded);
-        setSubmittedWords(prev => [...prev, { id: crypto.randomUUID(), text: wordText, points: result.pointsAwarded, isWotD: result.isWotD || false, newlyOwned: result.isNewlyOwned }]);
+        setSubmittedWords(prev => prev.map(w => w.id === optimisticWord.id 
+          ? { ...w, points: result.pointsAwarded, isWotD: result.isWotD || false, newlyOwned: result.isNewlyOwned, isPending: false }
+          : w
+        ));
         if (result.isNewlyOwned && result.newlyOwnedWordText) {
           setNewlyOwnedWordsThisSession(prev => [...prev, result.newlyOwnedWordText!]);
         }
-      } else if (result.status.includes('rejected')) {
+      } else {
+        // Remove optimistic word on any kind of rejection/failure
+        setSubmittedWords(prev => prev.filter(w => w.id !== optimisticWord.id));
         triggerInvalidWordFlash();
         if (result.status === 'rejected_gibberish') {
             setSessionScore(prev => prev + result.pointsAwarded); 
         }
       }
     } catch (error: any) {
+      setSubmittedWords(prev => prev.filter(w => w.id !== optimisticWord.id));
       toast({ title: "Submission Error", description: error.message || "Could not process your word.", variant: "destructive" });
       triggerInvalidWordFlash();
     } finally {
-      handleClearWord();
       setIsProcessingWord(false);
     }
   };
