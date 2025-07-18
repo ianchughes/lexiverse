@@ -26,7 +26,7 @@ function ClaimWordContent() {
     const result = await verifyGiftedWordServerAction(claimId);
     if (result.success) {
       setStatus('confirm');
-      setMessage('You have been gifted a word! Would you like to claim it?');
+      setMessage('You have been gifted a word! Accept to add it to your account or decline to return it to the pool.');
     } else {
       setStatus('error');
       setMessage(result.error || 'An unknown error occurred while verifying your gift.');
@@ -87,7 +87,7 @@ function ClaimWordContent() {
 
           {status === 'confirm' && (
             <div className="pt-6 flex gap-4 justify-center">
-              <Button onClick={processClaim}><Gift className="mr-2 h-4 w-4"/>Accept</Button>
+              <Button onClick={processClaim}><Gift className="mr-2 h-4 w-4"/>Accept Gift</Button>
               <Button variant="secondary" onClick={processDecline}>Decline</Button>
             </div>
           )}
