@@ -1,7 +1,7 @@
 
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { Button } from '@/components/ui/button';
 import { DailyDebriefDialog } from '@/components/game/DailyDebriefDialog';
 import { ShareMomentDialog } from '@/components/game/ShareMomentDialog';
@@ -21,6 +21,8 @@ import { GameScreen } from '@/components/game/GameScreen';
 import { useGameData } from '@/hooks/useGameData'; 
 import { useWordSubmission } from '@/hooks/useWordSubmission';
 import { type ProcessedWordResult } from '@/services/wordProcessingService'; 
+import { useSwipeGesture, OrientationWarning } from '@/components/game/MobileFeatures';
+
 
 const DAILY_GAME_DURATION = 90;
 const MIN_WORD_LENGTH = 4;
@@ -53,6 +55,7 @@ export default function HomePage() {
   const [newlyOwnedWordsThisSession, setNewlyOwnedWordsThisSession] = useState<string[]>([]);
   
   const { toast } = useToast();
+  const gameContainerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (!isLoadingAuth && currentUser && userProfile && (userProfile.hasSeenWelcomeInstructions === false || userProfile.hasSeenWelcomeInstructions === undefined)) {
@@ -205,15 +208,29 @@ export default function HomePage() {
     }
   }, [gameState, currentWordUI]);
 
-  const handleBackspace = () => {
+  const handleBackspace = useCallback(() => {
     if (gameState !== 'playing') return;
     setCurrentWordUI((prev) => prev.slice(0, -1));
-  };
+  },[gameState]);
 
-  const handleClearWord = () => {
+  const handleClearWord = useCallback(() => {
     if (gameState !== 'playing') return;
     setCurrentWordUI([]);
-  };
+  }, [gameState]);
+  
+  const { swipeHandlers } = useSwipeGesture(handleClearWord, handleClearWord);
+
+  useEffect(() => {
+      const element = gameContainerRef.current;
+      if (element) {
+          element.addEventListener('touchstart', swipeHandlers.handleTouchStart, { passive: true });
+          element.addEventListener('touchend', swipeHandlers.handleTouchEnd, { passive: true });
+          return () => {
+              element.removeEventListener('touchstart', swipeHandlers.handleTouchStart);
+              element.removeEventListener('touchend', swipeHandlers.handleTouchEnd);
+          };
+      }
+  }, [swipeHandlers, gameState]);
   
   const triggerInvalidWordFlash = () => {
     setWordInvalidFlash(true);
@@ -311,7 +328,8 @@ export default function HomePage() {
   }
   
   return (
-    <div className="flex flex-col items-center justify-center p-4 pt-6 md:p-8 md:pt-12">
+    <div ref={gameContainerRef} className="flex flex-col items-center justify-center p-4 pt-6 md:p-8 md:pt-12 w-full">
+      <OrientationWarning />
       <WelcomeInstructionsDialog
         isOpen={showWelcomeInstructionsModal}
         onOpenChange={setShowWelcomeInstructionsModal}
