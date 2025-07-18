@@ -7,12 +7,15 @@ import type { User as FirebaseUser } from 'firebase/auth'; // Assuming you pass 
 import type { UserProfile, MasterWordType, RejectedWordType, WordSubmission, ClientMasterWordType } from '@/types';
 import { calculateWordScore } from '@/lib/scoring';
 import { checkWiktionary } from '@/ai/flows/check-wiktionary-flow';
+import { RateLimiter } from '@/lib/rateLimiter';
 
 const MASTER_WORDS_COLLECTION = "Words";
 const REJECTED_WORDS_COLLECTION = "RejectedWords";
 const WORD_SUBMISSIONS_QUEUE = "WordSubmissionsQueue";
 const USERS_COLLECTION = "Users";
 
+// Initialize the rate limiter: 30 attempts per user per minute (60,000 ms)
+const wordSubmissionLimiter = new RateLimiter(30, 60000);
 
 export interface ProcessWordSubmissionParams {
   wordText: string;
@@ -24,7 +27,7 @@ export interface ProcessWordSubmissionParams {
 }
 
 export interface ProcessedWordResult {
-  status: 'success_approved' | 'success_wotd' | 'success_new_unverified' | 'error_api' | 'error_unknown' | 'rejected_gibberish' | 'rejected_admin' | 'rejected_not_found' | 'rejected_already_owned' | 'rejected_already_owned_by_submitter';
+  status: 'success_approved' | 'success_wotd' | 'success_new_unverified' | 'error_api' | 'error_unknown' | 'rejected_gibberish' | 'rejected_admin' | 'rejected_not_found' | 'rejected_already_owned' | 'rejected_already_owned_by_submitter' | 'rejected_rate_limit';
   message: string;
   pointsAwarded: number; // Always return points, even if 0 or negative
   isWotD: boolean;
@@ -127,6 +130,18 @@ export async function processWordSubmission(
     actualWordOfTheDayDefinition,
     actualWordOfTheDayPoints,
   } = params;
+  
+  // Apply the rate limiter
+  if (!wordSubmissionLimiter.check(currentUserId)) {
+    return {
+      status: 'rejected_rate_limit',
+      message: "Too many submissions! Please slow down.",
+      pointsAwarded: 0,
+      isWotD: false,
+      isNewlyOwned: false,
+    };
+  }
+
 
   const wordText = rawWordText.toUpperCase();
 
@@ -247,6 +262,8 @@ export async function processWordSubmission(
       return { status: 'error_api', message: `Could not verify "${wordText}" (API error).`, pointsAwarded: 0, isWotD: false, isNewlyOwned: false };
     }
   } catch (error: any) {
-     return { status: 'error_unknown', message: `${error.message || `Could not verify "${wordText}"`}.`, pointsAwarded: 0, isWotD: false, isNewlyOwned: false };
+     // This catch block handles network errors or other exceptions from fetch itself
+    console.error("Error processing word submission:", error);
+    return { status: 'error_unknown', message: `${error.message || `Could not verify "${wordText}"`}.`, pointsAwarded: 0, isWotD: false, isNewlyOwned: false };
   }
 }
