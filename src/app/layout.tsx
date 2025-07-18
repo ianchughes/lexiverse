@@ -37,6 +37,7 @@ export default function RootLayout({
         {/* PWA Manifest and Theme Color */}
         <link rel="manifest" href="/manifest.json" />
         <meta name="theme-color" content="#4285F4" /> 
+        <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
         {/* It's generally better to define title and description via Next.js metadata API in page.tsx or server layout components */}
         {/* For a client root layout, you might set document.title directly in a useEffect if needed, or handle metadata at page level */}
         <title>LexiVerse - Daily Word Puzzle</title>
